@@ -1,0 +1,103 @@
+@import "./assets/Inter/inter.css";
+@import "frappe-ui/style.css";
+@import "@abdulrysr/saudi-riyal-new-symbol-font/style.css";
+
+/* Apply Saudi Riyal symbol font to body for currency support */
+body {
+	font-family: "SaudiRiyalSymbol", "Inter", sans-serif;
+}
+
+/* Ensure all text elements inherit the font stack with Saudi Riyal support */
+* {
+	font-family: inherit;
+}
+
+/* Ensure frappe-ui dialogs render above sticky mobile navigation */
+.dialog-overlay {
+	z-index: 400 !important;
+}
+
+.dialog-overlay .dialog-content,
+.dialog-content {
+	z-index: 500 !important;
+}
+
+/* Mobile touch optimizations - removes 300ms tap delay and improves scrolling */
+.touch-manipulation {
+	touch-action: manipulation;
+	-webkit-tap-highlight-color: transparent;
+}
+
+/* Apply touch-action to all interactive elements */
+button,
+a,
+[role="button"],
+input[type="button"],
+input[type="submit"],
+.cursor-pointer {
+	touch-action: manipulation;
+	-webkit-tap-highlight-color: transparent;
+}
+
+/* Optimized button touch animations - prevents layout thrashing */
+.btn-touch {
+	transition: transform 0.1s ease;
+	will-change: transform;
+}
+
+.btn-touch:active {
+	transform: scale(0.95);
+}
+
+/* Override Tailwind's active:scale-95 with optimized version */
+button.active\:scale-95:active,
+.active\:scale-95:active {
+	transform: scale(0.95);
+	will-change: transform;
+}
+
+/* RTL Support: Fix frappe-ui TextInput prefix/suffix positioning */
+[dir="rtl"] .relative > div.absolute.left-0 {
+	left: auto !important;
+	right: 0 !important;
+	padding-left: 0 !important;
+	padding-right: 0.5rem !important;
+}
+
+[dir="rtl"] .relative > div.absolute.right-0 {
+	right: auto !important;
+	left: 0 !important;
+	padding-right: 0 !important;
+	padding-left: 0.5rem !important;
+}
+
+/* RTL Support: Swap input padding for prefix/suffix in TextInput */
+[dir="rtl"] .relative > input.pl-8 {
+	padding-left: 0.5rem !important;
+	padding-right: 2rem !important;
+}
+
+[dir="rtl"] .relative > input.pr-8 {
+	padding-right: 0.5rem !important;
+	padding-left: 2rem !important;
+}
+
+[dir="rtl"] .relative > input.pl-9 {
+	padding-left: 0.625rem !important;
+	padding-right: 2.25rem !important;
+}
+
+[dir="rtl"] .relative > input.pr-9 {
+	padding-right: 0.625rem !important;
+	padding-left: 2.25rem !important;
+}
+
+[dir="rtl"] .relative > input.pl-10 {
+	padding-left: 0.75rem !important;
+	padding-right: 2.5rem !important;
+}
+
+[dir="rtl"] .relative > input.pr-10 {
+	padding-right: 0.75rem !important;
+	padding-left: 2.5rem !important;
+}
