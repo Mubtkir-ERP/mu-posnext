@@ -896,7 +896,7 @@ async function updatePosStatus(invoiceId, newStatus) {
             invoice.pos_status = newStatus
           }
           
-          showSuccess('Status updated successfully', 'success');
+          showSuccess(__('Status updated successfully'), __('success'));
           
         } else {
           showError(response.message || 'Error updating status', 'error');

@@ -26,6 +26,7 @@
 				:is-refreshing="stockStore.refreshing"
 				@sync-click="handleSyncClick"
 				@printer-click="uiStore.showHistoryDialog = true"
+				@go-home="goHome"
 				@refresh-click="handleRefresh"
 				@clear-cache="handleClearCache"
 				@logout="uiStore.showLogoutDialog = true"
@@ -2169,6 +2170,15 @@ async function handleRefresh() {
 	}
 }
 
+function goHome() {
+	// Navigate to Frappe app route '/app'
+	if (window.frappe?.set_route) {
+		window.frappe.set_route('/app');
+	} else {
+		// Fallback: use window.location if frappe is not available
+		window.location.href = '/app';
+	}
+}
 function handleClearCache() {
 	showClearCacheDialog.value = true;
 }
