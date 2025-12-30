@@ -159,10 +159,23 @@ export function useInvoice() {
 		)
 
 		if (existingItem) {
+			// IMPORTANT: Preserve edited rate and price_list_rate from existing cart item
+			// When adding more quantity, use the existing item's rate (which may have been edited)
+			// instead of the incoming item's rate (which comes from the item selector with original rate)
+			// This ensures that if a user edited the rate in EditItemDialog, adding more quantity
+			// will preserve the edited rate, not revert to the original rate
+			const preservedRate = existingItem.rate
+			const preservedPriceListRate = existingItem.price_list_rate
+			
+			// Determine if rate was manually edited (rate differs from price_list_rate)
+			// If edited, use the edited rate; otherwise use price_list_rate
+			// This ensures we use the correct rate for calculations (edited rate takes precedence)
+			const rateWasEdited = preservedRate && preservedPriceListRate && preservedRate !== preservedPriceListRate
+			const rateForCalculation = rateWasEdited ? preservedRate : (preservedPriceListRate || preservedRate)
+			
 			// Store old values before update for incremental cache adjustment
-			// Use price_list_rate for subtotal calculations (before discount)
-			const oldPriceListRate = existingItem.price_list_rate || existingItem.rate
-			const oldAmount = existingItem.quantity * oldPriceListRate
+			// Use the correct rate (edited rate if it was edited, otherwise price_list_rate)
+			const oldAmount = existingItem.quantity * rateForCalculation
 			const oldTax = existingItem.tax_amount || 0
 			const oldDiscount = existingItem.discount_amount || 0
 
@@ -180,13 +193,21 @@ export function useInvoice() {
 			} else {
 				existingItem.quantity += quantity
 			}
+
+			// Explicitly preserve the edited rate and price_list_rate BEFORE recalculation
+			// This ensures that recalculateItem uses the preserved rate for tax/discount calculations
+			existingItem.rate = preservedRate
+			if (preservedPriceListRate) {
+				existingItem.price_list_rate = preservedPriceListRate
+			}
+
+			// Recalculate with the preserved rate
 			recalculateItem(existingItem)
 
 			// Update cache incrementally (new values - old values)
-			// Use price_list_rate for subtotal (before discount)
-			const priceListRate = existingItem.price_list_rate || existingItem.rate
-			_cachedSubtotal.value +=
-				existingItem.quantity * priceListRate - oldAmount
+			// Use the same rate for calculation (edited rate if it was edited, otherwise price_list_rate)
+			const newAmount = existingItem.quantity * rateForCalculation
+			_cachedSubtotal.value += newAmount - oldAmount
 			_cachedTotalTax.value += (existingItem.tax_amount || 0) - oldTax
 			_cachedTotalDiscount.value +=
 				(existingItem.discount_amount || 0) - oldDiscount
@@ -292,9 +313,16 @@ export function useInvoice() {
 
 		if (item) {
 			// Store old values before update for incremental cache adjustment
-			// Use price_list_rate for subtotal calculations (before discount)
-			const oldPriceListRate = item.price_list_rate || item.rate
-			const oldAmount = item.quantity * oldPriceListRate
+			// IMPORTANT: Preserve the rate to ensure edited rates are maintained
+			const preservedRate = item.rate
+			const preservedPriceListRate = item.price_list_rate
+			
+			// Determine if rate was manually edited (rate differs from price_list_rate)
+			// If edited, use the edited rate; otherwise use price_list_rate
+			// This ensures we use the correct rate for calculations (edited rate takes precedence)
+			const rateWasEdited = preservedRate && preservedPriceListRate && preservedRate !== preservedPriceListRate
+			const rateForCalculation = rateWasEdited ? preservedRate : (preservedPriceListRate || preservedRate)
+			const oldAmount = item.quantity * rateForCalculation
 			const oldTax = item.tax_amount || 0
 			const oldDiscount = item.discount_amount || 0
 			const oldQuantity = item.quantity
@@ -319,13 +347,29 @@ export function useInvoice() {
 				// which should be handled by reopening the serial dialog
 			}
 
+			// Preserve rate before updating quantity and recalculating
+			// Always set both rate and price_list_rate to ensure recalculateItem can detect edits correctly
+			item.rate = preservedRate
+			// Set price_list_rate - if it was undefined/null, set it to rate to maintain consistency
+			item.price_list_rate = preservedPriceListRate !== undefined && preservedPriceListRate !== null 
+				? preservedPriceListRate 
+				: preservedRate
+
 			item.quantity = newQuantity
 			recalculateItem(item)
 
+			// Ensure rate is preserved after recalculation (recalculateItem might modify it)
+			// This ensures the edited rate is maintained even if recalculateItem changes it
+			item.rate = preservedRate
+			// Restore price_list_rate to its original value (or rate if it was undefined)
+			item.price_list_rate = preservedPriceListRate !== undefined && preservedPriceListRate !== null 
+				? preservedPriceListRate 
+				: preservedRate
+
 			// Update cache incrementally (new values - old values)
-			// Use price_list_rate for subtotal (before discount)
-			const priceListRate = item.price_list_rate || item.rate
-			_cachedSubtotal.value += item.quantity * priceListRate - oldAmount
+			// Use the preserved rate for consistent calculation
+			const newAmount = item.quantity * rateForCalculation
+			_cachedSubtotal.value += newAmount - oldAmount
 			_cachedTotalTax.value += (item.tax_amount || 0) - oldTax
 			_cachedTotalDiscount.value += (item.discount_amount || 0) - oldDiscount
 		}
