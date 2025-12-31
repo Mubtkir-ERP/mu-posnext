@@ -1636,6 +1636,23 @@ def apply_offers(invoice_data, selected_offers=None):
                     rules = list(raw_rules)
             raw_rule_names.update(rules)
 
+        # Build a map of applicable pricing rules from the ERPNext engine results.
+        #
+        # ERPNext has two types of pricing rules:
+        #
+        # 1. Promotional Scheme Rules (promotional_scheme is set):
+        #    - Created automatically when a Promotional Scheme is saved
+        #    - The scheme acts as a "template" that generates one or more Pricing Rules
+        #    - Example: "Summer Sale" scheme creates "PRLE-0001", "PRLE-0002" rules
+        #
+        # 2. Standalone Pricing Rules (promotional_scheme is empty):
+        #    - Created directly as Pricing Rule documents
+        #    - Not linked to any Promotional Scheme
+        #    - Example: A direct "10% off Item X" rule created in Pricing Rule doctype
+        #
+        # We include BOTH types for POS, but exclude coupon_code_based rules
+        # (those require explicit coupon entry and are handled separately).
+        #
         rule_map = {}
         if raw_rule_names:
             rule_records = frappe.get_all(
@@ -1650,8 +1667,12 @@ def apply_offers(invoice_data, selected_offers=None):
                 ],
             )
             for record in rule_records:
-                if record.promotional_scheme and not record.coupon_code_based:
-                    rule_map[record.name] = record
+                # Skip coupon-based rules (require explicit coupon code entry)
+                if record.coupon_code_based:
+                    continue
+
+                # Include both promotional scheme rules and standalone pricing rules
+                rule_map[record.name] = record
 
         if selected_offer_names:
             # Restrict available rules to the ones explicitly selected from the UI.
