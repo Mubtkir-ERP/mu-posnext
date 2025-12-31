@@ -65,6 +65,10 @@ const CURRENT_SCHEMA = {
 
 	// Translations cache for offline language support
 	translations: "&locale, timestamp",
+
+	// Promotional offers cache for offline use
+	// Indexed by name (unique), filterable by pos_profile
+	offers: "&name, pos_profile, apply_on, valid_upto",
 }
 
 /**

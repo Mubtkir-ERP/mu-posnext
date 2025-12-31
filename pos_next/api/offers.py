@@ -78,6 +78,14 @@ class Offer:
 	eligible_items: List[str]
 	eligible_item_groups: List[str]
 	eligible_brands: List[str]
+	# Free item fields for product discounts
+	free_item: Optional[str] = None
+	free_qty: float = 0
+	free_item_uom: Optional[str] = None
+	same_item: int = 0  # 1 if free item should be same as purchased item
+	is_recursive: int = 0  # 1 if offer applies recursively (e.g., buy 2 get 1 free for every 2)
+	recurse_for: float = 0  # Give free item for every N quantity (used when is_recursive=1)
+	apply_recursion_over: float = 0  # Qty for which recursion isn't applicable
 
 	def to_dict(self) -> Dict:
 		"""Convert to dictionary for API response"""
@@ -199,7 +207,9 @@ class SlabFetcher:
 		results = frappe.db.sql("""
 			SELECT
 				parent, min_qty, max_qty, min_amount, max_amount,
-				apply_multiple_pricing_rules
+				apply_multiple_pricing_rules,
+				free_item, free_qty, free_item_uom, same_item, is_recursive,
+				recurse_for, apply_recursion_over
 			FROM `tabPromotional Scheme Product Discount`
 			WHERE parent IN %s AND disable = 0
 			ORDER BY parent, min_amount ASC, min_qty ASC
@@ -253,7 +263,7 @@ class OfferBuilder:
 		return Offer(
 			name=rule["name"],
 			title=rule.get("title") or rule.get("promotional_scheme") or rule["name"],
-			description=rule.get("title") or rule.get("promotional_scheme"),
+			description=rule.get("title") or rule.get("promotional_scheme") or "",
 			apply_on=rule["apply_on"],
 			offer="Item Price" if is_price_discount else "Give Product",
 			auto=is_auto,
@@ -273,7 +283,15 @@ class OfferBuilder:
 			promotional_scheme_id=rule.get("promotional_scheme_id"),
 			eligible_items=eligible_items,
 			eligible_item_groups=eligible_item_groups,
-			eligible_brands=eligible_brands
+			eligible_brands=eligible_brands,
+			# Free item fields for product discounts
+			free_item=slab.get("free_item") if not is_price_discount else None,
+			free_qty=flt(slab.get("free_qty", 0)) if not is_price_discount else 0,
+			free_item_uom=slab.get("free_item_uom") if not is_price_discount else None,
+			same_item=1 if slab.get("same_item") and not is_price_discount else 0,
+			is_recursive=1 if slab.get("is_recursive") and not is_price_discount else 0,
+			recurse_for=flt(slab.get("recurse_for", 0)) if not is_price_discount else 0,
+			apply_recursion_over=flt(slab.get("apply_recursion_over", 0)) if not is_price_discount else 0
 		)
 
 	@staticmethod

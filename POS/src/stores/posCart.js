@@ -6,6 +6,7 @@ import {
 	checkStockAvailability,
 	formatStockError,
 } from "@/utils/stockValidator"
+import { offlineState } from "@/utils/offline/offlineState"
 import { useToast } from "@/composables/useToast"
 import { defineStore } from "pinia"
 import { computed, nextTick, ref, toRaw, watch } from "vue"
@@ -456,18 +457,21 @@ export const usePOSCartStore = defineStore("posCart", () => {
 	 * Extracts and normalizes the offer response from backend
 	 *
 	 * @param {Object} response - Raw API response from backend
-	 * @param {Array} fallbackRules - Default rules to use if none returned
 	 * @returns {Object} Normalized response with items, freeItems, and appliedRules
+	 *
+	 * IMPORTANT: No fallback for appliedRules - we trust the backend's response.
+	 * If backend returns empty applied_pricing_rules, it means NO offers were applied.
+	 * Previously we had a fallback that caused false "applied" status.
 	 */
-	function parseOfferResponse(response, fallbackRules = []) {
+	function parseOfferResponse(response) {
 		const payload = response?.message || response || {}
 
 		return {
 			items: Array.isArray(payload.items) ? payload.items : [],
 			freeItems: Array.isArray(payload.free_items) ? payload.free_items : [],
-			appliedRules: Array.isArray(payload.applied_pricing_rules) && payload.applied_pricing_rules.length
-				? payload.applied_pricing_rules
-				: fallbackRules
+			// CRITICAL: Only trust explicitly returned rules - NO FALLBACK
+			// If backend doesn't return applied_pricing_rules, NO offers were applied
+			appliedRules: Array.isArray(payload.applied_pricing_rules) ? payload.applied_pricing_rules : []
 		}
 	}
 
@@ -533,7 +537,7 @@ export const usePOSCartStore = defineStore("posCart", () => {
 				if (signal?.aborted) return
 
 				const { items: responseItems, freeItems, appliedRules } =
-					parseOfferResponse(response, existingCodes)
+					parseOfferResponse(response)
 
 				suppressOfferReapply.value = true
 				applyServerDiscounts(responseItems)
@@ -554,7 +558,7 @@ export const usePOSCartStore = defineStore("posCart", () => {
 								items: rollbackItems,
 								freeItems: rollbackFreeItems,
 								appliedRules: rollbackRules,
-							} = parseOfferResponse(rollbackResponse, existingCodes)
+							} = parseOfferResponse(rollbackResponse)
 
 							applyServerDiscounts(rollbackItems)
 							processFreeItems(rollbackFreeItems)
@@ -675,7 +679,7 @@ export const usePOSCartStore = defineStore("posCart", () => {
 				if (signal?.aborted) return
 
 				const { items: responseItems, freeItems, appliedRules } =
-					parseOfferResponse(response, remainingCodes)
+					parseOfferResponse(response)
 
 				suppressOfferReapply.value = true
 				applyServerDiscounts(responseItems)
@@ -713,28 +717,29 @@ export const usePOSCartStore = defineStore("posCart", () => {
 	 * @param {Object} currentProfile - Current POS profile
 	 * @param {AbortSignal} signal - Optional abort signal for cancellation
 	 */
+	/**
+	 * Validates applied offers and removes invalid ones when cart changes.
+	 * This function is called from processOffersInternal - it does NOT manage
+	 * suppressOfferReapply flag (that's handled by the caller).
+	 * @param {Object} currentProfile - Current POS profile
+	 * @param {AbortSignal} signal - Optional abort signal for cancellation
+	 * @returns {boolean} True if any offers were removed
+	 */
 	async function reapplyOffer(currentProfile, signal = null) {
 		// Clear offers if cart is empty
 		if (invoiceItems.value.length === 0 && appliedOffers.value.length) {
 			appliedOffers.value = []
 			processFreeItems([]) // Remove all free items when cart is empty
-			return
-		}
-
-		// Skip revalidation if suppressed (e.g., during offer application)
-		if (suppressOfferReapply.value) {
-			// Reset the flag for next cycle
-			suppressOfferReapply.value = false
-			return
+			return true
 		}
 
 		// Only validate if there are applied offers
 		if (appliedOffers.value.length === 0 || invoiceItems.value.length === 0) {
-			return
+			return false
 		}
 
 		// Check if operation was cancelled
-		if (signal?.aborted) return
+		if (signal?.aborted) return false
 
 		try {
 			// Build current cart snapshot for validation
@@ -759,7 +764,7 @@ export const usePOSCartStore = defineStore("posCart", () => {
 			}
 
 			// Check for cancellation
-			if (signal?.aborted) return
+			if (signal?.aborted) return false
 
 			// If any offers are invalid, remove them and reapply remaining
 			if (invalidOffers.length > 0) {
@@ -769,7 +774,6 @@ export const usePOSCartStore = defineStore("posCart", () => {
 
 				if (validOfferCodes.length === 0) {
 					// All offers invalid - clear everything
-					suppressOfferReapply.value = true
 					appliedOffers.value = []
 					processFreeItems([])
 
@@ -791,12 +795,11 @@ export const usePOSCartStore = defineStore("posCart", () => {
 						selected_offers: validOfferCodes,
 					})
 
-					if (signal?.aborted) return
+					if (signal?.aborted) return false
 
 					const { items: responseItems, freeItems, appliedRules } =
-						parseOfferResponse(response, validOfferCodes)
+						parseOfferResponse(response)
 
-					suppressOfferReapply.value = true
 					applyServerDiscounts(responseItems)
 					processFreeItems(freeItems)
 					filterActiveOffers(appliedRules)
@@ -813,28 +816,27 @@ export const usePOSCartStore = defineStore("posCart", () => {
 				// Show warning about removed offers
 				const offerNames = invalidOffers.map(o => o.name).join(', ')
 				showWarning(__('Offer removed: {0}. Cart no longer meets requirements.', [offerNames]))
+				return true
 			}
+			return false
 		} catch (error) {
-			if (signal?.aborted) return
+			if (signal?.aborted) return false
 			console.error("Error validating offers:", error)
 			offerProcessingState.value.error = error.message
+			return false
 		}
 	}
 
 	/**
-	 * Automatically applies ALL eligible offers when cart changes
-	 * This function is called after cart updates to apply any new eligible offers
+	 * Automatically applies ALL eligible offers when cart changes.
+	 * This function is called from processOffersInternal - it does NOT check
+	 * suppressOfferReapply flag (that's handled by the caller).
 	 * @param {Object} currentProfile - Current POS profile
 	 * @param {AbortSignal} signal - Optional abort signal for cancellation
 	 */
 	async function autoApplyEligibleOffers(currentProfile, signal = null) {
 		// Skip if cart is empty or no offers available
 		if (invoiceItems.value.length === 0 || !offersStore.hasFetched) {
-			return
-		}
-
-		// Skip if suppressed
-		if (suppressOfferReapply.value) {
 			return
 		}
 
@@ -882,9 +884,8 @@ export const usePOSCartStore = defineStore("posCart", () => {
 			if (signal?.aborted) return
 
 			const { items: responseItems, freeItems, appliedRules } =
-				parseOfferResponse(response, allCodes)
+				parseOfferResponse(response)
 
-			suppressOfferReapply.value = true
 			applyServerDiscounts(responseItems)
 			processFreeItems(freeItems)
 			filterActiveOffers(appliedRules)
@@ -936,6 +937,260 @@ export const usePOSCartStore = defineStore("posCart", () => {
 			console.error("Error auto-applying offers:", error)
 			offerProcessingState.value.error = error.message
 		}
+	}
+
+	/**
+	 * Apply offers when offline using cached offer data.
+	 * Calculates discounts client-side based on offer rules.
+	 *
+	 * In offline mode, we:
+	 * 1. Check eligibility using posOffers.checkOfferEligibility
+	 * 2. Apply discount percentage/amount directly to cart items
+	 * 3. Handle free items (product discounts) by setting free_qty
+	 * 4. Mark offers as applied (with source: "offline")
+	 *
+	 * Supports:
+	 * - Discount Percentage (e.g., 10% off)
+	 * - Discount Amount (e.g., $5 off)
+	 * - Free Items (e.g., Buy 2 Get 1 Free)
+	 */
+	function applyOffersOffline() {
+		// Skip if cart is empty or no offers available
+		if (invoiceItems.value.length === 0 || !offersStore.hasFetched) {
+			return
+		}
+
+		// Verify we're actually offline
+		if (!offlineState.isOffline) {
+			return // Use online mode instead
+		}
+
+		try {
+			// Build current cart snapshot
+			const cartSnapshot = buildCartSnapshot()
+			offersStore.updateCartSnapshot(cartSnapshot)
+
+			// Get eligible auto offers
+			const eligibleOffers = offersStore.autoEligibleOffers
+
+			if (eligibleOffers.length === 0) {
+				return
+			}
+
+			// Find new offers to apply (both price and product discounts)
+			const appliedOfferCodes = new Set(appliedOffers.value.map(o => o.code))
+			const newOffers = eligibleOffers.filter(offer => !appliedOfferCodes.has(offer.name))
+
+			if (newOffers.length === 0) {
+				return
+			}
+
+			const newlyAppliedOffers = []
+
+			for (const offer of newOffers) {
+				// Determine offer type: "Item Price" (discount) or "Give Product" (free item)
+				const isProductDiscount = offer.offer === 'Give Product'
+
+				// Find eligible items based on offer.apply_on
+				let eligibleItems = []
+
+				if (offer.apply_on === 'Item Code') {
+					const eligibleCodes = offer.eligible_items || []
+					eligibleItems = invoiceItems.value.filter(item =>
+						eligibleCodes.includes(item.item_code)
+					)
+				} else if (offer.apply_on === 'Item Group') {
+					const eligibleGroups = offer.eligible_item_groups || []
+					eligibleItems = invoiceItems.value.filter(item =>
+						eligibleGroups.includes(item.item_group)
+					)
+				} else if (offer.apply_on === 'Brand') {
+					const eligibleBrands = offer.eligible_brands || []
+					eligibleItems = invoiceItems.value.filter(item =>
+						eligibleBrands.includes(item.brand)
+					)
+				} else if (offer.apply_on === 'Transaction') {
+					// Transaction-level discount applies to all items
+					eligibleItems = invoiceItems.value
+				}
+
+				if (eligibleItems.length === 0) continue
+
+				let offerApplied = false
+
+				if (isProductDiscount) {
+					// === PRODUCT DISCOUNT (FREE ITEMS) ===
+					offerApplied = applyFreeItemOffline(offer, eligibleItems)
+				} else {
+					// === PRICE DISCOUNT ===
+					offerApplied = applyPriceDiscountOffline(offer, eligibleItems)
+				}
+
+				if (offerApplied) {
+					// Mark offer as applied
+					appliedOffers.value.push({
+						name: offer.title || offer.name,
+						code: offer.name,
+						offer,
+						source: "offline",
+						applied: true,
+						rules: [offer.name],
+						min_qty: offer.min_qty,
+						max_qty: offer.max_qty,
+						min_amt: offer.min_amt,
+						max_amt: offer.max_amt,
+					})
+
+					newlyAppliedOffers.push(offer.title || offer.name)
+				}
+			}
+
+			// Rebuild cache after bulk changes
+			if (newlyAppliedOffers.length > 0) {
+				rebuildIncrementalCache()
+				showSuccess(__('Offline: {0} applied', [newlyAppliedOffers.join(', ')]))
+			}
+		} catch (error) {
+			console.error("Error applying offers offline:", error)
+		}
+	}
+
+	/**
+	 * Apply price discount (percentage or amount) to eligible items offline
+	 * @param {Object} offer - The offer to apply
+	 * @param {Array} eligibleItems - Items eligible for the discount
+	 * @returns {boolean} True if discount was applied
+	 */
+	function applyPriceDiscountOffline(offer, eligibleItems) {
+		const discountType = offer.discount_type || offer.rate_or_discount
+		const discountPercentage = Number.parseFloat(offer.discount_percentage) || 0
+		const discountAmount = Number.parseFloat(offer.discount_amount) || 0
+		const rate = Number.parseFloat(offer.rate) || 0
+
+		let applied = false
+
+		for (const item of eligibleItems) {
+			// Only apply if no existing pricing rule
+			if (item.pricing_rules && item.pricing_rules.length > 0) continue
+
+			if (discountType === 'Discount Percentage' && discountPercentage > 0) {
+				item.discount_percentage = discountPercentage
+				item.pricing_rules = [offer.name]
+				recalculateItem(item)
+				applied = true
+			} else if (discountType === 'Discount Amount' && discountAmount > 0) {
+				// Apply fixed discount amount
+				item.discount_amount = discountAmount
+				item.pricing_rules = [offer.name]
+				recalculateItem(item)
+				applied = true
+			} else if (discountType === 'Rate' && rate > 0) {
+				// Apply fixed rate (override price)
+				item.rate = rate
+				item.pricing_rules = [offer.name]
+				recalculateItem(item)
+				applied = true
+			}
+		}
+
+		return applied
+	}
+
+	/**
+	 * Apply free item (product discount) offer offline
+	 * Handles: same_item (free item = purchased item) or specific free_item
+	 *
+	 * Recursive logic:
+	 * - recurse_for: Give free item for every N quantity
+	 * - apply_recursion_over: Qty for which recursion isn't applicable
+	 * - Example: recurse_for=2, apply_recursion_over=0, free_qty=1
+	 *   -> For 6 items: (6-0)/2 * 1 = 3 free items
+	 *
+	 * @param {Object} offer - The offer to apply
+	 * @param {Array} eligibleItems - Items eligible for the free item
+	 * @returns {boolean} True if free item was applied
+	 */
+	function applyFreeItemOffline(offer, eligibleItems) {
+		const freeQty = Number.parseFloat(offer.free_qty) || 0
+		const sameItem = offer.same_item === 1
+		const isRecursive = offer.is_recursive === 1
+		const recurseFor = Number.parseFloat(offer.recurse_for) || 0
+		const applyRecursionOver = Number.parseFloat(offer.apply_recursion_over) || 0
+		const freeItemCode = offer.free_item
+
+		if (freeQty <= 0) return false
+
+		let applied = false
+
+		if (sameItem) {
+			// Free item is the same as the purchased item
+			// E.g., "Buy 2 Get 1 Free" - the free item is the same item
+			for (const item of eligibleItems) {
+				let freeItemsToGive = freeQty
+
+				if (isRecursive && recurseFor > 0) {
+					// Recursive: for every recurseFor quantity, give freeQty free
+					// Formula: floor((qty - apply_recursion_over) / recurse_for) * free_qty
+					// E.g., Buy 2 Get 1 Free: recurse_for=2, free_qty=1
+					//   For 6 items: floor((6-0)/2) * 1 = 3 free items
+					const effectiveQty = Math.max(0, item.quantity - applyRecursionOver)
+					const multiplier = Math.floor(effectiveQty / recurseFor)
+					freeItemsToGive = multiplier * freeQty
+				} else if (!isRecursive && offer.min_qty > 0) {
+					// Non-recursive: just check if min_qty is met, give freeQty once
+					// E.g., Buy 2 Get 1 Free (non-recursive): for 6 items, still give 1 free
+					if (item.quantity >= offer.min_qty) {
+						freeItemsToGive = freeQty
+					} else {
+						freeItemsToGive = 0
+					}
+				}
+
+				if (freeItemsToGive > 0 && (!item.free_qty || item.free_qty === 0)) {
+					item.free_qty = freeItemsToGive
+					item.pricing_rules = item.pricing_rules || []
+					if (!item.pricing_rules.includes(offer.name)) {
+						item.pricing_rules.push(offer.name)
+					}
+					applied = true
+				}
+			}
+		} else if (freeItemCode) {
+			// Free item is a specific different item
+			// Find if the free item is already in the cart
+			const freeItemInCart = invoiceItems.value.find(
+				item => item.item_code === freeItemCode
+			)
+
+			if (freeItemInCart) {
+				// Calculate free qty (same recursive logic applies)
+				let freeItemsToGive = freeQty
+
+				if (isRecursive && recurseFor > 0) {
+					// Calculate based on total eligible quantity
+					const totalEligibleQty = eligibleItems.reduce(
+						(sum, item) => sum + (item.quantity || 0), 0
+					)
+					const effectiveQty = Math.max(0, totalEligibleQty - applyRecursionOver)
+					const multiplier = Math.floor(effectiveQty / recurseFor)
+					freeItemsToGive = multiplier * freeQty
+				}
+
+				// Mark existing cart item as having free quantity
+				if (freeItemsToGive > 0 && (!freeItemInCart.free_qty || freeItemInCart.free_qty === 0)) {
+					freeItemInCart.free_qty = freeItemsToGive
+					freeItemInCart.pricing_rules = freeItemInCart.pricing_rules || []
+					if (!freeItemInCart.pricing_rules.includes(offer.name)) {
+						freeItemInCart.pricing_rules.push(offer.name)
+					}
+					applied = true
+				}
+			}
+			// Note: We don't add new items to cart offline - that would require
+			// fetching item details. The free item will be added when back online.
+		}
+
+		return applied
 	}
 
 	/**
@@ -1219,11 +1474,16 @@ export const usePOSCartStore = defineStore("posCart", () => {
 	/**
 	 * Core offer processing function that validates and auto-applies offers.
 	 * Runs through the queue to ensure sequential execution.
+	 * Uses offline mode when network is unavailable.
 	 * @param {AbortSignal} signal - Abort signal for cancellation
 	 * @param {number} generation - Cart generation when this was triggered
 	 * @param {boolean} force - If true, process even if cart hash matches
 	 */
 	async function processOffersInternal(signal = null, generation = 0, force = false) {
+		// CRITICAL: Always reset suppression flag FIRST, before any early returns
+		// This ensures the flag never gets stuck in a true state
+		suppressOfferReapply.value = false
+
 		// Check cancellation early
 		if (signal?.aborted) return
 
@@ -1246,6 +1506,16 @@ export const usePOSCartStore = defineStore("posCart", () => {
 		// Only process offers if we have a POS profile
 		if (!posProfile.value) return
 
+		// === OFFLINE MODE ===
+		// When offline, use cached offers and apply discounts client-side
+		if (offlineState.isOffline) {
+			applyOffersOffline()
+			offerProcessingState.value.lastCartHash = generateCartHash()
+			offerProcessingState.value.lastProcessedAt = Date.now()
+			return
+		}
+
+		// === ONLINE MODE ===
 		// Get current profile from posProfile
 		const currentProfile = {
 			customer: customer.value?.name || customer.value,
@@ -1253,10 +1523,6 @@ export const usePOSCartStore = defineStore("posCart", () => {
 			selling_price_list: posProfile.value.selling_price_list,
 			currency: posProfile.value.currency,
 		}
-
-		// Always reset suppression flag at the start of processing
-		// This ensures we don't get stuck in a suppressed state
-		suppressOfferReapply.value = false
 
 		// Validate and auto-remove invalid offers (if any are applied)
 		if (appliedOffers.value.length > 0) {

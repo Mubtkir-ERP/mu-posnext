@@ -1603,7 +1603,17 @@ def apply_offers(invoice_data, selected_offers=None):
         )
 
         # Call ERPNext pricing engine - it handles all conflicts based on priority
-        pricing_results = erpnext_apply_pricing_rule(pricing_args) or []
+        #
+        # Why we pass pricing_args twice:
+        # - 1st param (args): ERPNext extracts and pops 'items' from this, then processes each item individually
+        # - 2nd param (doc): Used by 'mixed_conditions' pricing rules to access the FULL items list
+        #                    for quantity accumulation across different items in the same group
+        #
+        # Example: A rule "Buy 2 from Demo Item Group, get 10% off" with mixed_conditions=1
+        # needs to see ALL items (1 Book + 1 Camera) to know total qty=2, not just each item's qty=1
+        #
+        # See: erpnext/accounts/doctype/pricing_rule/utils.py -> get_qty_and_rate_for_mixed_conditions()
+        pricing_results = erpnext_apply_pricing_rule(pricing_args, doc=pricing_args) or []
 
         if not pricing_results:
             return {"items": items}
