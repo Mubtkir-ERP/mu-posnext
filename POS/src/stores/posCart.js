@@ -948,12 +948,43 @@ export const usePOSCartStore = defineStore("posCart", () => {
 		const itemGroups = items.map(item => item.item_group).filter(Boolean)
 		const brands = items.map(item => item.brand).filter(Boolean)
 
+		// Build quantity maps for accurate offer validation
+		// itemQuantities: { item_code: total_qty } - quantity per item code
+		const itemQuantities = {}
+		// itemGroupQuantities: { item_group: total_qty } - quantity per item group
+		const itemGroupQuantities = {}
+		// brandQuantities: { brand: total_qty } - quantity per brand
+		const brandQuantities = {}
+
+		for (const item of items) {
+			const qty = item.quantity || 0
+
+			// Aggregate by item code
+			if (item.item_code) {
+				itemQuantities[item.item_code] = (itemQuantities[item.item_code] || 0) + qty
+			}
+
+			// Aggregate by item group
+			if (item.item_group) {
+				itemGroupQuantities[item.item_group] = (itemGroupQuantities[item.item_group] || 0) + qty
+			}
+
+			// Aggregate by brand
+			if (item.brand) {
+				brandQuantities[item.brand] = (brandQuantities[item.brand] || 0) + qty
+			}
+		}
+
 		return {
 			subtotal: subtotal.value,
 			itemCount: totalQty,
 			itemCodes: [...new Set(itemCodes)],
 			itemGroups: [...new Set(itemGroups)],
-			brands: [...new Set(brands)]
+			brands: [...new Set(brands)],
+			// New: quantity maps for accurate min_qty/max_qty validation
+			itemQuantities,
+			itemGroupQuantities,
+			brandQuantities
 		}
 	}
 
@@ -1119,13 +1150,16 @@ export const usePOSCartStore = defineStore("posCart", () => {
 	let cachedItemCodes = []
 	let cachedItemGroups = []
 	let cachedBrands = []
+	let cachedItemQuantities = {}
+	let cachedItemGroupQuantities = {}
+	let cachedBrandQuantities = {}
 
 	function syncOfferSnapshot() {
 		// Only sync if values are initialized
 		if (subtotal.value !== undefined && invoiceItems.value) {
-			// Create hash for item codes to detect actual changes
+			// Create hash for item codes and quantities to detect actual changes
 			const currentHash = invoiceItems.value
-				.map((item) => item.item_code)
+				.map((item) => `${item.item_code}:${item.quantity}`)
 				.join(",")
 
 			// Only recalculate expensive operations if items actually changed
@@ -1141,6 +1175,26 @@ export const usePOSCartStore = defineStore("posCart", () => {
 						invoiceItems.value.map((item) => item.brand).filter(Boolean),
 					),
 				]
+
+				// Build quantity maps for accurate offer validation
+				cachedItemQuantities = {}
+				cachedItemGroupQuantities = {}
+				cachedBrandQuantities = {}
+
+				for (const item of invoiceItems.value) {
+					const qty = item.quantity || 0
+
+					if (item.item_code) {
+						cachedItemQuantities[item.item_code] = (cachedItemQuantities[item.item_code] || 0) + qty
+					}
+					if (item.item_group) {
+						cachedItemGroupQuantities[item.item_group] = (cachedItemGroupQuantities[item.item_group] || 0) + qty
+					}
+					if (item.brand) {
+						cachedBrandQuantities[item.brand] = (cachedBrandQuantities[item.brand] || 0) + qty
+					}
+				}
+
 				previousItemCodesHash = currentHash
 			}
 
@@ -1155,6 +1209,9 @@ export const usePOSCartStore = defineStore("posCart", () => {
 				itemCodes: cachedItemCodes,
 				itemGroups: cachedItemGroups,
 				brands: cachedBrands,
+				itemQuantities: cachedItemQuantities,
+				itemGroupQuantities: cachedItemGroupQuantities,
+				brandQuantities: cachedBrandQuantities,
 			})
 		}
 	}

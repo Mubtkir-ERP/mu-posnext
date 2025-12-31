@@ -7,6 +7,10 @@ const defaultSnapshot = () => ({
 	itemCodes: [],
 	itemGroups: [],
 	brands: [],
+	// Quantity maps for accurate min_qty/max_qty validation
+	itemQuantities: {},      // { item_code: qty }
+	itemGroupQuantities: {}, // { item_group: qty }
+	brandQuantities: {},     // { brand: qty }
 })
 
 function getDiscountSortValue(offer) {
@@ -36,12 +40,26 @@ export const usePOSOffersStore = defineStore("posOffers", () => {
 			: []
 		const brands = Array.isArray(snapshot.brands) ? snapshot.brands : []
 
+		// Quantity maps for accurate offer validation
+		const itemQuantities = snapshot.itemQuantities && typeof snapshot.itemQuantities === 'object'
+			? snapshot.itemQuantities
+			: {}
+		const itemGroupQuantities = snapshot.itemGroupQuantities && typeof snapshot.itemGroupQuantities === 'object'
+			? snapshot.itemGroupQuantities
+			: {}
+		const brandQuantities = snapshot.brandQuantities && typeof snapshot.brandQuantities === 'object'
+			? snapshot.brandQuantities
+			: {}
+
 		cartSnapshot.value = {
 			subtotal,
 			itemCount,
 			itemCodes,
 			itemGroups,
 			brands,
+			itemQuantities,
+			itemGroupQuantities,
+			brandQuantities,
 		}
 	}
 
@@ -64,6 +82,47 @@ export const usePOSOffersStore = defineStore("posOffers", () => {
 	}
 
 	/**
+	 * Calculates the total quantity of eligible items in cart for an offer
+	 * @param {Object} offer - The offer to check
+	 * @returns {number} Total quantity of eligible items
+	 */
+	function getEligibleItemQuantity(offer) {
+		const itemQuantities = cartSnapshot.value.itemQuantities || {}
+		const itemGroupQuantities = cartSnapshot.value.itemGroupQuantities || {}
+		const brandQuantities = cartSnapshot.value.brandQuantities || {}
+
+		if (offer?.apply_on === "Item Code") {
+			const eligibleItems = offer.eligible_items || []
+			if (eligibleItems.length > 0) {
+				// Sum quantities of all eligible items in cart
+				return eligibleItems.reduce((sum, itemCode) => {
+					return sum + (itemQuantities[itemCode] || 0)
+				}, 0)
+			}
+		} else if (offer?.apply_on === "Item Group") {
+			const eligibleGroups = offer.eligible_item_groups || []
+			if (eligibleGroups.length > 0) {
+				// Sum quantities of all items in eligible groups
+				return eligibleGroups.reduce((sum, group) => {
+					return sum + (itemGroupQuantities[group] || 0)
+				}, 0)
+			}
+		} else if (offer?.apply_on === "Brand") {
+			const eligibleBrands = offer.eligible_brands || []
+			if (eligibleBrands.length > 0) {
+				// Sum quantities of all items from eligible brands
+				return eligibleBrands.reduce((sum, brand) => {
+					return sum + (brandQuantities[brand] || 0)
+				}, 0)
+			}
+		}
+
+		// For 'Transaction' offers or offers without specific item criteria,
+		// use total cart quantity
+		return cartSnapshot.value.itemCount || 0
+	}
+
+	/**
 	 * Checks if an offer is eligible based on current cart state
 	 * @param {Object} offer - The offer to check
 	 * @returns {Object} {eligible: boolean, reason: string|null}
@@ -83,41 +142,11 @@ export const usePOSOffersStore = defineStore("posOffers", () => {
 			}
 		}
 
-		// Check minimum quantity (e.g., "Buy 2 Get 1 Free" requires at least 2 items)
-		if (offer?.min_qty && itemCount < offer.min_qty) {
-			return {
-				eligible: false,
-				reason: __('At least {0} items required', [offer.min_qty]),
-			}
-		}
+		// Check item eligibility based on apply_on FIRST
+		// This determines which items are eligible for the offer
+		let eligibleItemQty = itemCount // Default to total cart qty for Transaction offers
 
-		// Check maximum quantity (e.g., offer only valid for up to 2 items)
-		if (offer?.max_qty && itemCount > offer.max_qty) {
-			return {
-				eligible: false,
-				reason: __('Maximum {0} items allowed for this offer', [offer.max_qty]),
-			}
-		}
-
-		// Check minimum amount
-		if (offer?.min_amt && subtotal < offer.min_amt) {
-			return {
-				eligible: false,
-				reason: __('Minimum cart value of {0} required', [offer.min_amt]),
-			}
-		}
-
-		// Check maximum amount
-		if (offer?.max_amt && subtotal > offer.max_amt) {
-			return {
-				eligible: false,
-				reason: __('Maximum cart value exceeded ({0})', [offer.max_amt]),
-			}
-		}
-
-		// Check item eligibility based on apply_on
 		if (offer?.apply_on === "Item Code") {
-			// Check if cart contains any of the eligible items
 			const eligibleItems = offer.eligible_items || []
 			if (eligibleItems.length > 0) {
 				const hasEligibleItem = eligibleItems.some((item) =>
@@ -129,9 +158,10 @@ export const usePOSOffersStore = defineStore("posOffers", () => {
 						reason: __("Cart does not contain eligible items for this offer"),
 					}
 				}
+				// Calculate quantity of eligible items only
+				eligibleItemQty = getEligibleItemQuantity(offer)
 			}
 		} else if (offer?.apply_on === "Item Group") {
-			// Check if cart contains items from any of the eligible groups
 			const eligibleGroups = offer.eligible_item_groups || []
 			if (eligibleGroups.length > 0) {
 				const hasEligibleGroup = eligibleGroups.some((group) =>
@@ -143,9 +173,10 @@ export const usePOSOffersStore = defineStore("posOffers", () => {
 						reason: __("Cart does not contain items from eligible groups"),
 					}
 				}
+				// Calculate quantity of items in eligible groups only
+				eligibleItemQty = getEligibleItemQuantity(offer)
 			}
 		} else if (offer?.apply_on === "Brand") {
-			// Check if cart contains items from any of the eligible brands
 			const eligibleBrands = offer.eligible_brands || []
 			if (eligibleBrands.length > 0) {
 				const hasEligibleBrand = eligibleBrands.some((brand) =>
@@ -154,12 +185,47 @@ export const usePOSOffersStore = defineStore("posOffers", () => {
 				if (!hasEligibleBrand) {
 					return {
 						eligible: false,
-						reason: "Cart does not contain items from eligible brands",
+						reason: __("Cart does not contain items from eligible brands"),
 					}
 				}
+				// Calculate quantity of items from eligible brands only
+				eligibleItemQty = getEligibleItemQuantity(offer)
 			}
 		}
-		// If apply_on is 'Transaction', it applies to entire cart (no item-specific check needed)
+		// If apply_on is 'Transaction', eligibleItemQty remains as total cart qty
+
+		// Check minimum quantity against ELIGIBLE items quantity
+		// (e.g., "Buy 2 of Item A Get 1 Free" requires 2 of Item A, not 2 total items)
+		if (offer?.min_qty && eligibleItemQty < offer.min_qty) {
+			return {
+				eligible: false,
+				reason: __('At least {0} eligible items required', [offer.min_qty]),
+			}
+		}
+
+		// Check maximum quantity against ELIGIBLE items quantity
+		if (offer?.max_qty && eligibleItemQty > offer.max_qty) {
+			return {
+				eligible: false,
+				reason: __('Maximum {0} eligible items allowed for this offer', [offer.max_qty]),
+			}
+		}
+
+		// Check minimum amount (still uses total subtotal)
+		if (offer?.min_amt && subtotal < offer.min_amt) {
+			return {
+				eligible: false,
+				reason: __('Minimum cart value of {0} required', [offer.min_amt]),
+			}
+		}
+
+		// Check maximum amount (still uses total subtotal)
+		if (offer?.max_amt && subtotal > offer.max_amt) {
+			return {
+				eligible: false,
+				reason: __('Maximum cart value exceeded ({0})', [offer.max_amt]),
+			}
+		}
 
 		return { eligible: true, reason: null }
 	}
