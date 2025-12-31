@@ -990,7 +990,7 @@
 				<div class="flex items-center justify-between text-xs text-gray-600">
 					<span class="font-medium">{{ __("Subtotal") }}</span>
 					<span class="font-bold text-gray-900 text-center min-w-[60px]">{{
-						formatCurrency(subtotal)
+						formatCurrency(displaySubtotal)
 					}}</span>
 				</div>
 			</div>
@@ -1053,7 +1053,7 @@
 					<span
 						class="text-lg sm:text-xl font-extrabold text-blue-600 text-center min-w-[60px]"
 					>
-						{{ formatCurrency(grandTotal) }}
+						{{ formatCurrency(displayGrandTotal) }}
 					</span>
 				</div>
 			</div>
@@ -1452,6 +1452,43 @@ const totalQuantity = computed(() => {
 		const freeQty = item.free_qty || 0;
 		return sum + qty + freeQty;
 	}, 0);
+});
+
+/**
+ * Display subtotal adjusted for tax-inclusive mode.
+ *
+ * When tax is inclusive, the raw subtotal from the store includes tax.
+ * For clear cashier display, we show:
+ * - Subtotal: Net amount (before tax) = gross - tax
+ * - Tax: The extracted tax amount
+ * - Grand Total: gross amount = Subtotal + Tax
+ *
+ * When tax is exclusive, subtotal is already net (before tax).
+ *
+ * @returns {Number} Subtotal amount to display (net amount before tax)
+ */
+const displaySubtotal = computed(() => {
+	if (cartStore.taxInclusive) {
+		// Tax inclusive: subtotal from store is gross (includes tax)
+		// Display the net amount (before tax) for clarity
+		return props.subtotal - props.taxAmount;
+	}
+	// Tax exclusive: subtotal is already net (before tax)
+	return props.subtotal;
+});
+
+/**
+ * Display grand total that visually equals Subtotal + Tax - Discount.
+ *
+ * This ensures the math is intuitive for cashiers:
+ * Grand Total = displaySubtotal + Tax - Discount
+ *
+ * @returns {Number} Grand total amount to display
+ */
+const displayGrandTotal = computed(() => {
+	// Always: displaySubtotal + tax - discount
+	// This makes the display consistent and intuitive
+	return displaySubtotal.value + props.taxAmount - props.discountAmount;
 });
 
 /**
