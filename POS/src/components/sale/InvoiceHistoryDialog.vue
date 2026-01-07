@@ -191,8 +191,8 @@ const invoicesResource = createResource({
 				"is_return",
 			],
 			order_by: "creation desc",
-			start: 0,
-			page_length: 100,
+			start: page.value * pageSize,
+			page_length: pageSize,
 		}
 	},
 	auto: false,
