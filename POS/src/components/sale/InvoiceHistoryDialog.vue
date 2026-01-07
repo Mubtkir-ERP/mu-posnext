@@ -166,7 +166,7 @@ const show = ref(props.modelValue)
 const invoices = ref([])
 const searchTerm = ref("")
 const page = ref(0)
-const pageSize = 50
+const pageSize = 20
 const hasMore = ref(true)
 
 // Create resource for loading invoices
@@ -191,8 +191,8 @@ const invoicesResource = createResource({
 				"is_return",
 			],
 			order_by: "creation desc",
-			start: page.value * pageSize,
-			page_length: pageSize,
+			start: 0,
+			page_length: 100,
 		}
 	},
 	auto: false,
