@@ -968,7 +968,7 @@ def get_items(pos_profile, search_term=None, item_group=None, start=0, limit=20)
 		effective_search_term = search_term
 		if search_term and len(search_term.strip().split()) == 1:
 			from pos_next.services.barcode import resolve_barcode
-			resolved_barcode_data = resolve_barcode(search_term.strip())
+			resolved_barcode_data = resolve_barcode(search_term.strip(), pos_profile)
 			if resolved_barcode_data and resolved_barcode_data.get("item_barcode"):
 				# Use the extracted item barcode for searching
 				effective_search_term = resolved_barcode_data["item_barcode"]

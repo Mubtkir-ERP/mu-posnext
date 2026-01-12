@@ -22,7 +22,7 @@ Usage:
 from __future__ import annotations
 
 from functools import lru_cache
-from typing import TypedDict
+from typing import List, TypedDict
 
 import frappe
 from erpnext.stock.get_item_details import get_conversion_factor
@@ -62,7 +62,7 @@ def is_barcode_resolver_available() -> bool:
     return "barcode_resolver" in frappe.get_installed_apps()
 
 
-def resolve_barcode(barcode: str) -> BarcodeResult | None:
+def resolve_barcode(barcode: str, pos_profile: str) -> BarcodeResult | None:
     """
     Resolve a barcode using the barcode_resolver app if available.
 
@@ -88,8 +88,10 @@ def resolve_barcode(barcode: str) -> BarcodeResult | None:
         from barcode_resolver.barcode_resolver.doctype.barcode_rule.utils import (
             resolve_barcode as _resolve_barcode,
         )
-
-        return _resolve_barcode(barcode)
+        # get POS Settings
+        pos_settings = frappe.get_doc("POS Settings", {"pos_profile": pos_profile})
+        barcode_rules = [rule.barcode_rule for rule in pos_settings.barcode_rules if not rule.disable]
+        return _resolve_barcode(barcode, barcode_rules)
     except ImportError:
         # App might have been uninstalled, clear cache and return None
         is_barcode_resolver_available.cache_clear()
