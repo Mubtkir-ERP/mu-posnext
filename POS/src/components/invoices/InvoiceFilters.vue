@@ -126,6 +126,24 @@
 					<div class="filter-field">
 						<label class="field-label">
 							<svg class="label-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/>
+							</svg>
+							{{ __('Customer Phone') }}
+						</label>
+						<input
+							v-model="store.customerNumber"
+							type="text"
+							class="field-input"
+							:placeholder="__('Enter phone number...')"
+						/>
+					</div>
+				</div>
+
+				<!-- Product & POS Status in Row -->
+				<div class="filter-row">
+					<div class="filter-field">
+						<label class="field-label">
+							<svg class="label-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/>
 							</svg>
 							{{ __('Product') }}
@@ -136,6 +154,28 @@
 							:placeholder="__('Search products...')"
 							icon="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"
 						/>
+					</div>
+
+					<div class="filter-field">
+						<label class="field-label">
+							<svg class="label-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/>
+							</svg>
+							{{ __('POS Status') }}
+						</label>
+						<select
+							v-model="store.posStatus"
+							class="field-select"
+						>
+							<option value="">{{ __('All statuses') }}</option>
+							<option
+								v-for="status in posStatusOptions"
+								:key="status"
+								:value="status"
+							>
+								{{ __(status) }}
+							</option>
+						</select>
 					</div>
 				</div>
 
@@ -262,15 +302,32 @@ const statusOptions = [
 	{ label: __("Overdue"), value: "Overdue" },
 ]
 
-// Advanced filters (customer, product, custom date)
+// POS Status options
+const posStatusOptions = [
+	'Received',
+	'Ready',
+	'Under Delivery',
+	'Delivered',
+	'Washing and Ironing'
+]
+
+// Advanced filters (customer, product, custom date, customer number, pos status)
 const hasAdvancedFilters = computed(() => {
-	return !!(store.customer || store.product || (store.dateFrom && store.dateTo))
+	return !!(
+		store.customer || 
+		store.product || 
+		store.customerNumber ||
+		store.posStatus ||
+		(store.dateFrom && store.dateTo)
+	)
 })
 
 const advancedFiltersCount = computed(() => {
 	let count = 0
 	if (store.customer) count++
 	if (store.product) count++
+	if (store.customerNumber) count++
+	if (store.posStatus) count++
 	if (store.dateFrom && store.dateTo) count++
 	return count
 })

@@ -21,6 +21,8 @@ export const useInvoiceFiltersStore = defineStore("invoiceFilters", () => {
 	const savedFilters = ref([])
 	const currentFilterName = ref("")
 
+	const customerNumber = ref("")
+	const posStatus = ref("")
 	// Computed: Active filters count
 	const activeFiltersCount = computed(() => {
 		let count = 0
@@ -28,6 +30,8 @@ export const useInvoiceFiltersStore = defineStore("invoiceFilters", () => {
 		if (customer.value) count++
 		if (status.value) count++
 		if (product.value) count++
+		if (customerNumber.value) count++
+		if (posStatus.value) count++
 		return count
 	})
 
@@ -67,6 +71,22 @@ export const useInvoiceFiltersStore = defineStore("invoiceFilters", () => {
 				type: "product",
 				label: product.value,
 				value: product.value,
+			})
+		}
+
+		if (customerNumber.value) {
+			summary.push({
+				type: "customerNumber",
+				label: __('Phone: {0}', [customerNumber.value]),
+				value: customerNumber.value,
+			})
+		}
+
+		if (posStatus.value) {
+			summary.push({
+				type: "posStatus",
+				label: __('POS: {0}', [posStatus.value]),
+				value: posStatus.value,
 			})
 		}
 
@@ -137,6 +157,14 @@ export const useInvoiceFiltersStore = defineStore("invoiceFilters", () => {
 		status.value = ""
 	}
 
+	function clearCustomerNumberFilter() {
+		customerNumber.value = ""
+	}
+
+	function clearPosStatusFilter() {
+		posStatus.value = ""
+	}
+
 	function clearProductFilter() {
 		product.value = ""
 	}
@@ -151,6 +179,8 @@ export const useInvoiceFiltersStore = defineStore("invoiceFilters", () => {
 		customer.value = ""
 		status.value = ""
 		product.value = ""
+		customerNumber.value = ""
+		posStatus.value = ""
 		searchTerm.value = ""
 	}
 
@@ -168,6 +198,12 @@ export const useInvoiceFiltersStore = defineStore("invoiceFilters", () => {
 			case "product":
 				clearProductFilter()
 				break
+			case "customerNumber":
+				clearCustomerNumberFilter()
+				break
+			case "posStatus":
+				clearPosStatusFilter()
+				break
 		}
 	}
 
@@ -180,6 +216,8 @@ export const useInvoiceFiltersStore = defineStore("invoiceFilters", () => {
 			customer: customer.value,
 			status: status.value,
 			product: product.value,
+			customerNumber: customerNumber.value,
+			posStatus: posStatus.value,
 			createdAt: new Date().toISOString(),
 		}
 
@@ -207,6 +245,8 @@ export const useInvoiceFiltersStore = defineStore("invoiceFilters", () => {
 			customer.value = preset.customer
 			status.value = preset.status
 			product.value = preset.product
+			customerNumber.value = preset.customerNumber
+			posStatus.value = preset.posStatus
 			currentFilterName.value = name
 		}
 	}
@@ -280,6 +320,8 @@ export const useInvoiceFiltersStore = defineStore("invoiceFilters", () => {
 		status,
 		product,
 		searchTerm,
+		customerNumber,
+		posStatus,
 		showFilters,
 		savedFilters,
 		currentFilterName,
@@ -301,6 +343,8 @@ export const useInvoiceFiltersStore = defineStore("invoiceFilters", () => {
 		// Actions - Clear
 		clearDateFilter,
 		clearCustomerFilter,
+		clearCustomerNumberFilter,
+		clearPosStatusFilter,
 		clearStatusFilter,
 		clearProductFilter,
 		clearSearchTerm,

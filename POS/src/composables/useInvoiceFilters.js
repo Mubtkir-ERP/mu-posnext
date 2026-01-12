@@ -78,7 +78,18 @@ export function useInvoiceFilters(invoices) {
 				)
 			})
 		}
+		// Apply customer phone filter (custom_phone field in Sales Invoice)
+		if (filtersStore.customerNumber) {
+			const customerPhoneSearch = filtersStore.customerNumber.toLowerCase()
+			result = result.filter((inv) =>
+				inv.custom_phone?.toLowerCase().includes(customerPhoneSearch)
+			)
+		}
 
+		// Apply POS status filter
+		if (filtersStore.posStatus) {
+			result = result.filter((inv) => inv.pos_status === filtersStore.posStatus)
+		}
 		return result
 	})
 
@@ -148,6 +159,23 @@ export function useInvoiceFilters(invoices) {
 	})
 
 	/**
+	 * Get unique POS statuses from invoices
+	 */
+	const uniquePosStatuses = computed(() => {
+		if (!Array.isArray(invoices.value)) return []
+
+		const statuses = new Set()
+		invoices.value.forEach((inv) => {
+			if (inv.pos_status) {
+				statuses.add(inv.pos_status)
+			}
+		})
+
+		return Array.from(statuses).sort()
+	})
+
+
+	/**
 	 * Get customer name from value
 	 */
 	function getCustomerName(customerValue) {
@@ -214,6 +242,17 @@ export function useInvoiceFilters(invoices) {
 			)
 			if (!hasProduct) return false
 		}
+		// Customer phone filter (custom_phone field in Sales Invoice)
+		if (filtersStore.customerNumber) {
+			const customerPhoneSearch = filtersStore.customerNumber.toLowerCase()
+			const matchesCustomerPhone = invoice.custom_phone?.toLowerCase().includes(customerPhoneSearch)
+			if (!matchesCustomerPhone) return false
+		}
+
+		// POS Status
+		if (filtersStore.posStatus) {
+			if (invoice.pos_status !== filtersStore.posStatus) return false
+		}
 
 		return true
 	}
@@ -227,8 +266,8 @@ export function useInvoiceFilters(invoices) {
 			filtered: filteredInvoices.value.length,
 			percentage: invoices.value?.length
 				? Math.round(
-						(filteredInvoices.value.length / invoices.value.length) * 100,
-					)
+					(filteredInvoices.value.length / invoices.value.length) * 100,
+				)
 				: 0,
 		}
 	})
@@ -239,6 +278,7 @@ export function useInvoiceFilters(invoices) {
 		uniqueCustomers,
 		uniqueProducts,
 		uniqueStatuses,
+		uniquePosStatuses,
 		filterStats,
 
 		// Helper functions
