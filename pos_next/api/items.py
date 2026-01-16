@@ -467,31 +467,36 @@ def get_item_variants(template_item, pos_profile):
 	try:
 		pos_profile_doc = frappe.get_cached_doc("POS Profile", pos_profile)
 
-		# Get all variants of this template
+		# Get all variants of this template using Query Builder for Frappe 16 compatibility
 		# Apply company filter: show variants for specific company + global variants (empty company)
-		variant_filters = {"variant_of": template_item, "disabled": 0, "is_sales_item": 1}
+		Item = DocType("Item")
+		query = (
+			frappe.qb.from_(Item)
+			.select(
+				Item.name.as_("item_code"),
+				Item.item_name,
+				Item.stock_uom,
+				Item.image,
+				Item.is_stock_item,
+				Item.has_batch_no,
+				Item.has_serial_no,
+				Item.item_group,
+				Item.brand,
+				Item.custom_company,
+				Item.variant_of,
+			)
+			.where(Item.variant_of == template_item)
+			.where(Item.disabled == 0)
+			.where(Item.is_sales_item == 1)
+		)
 
 		# Add company filter to show items for specific company + global items
 		if pos_profile_doc.company:
-			variant_filters["ifnull(custom_company, '')"] = ["in", [pos_profile_doc.company, ""]]
+			query = query.where(
+				fn.Coalesce(Item.custom_company, "").isin([pos_profile_doc.company, ""])
+			)
 
-		variants = frappe.get_all(
-			"Item",
-			filters=variant_filters,
-			fields=[
-				"name as item_code",
-				"item_name",
-				"stock_uom",
-				"image",
-				"is_stock_item",
-				"has_batch_no",
-				"has_serial_no",
-				"item_group",
-				"brand",
-				"custom_company",
-				"variant_of",  # Include for offline caching
-			],
-		)
+		variants = query.run(as_dict=True)
 
 		# If no variants found, return empty with helpful message
 		if not variants:
@@ -947,25 +952,10 @@ def get_items(pos_profile, search_term=None, item_group=None, start=0, limit=20)
 	try:
 		pos_profile_doc = frappe.get_cached_doc("POS Profile", pos_profile)
 
-		filters = {
-			"disabled": 0,
-			"is_sales_item": 1,  # Only show items with "Allow Sales" enabled
-			"ifnull(variant_of, '')": "",  # Exclude items that are variants of a template
-		}
-
 		# IMPORTANT: Filtering logic explained:
 		# - Template items (has_variants=1) are shown → users select variants via dialog
 		# - Regular items (has_variants=0, variant_of is null) are shown → direct add to cart
 		# - Variant items (has_variants=0, variant_of is not null) are HIDDEN from main list
-
-		# Add company filter - show items for specific company + global items (empty company)
-		# Global items (custom_company is empty) are available to all companies
-		if pos_profile_doc.company:
-			filters["ifnull(custom_company, '')"] = ["in", [pos_profile_doc.company, ""]]
-
-		# Add item group filter if provided
-		if item_group:
-			filters["item_group"] = item_group
 
 		# Build search conditions with fuzzy word-order independent matching
 		if search_term and len(search_term.strip()) > 0:
@@ -1012,29 +1002,43 @@ def get_items(pos_profile, search_term=None, item_group=None, start=0, limit=20)
 			params.extend([limit, start])
 			items = frappe.db.sql(query, tuple(params), as_dict=1)
 		else:
-			# No search term - return all items with base filters
-			items = frappe.get_list(
-				"Item",
-				filters=filters,
-				fields=[
-					"name as item_code",
-					"item_name",
-					"description",
-					"stock_uom",
-					"image",
-					"is_stock_item",
-					"has_batch_no",
-					"has_serial_no",
-					"item_group",
-					"brand",
-					"has_variants",
-					"custom_company",
-					"disabled",
-				],
-				start=start,
-				page_length=limit,
-				order_by="item_name asc",
+			# No search term - return all items with base filters using Query Builder
+			# for Frappe 16 compatibility (ifnull in filter keys is no longer allowed)
+			Item = DocType("Item")
+			query = (
+				frappe.qb.from_(Item)
+				.select(
+					Item.name.as_("item_code"),
+					Item.item_name,
+					Item.description,
+					Item.stock_uom,
+					Item.image,
+					Item.is_stock_item,
+					Item.has_batch_no,
+					Item.has_serial_no,
+					Item.item_group,
+					Item.brand,
+					Item.has_variants,
+					Item.custom_company,
+					Item.disabled,
+				)
+				.where(Item.disabled == 0)
+				.where(Item.is_sales_item == 1)
+				.where(fn.Coalesce(Item.variant_of, "") == "")  # Exclude variants
 			)
+
+			# Add company filter - show items for specific company + global items
+			if pos_profile_doc.company:
+				query = query.where(
+					fn.Coalesce(Item.custom_company, "").isin([pos_profile_doc.company, ""])
+				)
+
+			# Add item group filter if provided
+			if item_group:
+				query = query.where(Item.item_group == item_group)
+
+			query = query.orderby(Item.item_name).limit(limit).offset(start)
+			items = query.run(as_dict=True)
 
 		# Prepare maps for enrichment
 		item_codes = [item["item_code"] for item in items]
