@@ -533,6 +533,7 @@
 				:item="cartStore.pendingItem"
 				:quantity="cartStore.pendingItemQty"
 				:warehouse="shiftStore.profileWarehouse"
+				:pos-profile="cartStore.posProfile"
 				@batch-serial-selected="handleBatchSerialSelected"
 			/>
 
