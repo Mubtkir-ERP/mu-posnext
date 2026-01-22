@@ -1337,7 +1337,7 @@ def get_returnable_invoices(limit=50, pos_profile=None):
     """
     from frappe.query_builder.functions import Sum, Coalesce, Abs
     from frappe.query_builder import Case
-    from pypika import functions as fn
+    from frappe.utils import add_days, today
 
     # Check return validity days from POS Settings
     return_validity_days = 0
@@ -1393,9 +1393,8 @@ def get_returnable_invoices(limit=50, pos_profile=None):
 
     # Add date filter if return validity is configured
     if return_validity_days > 0:
-        query = query.where(
-            si.posting_date >= fn.DateSub(fn.CurDate(), return_validity_days, "DAY")
-        )
+        cutoff_date = add_days(today(), -return_validity_days)
+        query = query.where(si.posting_date >= cutoff_date)
 
     # Execute and filter results with HAVING equivalent (post-filter)
     results = query.run(as_dict=True)
