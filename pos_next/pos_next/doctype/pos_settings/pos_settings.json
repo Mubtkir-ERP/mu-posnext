@@ -26,6 +26,7 @@
   "allow_return",
   "allow_write_off_change",
   "allow_partial_payment",
+  "use_exact_amount",
   "enable_sales_persons",
   "section_break_display",
   "default_card_view",
@@ -224,6 +225,13 @@
    "fieldtype": "Check",
    "label": "Allow Partial Payment",
    "description": "Enable partial payment for invoices"
+  },
+  {
+   "default": "0",
+   "fieldname": "use_exact_amount",
+   "fieldtype": "Check",
+   "label": "Use Exact Amount for Non-Cash",
+   "description": "When enabled, non-cash payments (card, bank transfer) require exact amount. Cash payments can still have change. Cannot be used with Credit Sale or Partial Payment."
   },
   {
    "default": "Disabled",
