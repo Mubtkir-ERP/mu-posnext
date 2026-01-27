@@ -1782,6 +1782,15 @@ def prepare_return_invoice(invoice_name, pos_opening_shift=None):
             item_copy["remaining_qty"] = remaining_qty
             # Set qty to negative of remaining (for return)
             item_copy["qty"] = -remaining_qty
+
+            # Use net_rate for returns to ensure customer gets refund based on actual paid price
+            # net_rate accounts for invoice-level discounts (coupons, additional discounts)
+            # while rate only reflects item-level discounts
+            item_copy["rate"] = flt(item.get("net_rate") or item.get("rate"))
+
+            # Recalculate amount based on net_rate
+            item_copy["amount"] = item_copy["rate"] * item_copy["qty"]
+
             updated_items.append(item_copy)
 
     return_dict["items"] = updated_items
