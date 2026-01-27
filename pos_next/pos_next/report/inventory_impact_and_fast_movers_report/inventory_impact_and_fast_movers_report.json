@@ -15,7 +15,7 @@
  "name": "Inventory Impact and Fast Movers Report",
  "owner": "Administrator",
  "prepared_report": 0,
- "ref_doctype": "Sales Invoice Item",
+ "ref_doctype": "Sales Invoice",
  "report_name": "Inventory Impact and Fast Movers Report",
  "report_type": "Script Report",
  "roles": [
