@@ -1106,61 +1106,36 @@ def get_chart(data):
 		else:
 			labels.append(d.shift_id[:8] if d.shift_id else "-")
 
-	# Ensure all values are valid numbers (not None/undefined)
+	# Ensure all values are valid numbers
 	net_sales_values = [flt(d.net_sales or 0) for d in recent]
-	efficiency_values = [flt(d.efficiency or 0) for d in recent]
+	gross_sales_values = [flt(d.gross_sales or 0) for d in recent]
+	returns_values = [flt(d.returns or 0) for d in recent]
 
-	# Don't render chart if all values are zero
-	if not any(net_sales_values) and not any(efficiency_values):
+	# Don't render chart if no sales data
+	if not any(net_sales_values) and not any(gross_sales_values):
 		return None
 
-	# For single data point, use bar chart only (line chart needs 2+ points)
-	if len(recent) == 1:
-		return {
-			"data": {
-				"labels": labels,
-				"datasets": [
-					{
-						"name": _("Net Sales"),
-						"values": net_sales_values
-					}
-				]
-			},
-			"type": "bar",
-			"colors": ["#10b981"],
-			"height": 280
-		}
-
-	# For multiple data points, use mixed chart
+	# Simple, clean bar chart showing sales breakdown
 	return {
 		"data": {
 			"labels": labels,
 			"datasets": [
 				{
 					"name": _("Net Sales"),
-					"values": net_sales_values,
-					"chartType": "bar"
+					"values": net_sales_values
 				},
 				{
-					"name": _("Efficiency %"),
-					"values": efficiency_values,
-					"chartType": "line"
+					"name": _("Returns"),
+					"values": returns_values
 				}
 			]
 		},
-		"type": "axis-mixed",
-		"colors": ["#10b981", "#6366f1"],
+		"type": "bar",
+		"colors": ["#10b981", "#ef4444"],
 		"height": 280,
-		"axisOptions": {
-			"xIsSeries": True,
-			"xAxisMode": "tick"
-		},
 		"barOptions": {
-			"spaceRatio": 0.5
-		},
-		"lineOptions": {
-			"dotSize": 6,
-			"regionFill": 1
+			"spaceRatio": 0.4,
+			"stacked": False
 		}
 	}
 
