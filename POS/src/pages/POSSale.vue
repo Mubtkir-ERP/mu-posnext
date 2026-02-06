@@ -2142,7 +2142,8 @@ async function handleLoadDraft(draft) {
 }
 
 function handleReturnCreated(returnInvoice) {
-	showSuccess(__("Return invoice {0} created successfully", [returnInvoice.name]));
+	// Success message is already shown by ReturnInvoiceDialog
+	log.debug("Return invoice created:", returnInvoice.name)
 }
 
 function handleDiscountApplied(discount) {
