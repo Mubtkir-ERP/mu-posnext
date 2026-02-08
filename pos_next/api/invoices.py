@@ -716,11 +716,20 @@ def update_invoice(data):
                 [
                     FIELD_ALLOW_USER_TO_EDIT_RATE,
                     FIELD_MAX_DISCOUNT_ALLOWED,
-                    FIELD_DISABLE_ROUNDED_TOTAL,
                     FIELD_ALLOW_NEGATIVE_STOCK
                 ],
                 as_dict=True
             )
+            # disable_rounded_total is on POS Profile, not POS Settings
+            pos_profile_rounded = frappe.db.get_value(
+                DOCTYPE_POS_PROFILE,
+                pos_profile,
+                FIELD_DISABLE_ROUNDED_TOTAL
+            )
+            if pos_settings_cache:
+                pos_settings_cache[FIELD_DISABLE_ROUNDED_TOTAL] = pos_profile_rounded
+            else:
+                pos_settings_cache = {FIELD_DISABLE_ROUNDED_TOTAL: pos_profile_rounded}
 
         # ========================================================================
         # DISCOUNT CALCULATION - CRITICAL LOGIC
