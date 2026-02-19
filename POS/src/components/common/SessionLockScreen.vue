@@ -156,7 +156,7 @@ import { usePOSCartStore } from "@/stores/posCart"
 import { usePOSUIStore } from "@/stores/posUI"
 import { session } from "@/data/session"
 
-const { isLocked, isVerifying, verifyError, lockedUser, unlock } = useSessionLock()
+const { isLocked, isVerifying, verifyError, lockedUser, unlock, clearLock } = useSessionLock()
 
 const password = ref("")
 const showPassword = ref(false)
@@ -182,6 +182,7 @@ async function handleUnlock() {
 
 	if (result.sessionExpired) {
 		// Session expired — full logout
+		clearLock()
 		cartStore.clearCart()
 		uiStore.resetAllDialogs()
 		session.logout.submit()
@@ -197,6 +198,7 @@ async function handleUnlock() {
 }
 
 function handleSignOut() {
+	clearLock()
 	cartStore.clearCart()
 	uiStore.resetAllDialogs()
 	session.logout.submit()

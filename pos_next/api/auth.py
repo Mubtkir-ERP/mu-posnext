@@ -6,9 +6,15 @@ from frappe.utils.password import check_password
 
 @frappe.whitelist()
 def verify_session_password(password):
-    """Verify the current session user's password for session lock re-authentication."""
+    """Verify the current session user's password for session lock re-authentication.
+
+    NOTE: We must NOT raise frappe.AuthenticationError here because Frappe's
+    error handler (app.py) calls login_manager.clear_cookies() for that
+    exception type, which would destroy the user's session on a wrong password.
+    Instead, we return a structured response indicating success or failure.
+    """
     try:
         check_password(frappe.session.user, password)
         return {"verified": True}
     except frappe.AuthenticationError:
-        frappe.throw(_("Incorrect password"), frappe.AuthenticationError)
+        return {"verified": False, "message": _("Incorrect password")}

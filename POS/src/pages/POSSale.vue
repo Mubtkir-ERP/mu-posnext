@@ -144,6 +144,26 @@
 						</svg>
 						<span>{{ __("Return Invoice") }}</span>
 					</button>
+					<hr class="my-1 border-gray-100">
+					<button
+						@click="lockSession()"
+						class="w-full text-start px-4 py-2.5 text-sm text-gray-700 hover:bg-amber-50 flex items-center gap-3 transition-colors"
+					>
+						<svg
+							class="w-5 h-5 text-amber-600"
+							fill="none"
+							stroke="currentColor"
+							viewBox="0 0 24 24"
+						>
+							<path
+								stroke-linecap="round"
+								stroke-linejoin="round"
+								stroke-width="2"
+								d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"
+							/>
+						</svg>
+						<span>{{ __("Lock Screen") }}</span>
+					</button>
 				</template>
 				<template #additional-actions>
 					<button
@@ -1018,7 +1038,7 @@ const settingsStore = posSettingsStore;
 const { onStockUpdate } = useRealtimeStock();
 
 // Session lock (inactivity + tab-refocus)
-const { startActivityTracking, stopActivityTracking } = useSessionLock();
+const { lock: lockSession, startActivityTracking, stopActivityTracking } = useSessionLock();
 
 // POS Events system
 const {

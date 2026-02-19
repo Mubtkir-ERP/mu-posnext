@@ -10,26 +10,29 @@ const THROTTLE_MS = 1000
 // Defer lock retry when submission in progress
 const DEFER_MS = 30 * 1000
 
+// ---------------------------------------------------------------------------
+// localStorage persistence (survives browser close, unlike sessionStorage)
+// ---------------------------------------------------------------------------
 const STORAGE_KEY = "pos_session_lock"
 
-// Restore lock state from sessionStorage (survives page reload, scoped to tab)
 function restoreLockState() {
 	try {
-		const saved = sessionStorage.getItem(STORAGE_KEY)
+		const saved = localStorage.getItem(STORAGE_KEY)
 		if (saved) {
 			const data = JSON.parse(saved)
-			return { locked: true, user: data.user || null }
+			if (data?.locked) {
+				return { locked: true, user: data.user || null }
+			}
 		}
 	} catch {
-		// Corrupted data — clear it
-		sessionStorage.removeItem(STORAGE_KEY)
+		localStorage.removeItem(STORAGE_KEY)
 	}
 	return { locked: false, user: null }
 }
 
 function persistLock(user) {
 	try {
-		sessionStorage.setItem(STORAGE_KEY, JSON.stringify({ user }))
+		localStorage.setItem(STORAGE_KEY, JSON.stringify({ user, locked: true }))
 	} catch {
 		// Storage full or unavailable — lock still works in-memory
 	}
@@ -37,7 +40,7 @@ function persistLock(user) {
 
 function clearPersistedLock() {
 	try {
-		sessionStorage.removeItem(STORAGE_KEY)
+		localStorage.removeItem(STORAGE_KEY)
 	} catch {
 		// Ignore
 	}
@@ -52,10 +55,17 @@ const lockedUser = ref(restored.user)
 
 let inactivityTimer = null
 let lastActivityTime = 0
-let wasHiddenWhileUnlocked = false
 let listenersAttached = false
 
 const ACTIVITY_EVENTS = ["mousedown", "mousemove", "keydown", "touchstart", "scroll", "click"]
+
+function getUserInfo() {
+	return {
+		name: userData.getDisplayName(),
+		image: userData.getImageUrl(),
+		initials: userData.getInitials(),
+	}
+}
 
 function resetTimer() {
 	const now = Date.now()
@@ -82,11 +92,7 @@ function lock() {
 	if (isLocked.value) return
 
 	isLocked.value = true
-	lockedUser.value = {
-		name: userData.getDisplayName(),
-		image: userData.getImageUrl(),
-		initials: userData.getInitials(),
-	}
+	lockedUser.value = getUserInfo()
 
 	persistLock(lockedUser.value)
 
@@ -98,14 +104,8 @@ function lock() {
 
 function handleVisibilityChange() {
 	if (document.hidden) {
-		if (!isLocked.value) {
-			wasHiddenWhileUnlocked = true
-		}
-	} else {
-		if (wasHiddenWhileUnlocked && !isLocked.value) {
-			lock()
-		}
-		wasHiddenWhileUnlocked = false
+		// Lock immediately when tab loses focus
+		lock()
 	}
 }
 
@@ -114,31 +114,52 @@ async function unlock(password) {
 	verifyError.value = ""
 
 	try {
-		await call("pos_next.api.auth.verify_session_password", { password })
-		isLocked.value = false
-		lockedUser.value = null
+		const res = await call("pos_next.api.auth.verify_session_password", { password })
+		const data = res?.message || res
+
+		if (data?.verified) {
+			isLocked.value = false
+			lockedUser.value = null
+			isVerifying.value = false
+			clearPersistedLock()
+			// Restart inactivity tracking
+			lastActivityTime = Date.now()
+			resetTimer()
+			return { success: true }
+		}
+
+		// Wrong password — backend returns { verified: false, message: "..." }
 		isVerifying.value = false
-		clearPersistedLock()
-		// Restart inactivity tracking
-		lastActivityTime = Date.now()
-		resetTimer()
-		return { success: true }
+		verifyError.value = data?.message || __("Incorrect password")
+		return { success: false }
 	} catch (error) {
 		isVerifying.value = false
 
-		const status = error?.httpStatus || error?.status || error?.exc_type
-		if (status === 401 || status === 403 || error?.exc_type === "AuthenticationError") {
-			// Check if it's a session expiry (not just wrong password)
-			if (status === 401 || status === 403) {
-				return { sessionExpired: true }
-			}
-			verifyError.value = __("Incorrect password")
-			return { success: false }
+		const httpStatus = error?.status
+
+		// Session expired — 401 or 403 from Frappe's session middleware
+		if (httpStatus === 401 || httpStatus === 403) {
+			return { sessionExpired: true }
 		}
 
 		// Network or other error
 		verifyError.value = __("Could not verify password. Please try again.")
 		return { success: false }
+	}
+}
+
+function clearLock() {
+	isLocked.value = false
+	lockedUser.value = null
+	verifyError.value = ""
+	clearPersistedLock()
+}
+
+function handlePageHide() {
+	// Persist lock state on browser close / navigate away so the session
+	// starts locked on reload even if it wasn't locked at the moment of closing
+	if (!isLocked.value) {
+		persistLock(getUserInfo())
 	}
 }
 
@@ -149,6 +170,7 @@ function startActivityTracking() {
 		document.addEventListener(event, resetTimer, { passive: true, capture: true })
 	}
 	document.addEventListener("visibilitychange", handleVisibilityChange)
+	window.addEventListener("pagehide", handlePageHide)
 
 	listenersAttached = true
 	lastActivityTime = Date.now()
@@ -162,6 +184,7 @@ function stopActivityTracking() {
 		document.removeEventListener(event, resetTimer, { capture: true })
 	}
 	document.removeEventListener("visibilitychange", handleVisibilityChange)
+	window.removeEventListener("pagehide", handlePageHide)
 
 	if (inactivityTimer) {
 		clearTimeout(inactivityTimer)
@@ -169,7 +192,6 @@ function stopActivityTracking() {
 	}
 
 	listenersAttached = false
-	wasHiddenWhileUnlocked = false
 }
 
 export function useSessionLock() {
@@ -180,6 +202,7 @@ export function useSessionLock() {
 		lockedUser: readonly(lockedUser),
 		lock,
 		unlock,
+		clearLock,
 		startActivityTracking,
 		stopActivityTracking,
 	}

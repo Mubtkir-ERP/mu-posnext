@@ -105,6 +105,7 @@ import { useRouter } from "vue-router"
 import ShiftOpeningDialog from "../components/ShiftOpeningDialog.vue"
 import { useShift } from "../composables/useShift"
 import { session } from "../data/session"
+import { useSessionLock } from "../composables/useSessionLock"
 import { ensureCSRFToken } from "../utils/csrf"
 import { offlineWorker } from "../utils/offline/workerClient"
 
@@ -112,6 +113,7 @@ const router = useRouter()
 const { shiftState } = useShift()
 const cartStore = usePOSCartStore()
 const uiStore = usePOSUIStore()
+const { clearLock } = useSessionLock()
 
 const loginForm = reactive({
 	email: "",
@@ -137,6 +139,7 @@ onMounted(() => {
 	// If user is already logged in (e.g., after successful login), don't clear their session
 	if (!session.isLoggedIn) {
 		showShiftDialog.value = false
+		clearLock()
 		cartStore.clearCart()
 		uiStore.resetAllDialogs()
 
