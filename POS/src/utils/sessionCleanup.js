@@ -11,6 +11,7 @@ import { shiftState } from "@/composables/useShift"
 const USER_KEYS = [
 	"pos_session_lock",
 	"pos_session_pwd_hash",
+	"pos_lock_attempts",
 	"pos_shift_data",
 	"pos_recent_customers",
 	"pos_frequent_customers",

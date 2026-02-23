@@ -53,18 +53,64 @@ function clearPersistedLock() {
 // Cached password hash (offline unlock fallback)
 // ---------------------------------------------------------------------------
 const PASSWORD_HASH_KEY = "pos_session_pwd_hash"
+const ATTEMPT_KEY = "pos_lock_attempts"
+const PBKDF2_ITERATIONS = 100_000
+const HASH_TTL_MS = 24 * 60 * 60 * 1000 // 24 hours
+const MAX_OFFLINE_ATTEMPTS = 5
+const LOCKOUT_MS = 60 * 1000 // 1 minute lockout after max attempts
 
-async function hashPassword(password) {
-	const encoded = new TextEncoder().encode(password)
-	const buffer = await crypto.subtle.digest("SHA-256", encoded)
-	return Array.from(new Uint8Array(buffer))
+function bytesToHex(bytes) {
+	return Array.from(bytes)
 		.map((b) => b.toString(16).padStart(2, "0"))
 		.join("")
 }
 
-function cachePasswordHash(hash) {
+function hexToBytes(hex) {
+	const bytes = new Uint8Array(hex.length / 2)
+	for (let i = 0; i < hex.length; i += 2) {
+		bytes[i / 2] = parseInt(hex.substring(i, i + 2), 16)
+	}
+	return bytes
+}
+
+async function hashPassword(password, existingSalt = null) {
+	const encoder = new TextEncoder()
+	const salt = existingSalt
+		? hexToBytes(existingSalt)
+		: crypto.getRandomValues(new Uint8Array(16))
+
+	const keyMaterial = await crypto.subtle.importKey(
+		"raw",
+		encoder.encode(password),
+		"PBKDF2",
+		false,
+		["deriveBits"]
+	)
+
+	const bits = await crypto.subtle.deriveBits(
+		{
+			name: "PBKDF2",
+			salt,
+			iterations: PBKDF2_ITERATIONS,
+			hash: "SHA-256",
+		},
+		keyMaterial,
+		256
+	)
+
+	return { hash: bytesToHex(new Uint8Array(bits)), salt: bytesToHex(salt) }
+}
+
+function getCurrentUserId() {
+	return userData.userId || window.frappe?.session?.user || null
+}
+
+function cachePasswordHash(user, hash, salt) {
 	try {
-		localStorage.setItem(PASSWORD_HASH_KEY, hash)
+		localStorage.setItem(
+			PASSWORD_HASH_KEY,
+			JSON.stringify({ user, hash, salt, ts: Date.now() })
+		)
 	} catch {
 		// Storage full or unavailable
 	}
@@ -72,8 +118,38 @@ function cachePasswordHash(hash) {
 
 function getCachedPasswordHash() {
 	try {
-		return localStorage.getItem(PASSWORD_HASH_KEY)
+		const raw = localStorage.getItem(PASSWORD_HASH_KEY)
+		if (!raw) return null
+
+		const data = JSON.parse(raw)
+
+		// Reject if data is malformed
+		if (!data?.hash || !data?.salt || !data?.user || !data?.ts) {
+			localStorage.removeItem(PASSWORD_HASH_KEY)
+			return null
+		}
+
+		// Reject if we can't identify the current user (can't verify ownership)
+		const currentUser = getCurrentUserId()
+		if (!currentUser) {
+			return null
+		}
+
+		// Reject if hash belongs to a different user
+		if (data.user !== currentUser) {
+			localStorage.removeItem(PASSWORD_HASH_KEY)
+			return null
+		}
+
+		// Reject if expired
+		if (Date.now() - data.ts > HASH_TTL_MS) {
+			localStorage.removeItem(PASSWORD_HASH_KEY)
+			return null
+		}
+
+		return { hash: data.hash, salt: data.salt }
 	} catch {
+		localStorage.removeItem(PASSWORD_HASH_KEY)
 		return null
 	}
 }
@@ -87,8 +163,60 @@ function clearCachedPasswordHash() {
 }
 
 async function cachePasswordHashFromLogin(password) {
-	const hash = await hashPassword(password)
-	cachePasswordHash(hash)
+	const user = getCurrentUserId()
+	const { hash, salt } = await hashPassword(password)
+	cachePasswordHash(user, hash, salt)
+}
+
+// ---------------------------------------------------------------------------
+// Offline brute-force protection
+// ---------------------------------------------------------------------------
+function checkOfflineAttemptLimit() {
+	try {
+		const raw = localStorage.getItem(ATTEMPT_KEY)
+		if (!raw) return { allowed: true }
+
+		const data = JSON.parse(raw)
+		if (data.count >= MAX_OFFLINE_ATTEMPTS) {
+			// Escalating lockout: doubles each time the limit is hit again
+			// level 1 = 60s, level 2 = 120s, level 3 = 240s, capped at 15 min
+			const level = data.level || 1
+			const lockoutDuration = Math.min(LOCKOUT_MS * Math.pow(2, level - 1), 15 * 60 * 1000)
+			const elapsed = Date.now() - data.lastAttempt
+			if (elapsed < lockoutDuration) {
+				const remaining = Math.ceil((lockoutDuration - elapsed) / 1000)
+				return { allowed: false, remaining }
+			}
+			// Lockout expired — reset count but escalate level for next lockout
+			data.count = 0
+			data.level = level + 1
+			localStorage.setItem(ATTEMPT_KEY, JSON.stringify(data))
+			return { allowed: true }
+		}
+		return { allowed: true }
+	} catch {
+		return { allowed: true }
+	}
+}
+
+function recordFailedAttempt() {
+	try {
+		const raw = localStorage.getItem(ATTEMPT_KEY)
+		const data = raw ? JSON.parse(raw) : { count: 0, level: 1 }
+		data.count += 1
+		data.lastAttempt = Date.now()
+		localStorage.setItem(ATTEMPT_KEY, JSON.stringify(data))
+	} catch {
+		// Ignore
+	}
+}
+
+function clearAttemptCounter() {
+	try {
+		localStorage.removeItem(ATTEMPT_KEY)
+	} catch {
+		// Ignore
+	}
 }
 
 // Module-level singleton state (same pattern as useToast.js)
@@ -168,20 +296,41 @@ function unlockSuccess() {
 }
 
 async function verifyOfflinePassword(password) {
-	const cachedHash = getCachedPasswordHash()
-	if (!cachedHash) {
+	// Brute-force protection
+	const limit = checkOfflineAttemptLimit()
+	if (!limit.allowed) {
+		return {
+			success: false,
+			error: __("Too many attempts. Try again in {0} seconds.", [limit.remaining]),
+		}
+	}
+
+	const cached = getCachedPasswordHash()
+	if (!cached) {
 		return { success: false, error: __("Cannot verify password offline. No cached credentials available.") }
 	}
-	const enteredHash = await hashPassword(password)
-	if (enteredHash === cachedHash) {
+
+	const { hash: enteredHash } = await hashPassword(password, cached.salt)
+	if (enteredHash === cached.hash) {
+		clearAttemptCounter()
 		return { success: true }
 	}
+
+	recordFailedAttempt()
 	return { success: false, error: __("Incorrect password") }
 }
 
 async function unlock(password) {
 	isVerifying.value = true
 	verifyError.value = ""
+
+	// Brute-force gate — applies to both online and offline paths
+	const limit = checkOfflineAttemptLimit()
+	if (!limit.allowed) {
+		isVerifying.value = false
+		verifyError.value = __("Too many attempts. Try again in {0} seconds.", [limit.remaining])
+		return { success: false }
+	}
 
 	// Offline fallback — verify against cached hash
 	if (offlineState.isOffline) {
@@ -201,15 +350,20 @@ async function unlock(password) {
 		const data = res?.message || res
 
 		if (data?.verified) {
-			// Cache hash on successful online unlock
-			const hash = await hashPassword(password)
-			cachePasswordHash(hash)
-
+			clearAttemptCounter()
 			unlockSuccess()
+
+			// Cache hash for offline use — fire-and-forget so UI unblocks immediately
+			const user = getCurrentUserId()
+			hashPassword(password).then(({ hash, salt }) => {
+				cachePasswordHash(user, hash, salt)
+			})
+
 			return { success: true }
 		}
 
 		// Wrong password — backend returns { verified: false, message: "..." }
+		recordFailedAttempt()
 		isVerifying.value = false
 		verifyError.value = data?.message || __("Incorrect password")
 		return { success: false }
@@ -228,7 +382,7 @@ async function unlock(password) {
 			unlockSuccess()
 			return { success: true }
 		}
-		if (result.error === __("Incorrect password")) {
+		if (result.error) {
 			isVerifying.value = false
 			verifyError.value = result.error
 			return { success: false }
@@ -246,6 +400,7 @@ function clearLock() {
 	verifyError.value = ""
 	clearPersistedLock()
 	clearCachedPasswordHash()
+	clearAttemptCounter()
 }
 
 function handlePageHide() {
