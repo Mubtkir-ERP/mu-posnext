@@ -1603,7 +1603,7 @@ def delete_invoice(invoice):
 
 
 @frappe.whitelist()
-def cleanup_old_drafts(pos_profile=None, max_age_hours=24):
+def cleanup_old_drafts(pos_profile=None, max_age_hours=48):
     """
     Clean up old draft invoices to prevent stock reservation issues.
     Deletes drafts older than max_age_hours (default 24 hours).
@@ -1615,6 +1615,7 @@ def cleanup_old_drafts(pos_profile=None, max_age_hours=24):
 
     filters = {
         "docstatus": 0,  # Draft only
+        "is_pos": 1,  # Only POS Sales Invoices
         "modified": ["<", cutoff_time.strftime("%Y-%m-%d %H:%M:%S")],
     }
 
