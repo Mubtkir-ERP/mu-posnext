@@ -503,6 +503,7 @@
 			<DraftInvoicesDialog
 				v-model="uiStore.showDraftDialog"
 				:currency="shiftStore.profileCurrency"
+				:allow-print-draft-invoices="posSettingsStore.allowPrintDraftInvoices"
 				@load-draft="handleLoadDraft"
 				@drafts-updated="draftsStore.updateDraftsCount"
 			/>
