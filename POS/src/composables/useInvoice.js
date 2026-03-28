@@ -534,12 +534,17 @@ export function useInvoice() {
 		// Store coupon code for tracking
 		couponCode.value = discount.code || discount.name
 
-		// Use centralized calculation to handle percentage/amount and clamping
-		let discountAmount = calculateDiscountAmount(discount, subtotal.value)
+		const baseAmount =
+			typeof discount.base_amount === "number"
+				? discount.base_amount
+				: subtotal.value
 
-		// Clamp discount to subtotal (cannot exceed total)
-		if (discountAmount > subtotal.value) {
-			discountAmount = subtotal.value
+		// Use centralized calculation to handle percentage/amount and clamping
+		let discountAmount = calculateDiscountAmount(discount, baseAmount)
+
+		// Clamp discount to the same base the coupon was calculated against
+		if (discountAmount > baseAmount) {
+			discountAmount = baseAmount
 		}
 
 		// Ensure non-negative
