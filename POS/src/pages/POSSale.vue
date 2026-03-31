@@ -1194,7 +1194,7 @@ const profileWarehouses = computed(() => {
 
 const canAccessShiftActions = computed(() => shiftStore.hasOpenShift);
 
-/** Desk link only for users with the Nexus Pos Manager role (from bootstrap API). */
+/** Desk link only for users with the Nexus POS Manager role (from bootstrap API). */
 const canSwitchToDesk = computed(() => Boolean(bootstrapStore.data?.can_switch_to_desk));
 
 // Resize state
