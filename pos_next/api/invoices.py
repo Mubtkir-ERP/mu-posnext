@@ -578,6 +578,7 @@ def submit_invoice(invoice=None, data=None):
         # Ensure update_stock is set for Sales Invoice
         if doctype == "Sales Invoice":
             invoice_doc.update_stock = 1
+            invoice_doc.is_pos = 1
 
         # Copy accounting dimensions from POS Profile if not already set
         if pos_profile and not invoice_doc.get("branch"):
