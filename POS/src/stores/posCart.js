@@ -1098,6 +1098,7 @@ export const usePOSCartStore = defineStore("posCart", () => {
 			// Apply other updates
 			if (updates.quantity !== undefined) cartItem.quantity = updates.quantity
 			if (updates.warehouse !== undefined) cartItem.warehouse = updates.warehouse
+			if (updates.rate !== undefined) cartItem.rate = updates.rate
 			if (updates.discount_percentage !== undefined) cartItem.discount_percentage = updates.discount_percentage
 			if (updates.discount_amount !== undefined) cartItem.discount_amount = updates.discount_amount
 			if (updates.price_list_rate !== undefined) cartItem.price_list_rate = updates.price_list_rate

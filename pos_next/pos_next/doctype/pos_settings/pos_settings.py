@@ -77,6 +77,7 @@ def get_pos_settings(pos_profile):
 	Also injects the current global Stock Settings value to show the actual
 	source of truth, preventing confusion when the checkbox appears enabled
 	but the global setting was changed elsewhere.
+	Also includes allow_rate_change from POS Profile.
 	"""
 	from frappe import _
 
@@ -102,6 +103,13 @@ def get_pos_settings(pos_profile):
 	# If no settings exist, create default settings
 	if not settings:
 		settings = create_default_settings(pos_profile)
+
+	# Get allow_rate_change from POS Profile
+	allow_rate_change = frappe.db.get_value("POS Profile", pos_profile, "allow_rate_change")
+	if allow_rate_change is not None:
+		settings["allow_rate_change"] = cint(allow_rate_change)
+	else:
+		settings["allow_rate_change"] = 0
 
 	# Inject the current global Stock Settings value for transparency
 	# This helps UI reflect the actual state even if multiple POS Settings exist

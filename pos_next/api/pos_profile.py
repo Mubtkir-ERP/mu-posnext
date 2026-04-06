@@ -5,6 +5,7 @@
 from __future__ import unicode_literals
 import frappe
 from frappe import _
+from frappe.utils import cint
 from pos_next.api.utilities import check_user_company
 from pos_next.api.utilities import _parse_list_parameter
 
@@ -95,7 +96,7 @@ def get_pos_settings(pos_profile):
 
 		# Return settings or defaults if not found
 		if not pos_settings:
-			return {
+			pos_settings = {
 				"tax_inclusive": 0,
 				"allow_user_to_edit_additional_discount": 0,
 				"allow_user_to_edit_item_discount": 1,
@@ -113,6 +114,13 @@ def get_pos_settings(pos_profile):
 				"allow_select_sales_order": 0,
 				"create_only_sales_order": 0
 			}
+
+		# Get allow_rate_change from POS Profile
+		allow_rate_change = frappe.db.get_value("POS Profile", pos_profile, "allow_rate_change")
+		if allow_rate_change is not None:
+			pos_settings["allow_rate_change"] = cint(allow_rate_change)
+		else:
+			pos_settings["allow_rate_change"] = 0
 
 		return pos_settings
 	except Exception as e:

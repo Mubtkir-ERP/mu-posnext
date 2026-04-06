@@ -14,6 +14,7 @@ Performance improvement: ~300-500ms faster initial load
 
 import frappe
 from frappe import _
+from frappe.utils import cint
 
 
 @frappe.whitelist()
@@ -160,7 +161,14 @@ def get_pos_settings(pos_profile):
 		)
 
 		if not pos_settings:
-			return get_default_pos_settings()
+			pos_settings = get_default_pos_settings()
+		else:
+			# Get allow_rate_change from POS Profile
+			allow_rate_change = frappe.db.get_value("POS Profile", pos_profile, "allow_rate_change")
+			if allow_rate_change is not None:
+				pos_settings["allow_rate_change"] = cint(allow_rate_change)
+			else:
+				pos_settings["allow_rate_change"] = 0
 
 		return pos_settings
 	except Exception:
@@ -188,7 +196,8 @@ def get_default_pos_settings():
 		"silent_print": 0,
 		"allow_sales_order": 0,
 		"allow_select_sales_order": 0,
-		"create_only_sales_order": 0
+		"create_only_sales_order": 0,
+		"allow_rate_change": 0
 	}
 
 

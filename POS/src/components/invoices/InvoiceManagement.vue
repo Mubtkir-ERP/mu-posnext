@@ -309,7 +309,7 @@
 											<div class="flex items-start justify-between mb-2">
 												<div class="flex-1">
 													<h3 class="text-base font-bold text-gray-900">{{ invoice.name }}</h3>
-													<div class="flex items-center gap-2 mt-1">
+													<div class="flex items-center gap-2 mt-1 flex-wrap">
 														<span
 															:class="[
 																'text-xs px-2.5 py-1 rounded-full font-semibold',
@@ -317,6 +317,16 @@
 															]"
 														>
 															{{ __(invoice.status) }}
+														</span>
+														
+														<span
+															v-if="invoice.pos_status"
+															:class="[
+																'text-xs px-2.5 py-1 rounded-full font-semibold',
+																getPosStatusColor(invoice.pos_status)
+															]"
+														>
+															{{ __(invoice.pos_status) }}
 														</span>
 													</div>
 												</div>
@@ -350,6 +360,29 @@
 												<div class="flex-1">
 													<div class="text-xs text-gray-500">{{ __('Date & Time') }}</div>
 													<div class="text-sm font-medium text-gray-900">{{ formatDate(invoice.posting_date) }} {{ formatTime(invoice.posting_time) }}</div>
+												</div>
+											</div>
+
+											<!-- POS Status Update -->
+											<div class="flex items-start">
+												<svg class="w-5 h-5 text-gray-400 me-2 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+													<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/>
+												</svg>
+												<div class="flex-1">
+													<div class="text-xs text-gray-500 mb-1">{{ __('POS Status') }}</div>
+													<select
+														:value="invoice.pos_status || ''"
+														@change="updatePosStatus(invoice.name, $event.target.value)"
+														:disabled="updatingStatus[invoice.name]"
+														class="text-sm w-full px-2 py-1.5 border border-gray-300 rounded-lg
+																focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500
+																disabled:opacity-50 disabled:cursor-not-allowed"
+														>
+														<option value="">{{ __('Select Status') }}</option>
+														<option v-for="status in posStatusOptions" :key="status" :value="status">
+															{{ __(status) }}
+														</option>
+														</select>
 												</div>
 											</div>
 
@@ -545,10 +578,11 @@ import { useInvoiceFilters } from "@/composables/useInvoiceFilters"
 import { useInvoiceFiltersStore } from "@/stores/invoiceFilters"
 import { formatCurrency as formatCurrencyUtil } from "@/utils/currency"
 import { getInvoiceStatusColor } from "@/utils/invoice"
+import { getPosStatusColor } from "@/utils/invoice"
 import { useFormatters } from "@/composables/useFormatters"
 import { useToast } from "@/composables/useToast"
 import { Button, call } from "frappe-ui"
-import { computed, onMounted, ref, watch } from "vue"
+import { computed, onMounted, ref, watch, reactive  } from "vue"
 
 const { showSuccess, showError } = useToast()
 const { formatDate, formatDateTime, formatTime } = useFormatters()
@@ -839,6 +873,39 @@ async function loadUnpaidSummary() {
 		console.error("Error loading summary:", error)
 	}
 }
+const updatingStatus = reactive({})
+const posStatusOptions = [
+  'Received',
+  'Ready',
+  'Under Delivery',
+  'Delivered',
+  'Washing and Ironing'
+]
+async function updatePosStatus(invoiceId, newStatus) {
+	console.log("updatePosStatus", invoiceId, newStatus)
+      try {
+        const response = await call("pos_next.api.partial_payments.update_pos_status", {
+          invoice_id: invoiceId,
+          new_status: newStatus
+        });
+		console.log("response", response)
+        if (response.success) {
+          // Update local data - find invoice in historyInvoices array
+          const invoice = props.historyInvoices.find(inv => inv.name === invoiceId)
+          if (invoice) {
+            invoice.pos_status = newStatus
+          }
+          
+          showSuccess(__('Status updated successfully'), __('success'));
+          
+        } else {
+          showError(response.message || 'Error updating status', 'error');
+        }
+      } catch (error) {
+        console.error('Update error:', error);
+        showError('Error updating status', 'error');
+      }
+    }
 
 function selectInvoiceForPayment(invoice) {
 	selectedInvoice.value = invoice

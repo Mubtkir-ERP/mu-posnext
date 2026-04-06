@@ -39,8 +39,7 @@ const CURRENT_SCHEMA = {
 	settings: "&key",
 
 	// Invoice queue for offline submissions
-	// offline_id is a unique UUID for deduplication across syncs
-	invoice_queue: "++id, &offline_id, timestamp, synced",
+	invoice_queue: "++id, timestamp, synced",
 
 	// Items cache with searchable fields
 	items: "&item_code, item_name, item_group, *barcodes",

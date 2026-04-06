@@ -507,8 +507,12 @@ export function useInvoice() {
 
 		for (const item of invoiceItems.value) {
 			// Use price_list_rate for subtotal (before discount)
+			// If rate differs from price_list_rate, it means rate was manually changed
+			// In that case, use the manually set rate for calculations
 			const priceListRate = item.price_list_rate || item.rate
-			_cachedSubtotal.value += item.quantity * priceListRate
+			const manualRate = item.rate && item.price_list_rate && item.rate !== item.price_list_rate ? item.rate : null
+			const effectiveRate = manualRate || priceListRate
+			_cachedSubtotal.value += item.quantity * effectiveRate
 			_cachedTotalTax.value += item.tax_amount || 0
 			_cachedTotalDiscount.value += item.discount_amount || 0
 		}
@@ -546,8 +550,12 @@ export function useInvoice() {
 	 */
 	function recalculateItem(item) {
 		// Determine the base unit price (original list price)
+		// If rate differs from price_list_rate, it means rate was manually changed
+		// In that case, use the manually set rate for calculations
 		const priceListRate = item.price_list_rate || item.rate
-		const baseAmount = item.quantity * priceListRate
+		const manualRate = item.rate && item.price_list_rate && item.rate !== item.price_list_rate ? item.rate : null
+		const effectiveRate = manualRate || priceListRate
+		const baseAmount = item.quantity * effectiveRate
 
 		// Calculate discount from either percentage or fixed amount
 		let discountAmount = 0
@@ -579,7 +587,8 @@ export function useInvoice() {
 
 		// Update item fields
 		item.tax_amount = taxAmount
-		item.rate = priceListRate  // Preserve original price for display
+		// Preserve manually set rate if it was changed, otherwise use price_list_rate
+		item.rate = manualRate || priceListRate
 		item.amount = netAmount    // Net amount for backend calculations
 	}
 

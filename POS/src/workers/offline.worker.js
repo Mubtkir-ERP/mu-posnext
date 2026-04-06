@@ -18,8 +18,6 @@
  */
 
 import { logger } from '../utils/logger'
-import { generateOfflineId } from '../utils/offline/uuid'
-
 const log = logger.create('OfflineWorker')
 
 // ============================================================================
@@ -408,14 +406,7 @@ async function saveOfflineInvoice(invoiceData) {
 			throw new Error("Cannot save empty invoice")
 		}
 
-		// Generate unique offline_id for deduplication
-		const offlineId = generateOfflineId()
-
-		// Store offline_id in the invoice data for server-side tracking
-		invoiceData.offline_id = offlineId
-
 		const id = await db.table("invoice_queue").add({
-			offline_id: offlineId,
 			data: invoiceData,
 			timestamp: Date.now(),
 			synced: false,
@@ -427,8 +418,7 @@ async function saveOfflineInvoice(invoiceData) {
 		// 2. When we sync, the server will handle stock reduction
 		// 3. Updating stock locally causes NegativeStockError on sync
 
-		log.info(`Invoice saved to offline queue with offline_id: ${offlineId}`)
-		return { success: true, id, offline_id: offlineId }
+		return { success: true, id }
 	} catch (error) {
 		log.error("Error saving offline invoice", error)
 		throw error

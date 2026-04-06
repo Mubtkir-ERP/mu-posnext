@@ -41,6 +41,48 @@ export function getInvoiceStatusColor(invoice) {
 }
 
 /**
+ * Get the appropriate CSS classes for invoice status badge
+ * @param {Object} invoice - Invoice object with status and docstatus fields
+ * @returns {string} Tailwind CSS classes for the status badge
+ */
+
+export function getPosStatusColor(posStatus) {
+	if (!posStatus) {
+		return 'bg-gray-100 text-gray-700'
+	}
+
+	const status = posStatus.toLowerCase()
+
+	// Blue for received (initial stage)
+	if (status === 'received') {
+		return 'bg-blue-100 text-blue-800'
+	}
+
+	// Cyan for washing and ironing (processing)
+	if (status === 'washing and ironing') {
+		return 'bg-cyan-100 text-cyan-800'
+	}
+
+	// Green for ready (completed processing)
+	if (status === 'ready') {
+		return 'bg-green-100 text-green-800'
+	}
+
+	// Yellow for under delivery (in transit)
+	if (status === 'under delivery') {
+		return 'bg-yellow-100 text-yellow-800'
+	}
+
+	// Purple for delivered (final stage)
+	if (status === 'delivered') {
+		return 'bg-purple-100 text-purple-800'
+	}
+
+	// Gray for unknown status
+	return 'bg-gray-100 text-gray-700'
+}
+
+/**
  * Get status color theme name for use with Badge component
  * @param {string} status - Invoice status string
  * @returns {string} Theme name (red, yellow, blue, green, gray)

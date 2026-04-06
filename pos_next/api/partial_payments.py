@@ -675,6 +675,7 @@ def get_unpaid_invoices(pos_profile: str, limit: int = DEFAULT_INVOICE_LIMIT) ->
             "status",
             "creation",
             "currency",
+            "pos_status",
         ],
         order_by="posting_date desc, posting_time desc",
         limit=limit,
@@ -745,6 +746,7 @@ def get_partial_payment_details(invoice_name: str) -> Dict:
         "paid_amount": payment_data["total_paid"],
         "outstanding_amount": payment_data["outstanding"],
         "status": invoice.status,
+        "pos_status": invoice.pos_status,
         "currency": invoice.currency,
         "payments": payment_data["payments"],
         "payment_count": payment_data["payment_count"],
@@ -1052,3 +1054,53 @@ def _has_pos_profile_access(pos_profile: str) -> bool:
     has_general_access = frappe.has_permission("Sales Invoice", "read")
 
     return bool(has_direct_access or has_general_access)
+
+
+
+@frappe.whitelist()
+def update_pos_status(invoice_id, new_status):
+    """
+    Update POS status for a sales invoice
+    """
+    try:
+        if not invoice_id or not new_status:
+            frappe.throw(_("Invoice ID and Status are required"))
+
+        # Validate status
+        valid_statuses = ["Received", "Delivered", "Ready", "Under Delivery", "Washing and Ironing"]
+        if new_status not in valid_statuses:
+            frappe.throw(_("Invalid status"))
+
+        # Check if invoice exists
+        if not frappe.db.exists("Sales Invoice", invoice_id):
+            frappe.throw(_("Sales Invoice not found"))
+
+        # Update status
+        doc = frappe.get_doc("Sales Invoice", invoice_id)
+
+        # Check permissions
+        if not doc.has_permission("write"):
+            frappe.throw(_("Insufficient permissions to update this invoice"))
+
+        old_status = doc.pos_status
+        doc.pos_status = new_status
+        doc.add_comment("Comment", f"POS Status changed from '{old_status}' to '{new_status}'")
+        doc.save(ignore_permissions=False)
+
+        frappe.db.commit()
+
+        return {
+            "success": True,
+            "message": _("Status updated successfully"),
+            "invoice_id": invoice_id,
+            "old_status": old_status,
+            "new_status": new_status
+        }
+
+    except Exception as e:
+        frappe.log_error(f"Error in update_pos_status: {str(e)}")
+        frappe.db.rollback()
+        return {
+            "success": False,
+            "message": str(e)
+        }

@@ -95,8 +95,12 @@
 									type="number"
 									min="0"
 									step="0.01"
-									readonly
-									class="w-full h-10 border border-gray-300 rounded-lg ps-16 pe-3 text-sm font-semibold bg-gray-50 cursor-not-allowed"
+									:readonly="!settingsStore.allowRateChange"
+									class="w-full h-10 border border-gray-300 rounded-lg ps-16 pe-3 text-sm font-semibold"
+									:class="settingsStore.allowRateChange ? 'bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent' : 'bg-gray-50 cursor-not-allowed'"
+									@input="handleRateInput"
+									@blur="handleRateBlur"
+									@keydown.enter="$event.target.blur()"
 								/>
 							</div>
 						</div>
@@ -430,6 +434,25 @@ function handleQuantityBlur() {
 function handleUomChange() {
 	// When UOM changes, we need to fetch new rate from server
 	// For now, we'll just recalculate with current rate
+	calculateTotals()
+}
+
+function handleRateInput() {
+	// Allow any value during typing, just recalculate totals
+	if (localRate.value >= 0 && !isNaN(localRate.value)) {
+		calculateTotals()
+	}
+}
+
+function handleRateBlur() {
+	// Validate and fix the rate when user is done editing (leaves the field)
+	if (!localRate.value || localRate.value < 0 || isNaN(localRate.value)) {
+		// If invalid, reset to original rate
+		localRate.value = localItem.value?.rate || 0
+	} else {
+		// Round to 2 decimal places for currency
+		localRate.value = Math.round(localRate.value * 100) / 100
+	}
 	calculateTotals()
 }
 

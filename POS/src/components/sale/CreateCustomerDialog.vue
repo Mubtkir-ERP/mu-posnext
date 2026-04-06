@@ -115,6 +115,18 @@
 					</select>
 				</div>
 
+				<!-- Tax ID -->
+				<div>
+					<label class="block text-start text-sm font-medium text-gray-700 mb-2">
+						{{ __("Tax ID") }}
+					</label>
+					<Input
+						v-model="customerData.tax_id"
+						type="text"
+						:placeholder="__('Enter tax ID')"
+					/>
+				</div>
+
 				<!-- Territory -->
 				<div>
 					<label class="block text-start text-sm font-medium text-gray-700 mb-2">
@@ -234,6 +246,7 @@ const customerData = ref({
 	mobile_no: "",
 	email_id: "",
 	customer_group: "Individual",
+	tax_id: "",
 	territory: "All Territories",
 })
 
@@ -342,6 +355,7 @@ const createCustomerResource = createResource({
 			territory: customerData.value.territory || __("All Territories"),
 			mobile_no: customerData.value.mobile_no || "",
 			email_id: customerData.value.email_id || "",
+			tax_id: customerData.value.tax_id || "",
 		},
 	}),
 	onSuccess: (data) => {
@@ -366,6 +380,7 @@ const updateCustomerResource = createResource({
 			territory: customerData.value.territory || __("All Territories"),
 			mobile_no: customerData.value.mobile_no || "",
 			email_id: customerData.value.email_id || "",
+			tax_id: customerData.value.tax_id || "",
 		},
 	}),
 	onSuccess: (data) => {
@@ -462,6 +477,7 @@ const resetForm = () => {
 		mobile_no: "",
 		email_id: "",
 		customer_group: "Individual",
+		tax_id: "",
 		territory: "All Territories",
 	})
 	selectedCountryCode.value = ""
@@ -485,6 +501,7 @@ watch(
 			customerData.value.customer_name = customer.customer_name || ""
 			customerData.value.email_id = customer.email_id || ""
 			customerData.value.customer_group = customer.customer_group || "Individual"
+			customerData.value.tax_id = customer.tax_id || ""
 			customerData.value.territory = customer.territory || "All Territories"
 			// Handle mobile_no with country code
 			if (customer.mobile_no) {
