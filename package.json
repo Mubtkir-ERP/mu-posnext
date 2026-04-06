@@ -1,6 +1,6 @@
 {
   "name": "pos_next",
-  "version": "1.0.0",
+  "version": "1.15.0",
   "description": "POS built on ERPNext that brings together real-time billing, stock management, multi-user access, offline mode, and direct ERP integration. Run your store or restaurant with confidence and control, while staying 100% open source.",
   "main": "index.js",
   "scripts": {
@@ -15,5 +15,8 @@
   "dependencies": {
     "dompurify": "^3.3.0",
     "playwright": "^1.57.0"
+  },
+  "devDependencies": {
+    "baseline-browser-mapping": "^2.9.14"
   }
 }

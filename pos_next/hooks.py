@@ -88,24 +88,6 @@ _asset_version = get_build_version()
 # --------
 fixtures = [
 	{
-		"dt": "Custom Field",
-		"filters": [
-			[
-				"name",
-				"in",
-				[
-					"Sales Invoice-posa_pos_opening_shift",
-					"Sales Invoice-posa_is_printed",
-					"Item-custom_company",
-					"POS Profile-posa_cash_mode_of_payment",
-					"POS Profile-posa_allow_delete",
-					"POS Profile-posa_block_sale_beyond_available_qty",
-					"Mode of Payment-is_wallet_payment"
-				]
-			]
-		]
-	},
-	{
 		"dt": "Print Format",
 		"filters": [
 			[
@@ -116,7 +98,19 @@ fixtures = [
 				]
 			]
 		]
-	}
+	},
+    {
+        "dt": "Role",
+        "filters": [
+            ["role_name", "in", ["POSNext Cashier","Nexus POS Manager"]]
+        ]
+    },
+    {
+        "dt": "Custom DocPerm",
+        "filters": [
+            ["role", "in", ["POSNext Cashier"]]
+        ]
+    }
 ]
 
 # Installation
@@ -190,7 +184,13 @@ doc_events = {
 		"validate": "pos_next.validations.validate_item"
 	},
 	"Customer": {
-		"after_insert": "pos_next.api.customers.auto_assign_loyalty_program"
+		"after_insert": [
+			"pos_next.api.customers.auto_assign_loyalty_program",
+			"pos_next.realtime_events.emit_customer_event",
+			"pos_next.api.wallet.create_wallet_on_customer_insert"
+		],
+		"on_update": "pos_next.realtime_events.emit_customer_event",
+		"on_trash": "pos_next.realtime_events.emit_customer_event"
 	},
 	"Sales Invoice": {
 		"validate": [
@@ -207,6 +207,9 @@ doc_events = {
 	},
 	"POS Profile": {
 		"on_update": "pos_next.realtime_events.emit_pos_profile_updated_event"
+	},
+	"Promotional Scheme": {
+		"on_update": "pos_next.overrides.pricing_rule.sync_pos_only_to_pricing_rules"
 	}
 }
 

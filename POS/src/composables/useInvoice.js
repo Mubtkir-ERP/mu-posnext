@@ -1,8 +1,19 @@
 import { createResource } from "frappe-ui"
 import { computed, ref, toRaw } from "vue"
-import { isOffline } from "@/utils/offline"
+import { isOffline, getCachedItem } from "@/utils/offline"
 import { useSerialNumberStore } from "@/stores/serialNumber"
+import { CoalescingMutex } from "@/utils/mutex"
+import { logger } from "@/utils/logger"
+import { roundCurrency } from "@/utils/currency"
 
+const log = logger.create("Invoice")
+
+// Shared mutex for invoice submission across all useInvoice instances
+// This prevents duplicate invoice creation from rapid clicks or concurrent submissions
+const submitMutex = new CoalescingMutex({
+	timeout: 60000,
+	name: "InvoiceSubmit",
+})
 
 export function useInvoice() {
 	// Serial Number Store for returning serials when items are removed
@@ -19,6 +30,9 @@ export function useInvoice() {
 	const couponCode = ref(null)
 	const taxRules = ref([]) // Tax rules from POS Profile
 	const taxInclusive = ref(false) // Tax inclusive setting from POS Settings
+
+	// Submission state - prevents duplicate submissions
+	const isSubmitting = ref(false)
 
 	// Performance: Incrementally maintained aggregates (updated on add/remove/change)
 	// This avoids O(n) array reductions on every reactive change
@@ -88,6 +102,52 @@ export function useInvoice() {
 		auto: false,
 	})
 
+	/**
+	 * Resolve UOM pricing from IndexedDB or server.
+	 * Offline: reads item from IndexedDB for persisted uom_prices and conversion data.
+	 * Online: fetches from server for customer-specific rates.
+	 * @param {Object} item - Item with item_code, rate, price_list_rate
+	 * @param {string} uom - Target UOM
+	 * @param {number} conversionFactor - UOM conversion factor
+	 * @param {number} qty - Quantity for pricing
+	 * @returns {Promise<{rate: number, price_list_rate: number}>}
+	 */
+	async function resolveUomPricing(item, uom, conversionFactor, qty) {
+		// When online, fetch server pricing for customer-specific rates
+		if (!isOffline()) {
+			try {
+				const itemDetails = await getItemDetailsResource.submit({
+					item_code: item.item_code,
+					pos_profile: posProfile.value,
+					customer: customer.value?.name || customer.value,
+					qty,
+					uom,
+				})
+				return {
+					rate: itemDetails.price_list_rate || itemDetails.rate,
+					price_list_rate: itemDetails.price_list_rate,
+				}
+			} catch (err) {
+				log.warn("Server UOM pricing unavailable, resolving from IndexedDB", err)
+			}
+		}
+
+		// Offline: resolve from IndexedDB
+		const cachedItem = await getCachedItem(item.item_code)
+		const source = cachedItem || item
+
+		let rate
+		if (source.uom_prices?.[uom]) {
+			rate = source.uom_prices[uom]
+		} else {
+			const baseRate = source.price_list_rate || source.rate || 0
+			const currentConversion = source.conversion_factor || 1
+			rate = (baseRate / currentConversion) * conversionFactor
+		}
+
+		return { rate, price_list_rate: rate }
+	}
+
 	const getTaxesResource = createResource({
 		url: "pos_next.api.pos_profile.get_taxes",
 		auto: false,
@@ -123,20 +183,26 @@ export function useInvoice() {
 	//
 	// This ensures tax is not double-counted in inclusive mode!
 	// ========================================================================
-	const subtotal = computed(() => _cachedSubtotal.value)
-	const totalTax = computed(() => _cachedTotalTax.value)
-	const totalDiscount = computed(
-		() => _cachedTotalDiscount.value + (additionalDiscount.value || 0),
+	// Use roundCurrency for monetary totals to match ERPNext's currency precision (from System Settings)
+	const subtotal = computed(() => roundCurrency(_cachedSubtotal.value))
+	const totalTax = computed(() => roundCurrency(_cachedTotalTax.value))
+	const totalDiscount = computed(() =>
+		roundCurrency(_cachedTotalDiscount.value + (additionalDiscount.value || 0)),
 	)
 	const grandTotal = computed(() => {
-		const discount = _cachedTotalDiscount.value + (additionalDiscount.value || 0)
+		const discount =
+			_cachedTotalDiscount.value + (additionalDiscount.value || 0)
 
 		if (taxInclusive.value) {
 			// Tax inclusive: Subtotal already includes tax, so don't add it again
-			return _cachedSubtotal.value - discount
+			// Use roundCurrency to match ERPNext's currency precision (from System Settings)
+			return roundCurrency(_cachedSubtotal.value - discount)
 		} else {
 			// Tax exclusive: Add tax on top of subtotal
-			return _cachedSubtotal.value + _cachedTotalTax.value - discount
+			// Use roundCurrency to match ERPNext's currency precision (from System Settings)
+			return roundCurrency(
+				_cachedSubtotal.value + _cachedTotalTax.value - discount,
+			)
 		}
 	})
 	const totalPaid = computed(() => _cachedTotalPaid.value)
@@ -159,55 +225,38 @@ export function useInvoice() {
 		)
 
 		if (existingItem) {
-			// IMPORTANT: Preserve edited rate and price_list_rate from existing cart item
-			// When adding more quantity, use the existing item's rate (which may have been edited)
-			// instead of the incoming item's rate (which comes from the item selector with original rate)
-			// This ensures that if a user edited the rate in EditItemDialog, adding more quantity
-			// will preserve the edited rate, not revert to the original rate
-			const preservedRate = existingItem.rate
-			const preservedPriceListRate = existingItem.price_list_rate
-			
-			// Determine if rate was manually edited (rate differs from price_list_rate)
-			// If edited, use the edited rate; otherwise use price_list_rate
-			// This ensures we use the correct rate for calculations (edited rate takes precedence)
-			const rateWasEdited = preservedRate && preservedPriceListRate && preservedRate !== preservedPriceListRate
-			const rateForCalculation = rateWasEdited ? preservedRate : (preservedPriceListRate || preservedRate)
-			
 			// Store old values before update for incremental cache adjustment
-			// Use the correct rate (edited rate if it was edited, otherwise price_list_rate)
-			const oldAmount = existingItem.quantity * rateForCalculation
+			// Use price_list_rate for subtotal calculations (before discount)
+			// IMPORTANT: Calculate oldAmount using same rounding as cache to ensure consistency
+			const oldPriceListRate = existingItem.price_list_rate || existingItem.rate
+			const oldAmount = roundCurrency(
+				existingItem.quantity * roundCurrency(oldPriceListRate),
+			)
 			const oldTax = existingItem.tax_amount || 0
 			const oldDiscount = existingItem.discount_amount || 0
 
 			// For serial items, merge the serial numbers
 			if (existingItem.has_serial_no && item.serial_no) {
 				const existingSerials = existingItem.serial_no
-					? existingItem.serial_no.split('\n').filter(s => s.trim())
+					? existingItem.serial_no.split("\n").filter((s) => s.trim())
 					: []
-				const newSerials = item.serial_no.split('\n').filter(s => s.trim())
+				const newSerials = item.serial_no.split("\n").filter((s) => s.trim())
 				// Combine serials (avoid duplicates)
 				const allSerials = [...new Set([...existingSerials, ...newSerials])]
-				existingItem.serial_no = allSerials.join('\n')
+				existingItem.serial_no = allSerials.join("\n")
 				// For serial items, quantity must match serial count
 				existingItem.quantity = allSerials.length
 			} else {
 				existingItem.quantity += quantity
 			}
-
-			// Explicitly preserve the edited rate and price_list_rate BEFORE recalculation
-			// This ensures that recalculateItem uses the preserved rate for tax/discount calculations
-			existingItem.rate = preservedRate
-			if (preservedPriceListRate) {
-				existingItem.price_list_rate = preservedPriceListRate
-			}
-
-			// Recalculate with the preserved rate
 			recalculateItem(existingItem)
 
 			// Update cache incrementally (new values - old values)
-			// Use the same rate for calculation (edited rate if it was edited, otherwise price_list_rate)
-			const newAmount = existingItem.quantity * rateForCalculation
-			_cachedSubtotal.value += newAmount - oldAmount
+			// Use rounded price_list_rate for subtotal to match ERPNext
+			const priceListRate = existingItem.price_list_rate || existingItem.rate
+			_cachedSubtotal.value +=
+				roundCurrency(existingItem.quantity * roundCurrency(priceListRate)) -
+				oldAmount
 			_cachedTotalTax.value += (existingItem.tax_amount || 0) - oldTax
 			_cachedTotalDiscount.value +=
 				(existingItem.discount_amount || 0) - oldDiscount
@@ -237,15 +286,24 @@ export function useInvoice() {
 				// Add item_group and brand for offer eligibility checking
 				item_group: item.item_group,
 				brand: item.brand,
+				// Resolved barcode flag - prevents editing qty/uom/rate for weighted/priced barcodes
+				is_resolved_barcode: item.is_resolved_barcode || false,
+				// Stock validation fields — needed for qty increase checks in cart
+				actual_qty: item.actual_qty ?? 0,
+				is_stock_item: item.is_stock_item ?? 1,
+				is_bundle: item.is_bundle || false,
+				allow_negative_stock: item.allow_negative_stock || 0,
 			}
 			invoiceItems.value.push(newItem)
 			// Recalculate the newly added item to apply taxes
 			recalculateItem(newItem)
 
 			// Update cache incrementally (add new item values)
-			// Use price_list_rate for subtotal (before discount)
+			// Use rounded price_list_rate for subtotal to match ERPNext
 			const priceListRate = newItem.price_list_rate || newItem.rate
-			_cachedSubtotal.value += newItem.quantity * priceListRate
+			_cachedSubtotal.value += roundCurrency(
+				newItem.quantity * roundCurrency(priceListRate),
+			)
 			_cachedTotalTax.value += newItem.tax_amount || 0
 			_cachedTotalDiscount.value += newItem.discount_amount || 0
 		}
@@ -270,9 +328,12 @@ export function useInvoice() {
 
 		if (itemToRemove) {
 			// Update cache incrementally (subtract removed item values)
-			// Use price_list_rate for subtotal (before discount)
-			const priceListRate = itemToRemove.price_list_rate || itemToRemove.rate
-			_cachedSubtotal.value -= itemToRemove.quantity * priceListRate
+			// Use effective rate (manually edited rate or price_list_rate)
+			const isManuallyEdited = itemToRemove.is_rate_manually_edited === 1
+			const effectiveRate = isManuallyEdited ? itemToRemove.rate : (itemToRemove.price_list_rate || itemToRemove.rate)
+			_cachedSubtotal.value -= roundCurrency(
+				itemToRemove.quantity * roundCurrency(effectiveRate),
+			)
 			_cachedTotalTax.value -= itemToRemove.tax_amount || 0
 			_cachedTotalDiscount.value -= itemToRemove.discount_amount || 0
 
@@ -313,16 +374,12 @@ export function useInvoice() {
 
 		if (item) {
 			// Store old values before update for incremental cache adjustment
-			// IMPORTANT: Preserve the rate to ensure edited rates are maintained
-			const preservedRate = item.rate
-			const preservedPriceListRate = item.price_list_rate
-			
-			// Determine if rate was manually edited (rate differs from price_list_rate)
-			// If edited, use the edited rate; otherwise use price_list_rate
-			// This ensures we use the correct rate for calculations (edited rate takes precedence)
-			const rateWasEdited = preservedRate && preservedPriceListRate && preservedRate !== preservedPriceListRate
-			const rateForCalculation = rateWasEdited ? preservedRate : (preservedPriceListRate || preservedRate)
-			const oldAmount = item.quantity * rateForCalculation
+			// Use effective rate (manually edited rate or price_list_rate)
+			const isManuallyEdited = item.is_rate_manually_edited === 1
+			const effectiveRate = isManuallyEdited ? item.rate : (item.price_list_rate || item.rate)
+			const oldAmount = roundCurrency(
+				item.quantity * roundCurrency(effectiveRate),
+			)
 			const oldTax = item.tax_amount || 0
 			const oldDiscount = item.discount_amount || 0
 			const oldQuantity = item.quantity
@@ -331,7 +388,7 @@ export function useInvoice() {
 
 			// Handle serial number items - adjust serials when quantity changes
 			if (item.has_serial_no && item.serial_no) {
-				const serialList = item.serial_no.split('\n').filter(s => s.trim())
+				const serialList = item.serial_no.split("\n").filter((s) => s.trim())
 
 				if (newQuantity < oldQuantity) {
 					// Quantity decreased - return excess serials to cache
@@ -340,58 +397,60 @@ export function useInvoice() {
 
 					if (serialsToReturn.length > 0) {
 						serialStore.returnSerials(itemCode, serialsToReturn)
-						item.serial_no = serialsToKeep.join('\n')
+						item.serial_no = serialsToKeep.join("\n")
 					}
 				}
 				// Note: Increasing quantity for serial items requires selecting new serials
 				// which should be handled by reopening the serial dialog
 			}
 
-			// Preserve rate before updating quantity and recalculating
-			// Always set both rate and price_list_rate to ensure recalculateItem can detect edits correctly
-			item.rate = preservedRate
-			// Set price_list_rate - if it was undefined/null, set it to rate to maintain consistency
-			item.price_list_rate = preservedPriceListRate !== undefined && preservedPriceListRate !== null 
-				? preservedPriceListRate 
-				: preservedRate
-
 			item.quantity = newQuantity
 			recalculateItem(item)
 
-			// Ensure rate is preserved after recalculation (recalculateItem might modify it)
-			// This ensures the edited rate is maintained even if recalculateItem changes it
-			item.rate = preservedRate
-			// Restore price_list_rate to its original value (or rate if it was undefined)
-			item.price_list_rate = preservedPriceListRate !== undefined && preservedPriceListRate !== null 
-				? preservedPriceListRate 
-				: preservedRate
-
 			// Update cache incrementally (new values - old values)
-			// Use the preserved rate for consistent calculation
-			const newAmount = item.quantity * rateForCalculation
-			_cachedSubtotal.value += newAmount - oldAmount
+			// Use effective rate for manually edited items
+			_cachedSubtotal.value +=
+				roundCurrency(item.quantity * roundCurrency(effectiveRate)) - oldAmount
 			_cachedTotalTax.value += (item.tax_amount || 0) - oldTax
 			_cachedTotalDiscount.value += (item.discount_amount || 0) - oldDiscount
 		}
 	}
 
-	function updateItemRate(itemCode, rate) {
+	function updateItemRate(itemCode, rate, isManualEdit = false) {
 		const item = invoiceItems.value.find((i) => i.item_code === itemCode)
 		if (item) {
 			// Store old values before update for incremental cache adjustment
-			// Use price_list_rate for subtotal calculations (before discount)
-			const oldPriceListRate = item.price_list_rate || item.rate
-			const oldAmount = item.quantity * oldPriceListRate
+			// Use effective rate (manually edited rate or price_list_rate)
+			const wasManuallyEdited = item.is_rate_manually_edited === 1
+			const oldEffectiveRate = wasManuallyEdited ? item.rate : (item.price_list_rate || item.rate)
+			const oldAmount = roundCurrency(
+				item.quantity * roundCurrency(oldEffectiveRate),
+			)
 			const oldTax = item.tax_amount || 0
 			const oldDiscount = item.discount_amount || 0
 
-			item.rate = Number.parseFloat(rate) || 0
+			const newRate = Number.parseFloat(rate) || 0
+
+			// Update rate but PRESERVE price_list_rate (original catalog price)
+			// This maintains auditability - we can always see the original price
+			item.rate = newRate
+			// price_list_rate is NOT updated - it remains the original catalog price
+
+			// Track manual rate edits for audit purposes
+			const originalPriceListRate = item.price_list_rate || oldEffectiveRate
+			if (isManualEdit && newRate !== originalPriceListRate) {
+				item.is_rate_manually_edited = 1
+				item.original_rate = originalPriceListRate
+			}
+
 			recalculateItem(item)
 
 			// Update cache incrementally (new values - old values)
-			// Use price_list_rate for subtotal (before discount)
-			const priceListRate = item.price_list_rate || item.rate
-			_cachedSubtotal.value += item.quantity * priceListRate - oldAmount
+			// Use the new rate for manually edited items
+			const isNowManuallyEdited = item.is_rate_manually_edited === 1
+			const newEffectiveRate = isNowManuallyEdited ? item.rate : (item.price_list_rate || item.rate)
+			_cachedSubtotal.value +=
+				roundCurrency(item.quantity * roundCurrency(newEffectiveRate)) - oldAmount
 			_cachedTotalTax.value += (item.tax_amount || 0) - oldTax
 			_cachedTotalDiscount.value += (item.discount_amount || 0) - oldDiscount
 		}
@@ -406,9 +465,12 @@ export function useInvoice() {
 			if (validDiscount > 100) validDiscount = 100
 
 			// Store old values before update for incremental cache adjustment
-			// Use price_list_rate for subtotal calculations (before discount)
-			const oldPriceListRate = item.price_list_rate || item.rate
-			const oldAmount = item.quantity * oldPriceListRate
+			// Use effective rate (manually edited rate or price_list_rate)
+			const isManuallyEdited = item.is_rate_manually_edited === 1
+			const effectiveRate = isManuallyEdited ? item.rate : (item.price_list_rate || item.rate)
+			const oldAmount = roundCurrency(
+				item.quantity * roundCurrency(effectiveRate),
+			)
 			const oldTax = item.tax_amount || 0
 			const oldDiscount = item.discount_amount || 0
 
@@ -417,9 +479,9 @@ export function useInvoice() {
 			recalculateItem(item)
 
 			// Update cache incrementally (new values - old values)
-			// Use price_list_rate for subtotal (before discount)
-			const priceListRate = item.price_list_rate || item.rate
-			_cachedSubtotal.value += item.quantity * priceListRate - oldAmount
+			// Use effective rate for manually edited items
+			_cachedSubtotal.value +=
+				roundCurrency(item.quantity * roundCurrency(effectiveRate)) - oldAmount
 			_cachedTotalTax.value += (item.tax_amount || 0) - oldTax
 			_cachedTotalDiscount.value += (item.discount_amount || 0) - oldDiscount
 		}
@@ -452,10 +514,10 @@ export function useInvoice() {
 
 		if (discount.percentage > 0) {
 			// Percentage discount on SUBTOTAL (before tax)
-			return (base * discount.percentage) / 100
+			return roundCurrency((base * discount.percentage) / 100)
 		} else if (discount.amount > 0) {
 			// Fixed amount discount
-			return discount.amount
+			return roundCurrency(discount.amount)
 		}
 
 		return 0
@@ -472,12 +534,17 @@ export function useInvoice() {
 		// Store coupon code for tracking
 		couponCode.value = discount.code || discount.name
 
-		// Use centralized calculation to handle percentage/amount and clamping
-		let discountAmount = calculateDiscountAmount(discount, subtotal.value)
+		const baseAmount =
+			typeof discount.base_amount === "number"
+				? discount.base_amount
+				: subtotal.value
 
-		// Clamp discount to subtotal (cannot exceed total)
-		if (discountAmount > subtotal.value) {
-			discountAmount = subtotal.value
+		// Use centralized calculation to handle percentage/amount and clamping
+		let discountAmount = calculateDiscountAmount(discount, baseAmount)
+
+		// Clamp discount to the same base the coupon was calculated against
+		if (discountAmount > baseAmount) {
+			discountAmount = baseAmount
 		}
 
 		// Ensure non-negative
@@ -550,13 +617,12 @@ export function useInvoice() {
 		_cachedTotalDiscount.value = 0
 
 		for (const item of invoiceItems.value) {
-			// Use price_list_rate for subtotal (before discount)
-			// If rate differs from price_list_rate, it means rate was manually changed
-			// In that case, use the manually set rate for calculations
-			const priceListRate = item.price_list_rate || item.rate
-			const manualRate = item.rate && item.price_list_rate && item.rate !== item.price_list_rate ? item.rate : null
-			const effectiveRate = manualRate || priceListRate
-			_cachedSubtotal.value += item.quantity * effectiveRate
+			// Use manually edited rate if set, otherwise use price_list_rate
+			const isManuallyEdited = item.is_rate_manually_edited === 1
+			const effectiveRate = isManuallyEdited ? item.rate : (item.price_list_rate || item.rate)
+			_cachedSubtotal.value += roundCurrency(
+				item.quantity * roundCurrency(effectiveRate),
+			)
 			_cachedTotalTax.value += item.tax_amount || 0
 			_cachedTotalDiscount.value += item.discount_amount || 0
 		}
@@ -593,20 +659,21 @@ export function useInvoice() {
 	 * @param {Object} item - Invoice item object with quantity, rates, and discount fields
 	 */
 	function recalculateItem(item) {
-		// Determine the base unit price (original list price)
-		// If rate differs from price_list_rate, it means rate was manually changed
-		// In that case, use the manually set rate for calculations
-		const priceListRate = item.price_list_rate || item.rate
-		const manualRate = item.rate && item.price_list_rate && item.rate !== item.price_list_rate ? item.rate : null
-		const effectiveRate = manualRate || priceListRate
-		const baseAmount = item.quantity * effectiveRate
+		// Determine the base unit price
+		// If rate was manually edited, use the edited rate; otherwise use price_list_rate
+		const isManuallyEdited = item.is_rate_manually_edited === 1
+		const effectiveRate = isManuallyEdited ? item.rate : (item.price_list_rate || item.rate)
+		const roundedRate = roundCurrency(effectiveRate)
+		const baseAmount = roundCurrency(item.quantity * roundedRate)
 
 		// Calculate discount from either percentage or fixed amount
 		let discountAmount = 0
 		if (item.discount_percentage > 0) {
-			discountAmount = (baseAmount * item.discount_percentage) / 100
+			discountAmount = roundCurrency(
+				(baseAmount * item.discount_percentage) / 100,
+			)
 		} else if (item.discount_amount > 0) {
-			discountAmount = item.discount_amount
+			discountAmount = roundCurrency(item.discount_amount)
 			// Sync percentage when amount is provided directly
 			item.discount_percentage =
 				baseAmount > 0 ? (discountAmount / baseAmount) * 100 : 0
@@ -614,26 +681,87 @@ export function useInvoice() {
 		item.discount_amount = discountAmount
 
 		// Calculate tax based on inclusive/exclusive mode
+		// Use currency precision for all monetary calculations to match ERPNext
 		const totalTaxRate = calculateTotalTaxRate()
 		let netAmount = 0
 		let taxAmount = 0
 
 		if (taxInclusive.value && totalTaxRate > 0) {
 			// Tax-inclusive: Work backwards from gross to extract net and tax
-			const grossAmount = baseAmount - discountAmount
-			netAmount = grossAmount / (1 + totalTaxRate / 100)
-			taxAmount = grossAmount - netAmount
+			const grossAmount = roundCurrency(baseAmount - discountAmount)
+			netAmount = roundCurrency(grossAmount / (1 + totalTaxRate / 100))
+			taxAmount = roundCurrency(grossAmount - netAmount)
 		} else {
 			// Tax-exclusive: Calculate tax on top of net amount
-			netAmount = baseAmount - discountAmount
-			taxAmount = (netAmount * totalTaxRate) / 100
+			netAmount = roundCurrency(baseAmount - discountAmount)
+			taxAmount = roundCurrency((netAmount * totalTaxRate) / 100)
 		}
 
-		// Update item fields
+		// Update item fields with rounded values
 		item.tax_amount = taxAmount
-		// Preserve manually set rate if it was changed, otherwise use price_list_rate
-		item.rate = manualRate || priceListRate
-		item.amount = netAmount    // Net amount for backend calculations
+		// For manually edited rates, preserve the edited rate; otherwise use price_list_rate
+		if (!isManuallyEdited) {
+			item.rate = effectiveRate // Preserve original price for display
+		}
+		// If manually edited, item.rate is already set to the edited value
+		item.amount = netAmount // Net amount for backend calculations
+	}
+
+	/**
+	 * Compute the rate to send to ERPNext based on tax mode.
+	 * - Tax-inclusive: gross rate (price - discount, before tax extraction)
+	 * - Tax-exclusive: net rate (amount / qty, after discount)
+	 */
+	function computeBackendRate(item) {
+		const qty = item.quantity || item.qty || 1
+		const priceListRate = item.price_list_rate || item.rate || 0
+		const discountAmount = item.discount_amount || 0
+
+		if (taxInclusive.value) {
+			// Gross rate: price minus per-unit discount
+			return roundCurrency(priceListRate - discountAmount / qty)
+		}
+		// Net rate: total amount divided by quantity
+		return qty > 0 ? roundCurrency((item.amount || 0) / qty) : item.rate || 0
+	}
+
+	/**
+	 * Convert pricing_rules to comma-separated string.
+	 * Handles: array, string, or empty value.
+	 */
+	function stringifyPricingRules(pricingRules) {
+		if (!pricingRules) return ""
+		if (Array.isArray(pricingRules)) return pricingRules.join(",")
+		return String(pricingRules)
+	}
+
+	/**
+	 * Format cart items for server submission.
+	 * Used by both online and offline flows for consistent formatting.
+	 *
+	 * @param {Array} items - Raw cart items
+	 * @returns {Array} Items formatted for ERPNext Sales Invoice
+	 */
+	function formatItemsForSubmission(items) {
+		return items.map((item) => ({
+			item_code: item.item_code,
+			item_name: item.item_name,
+			qty: item.quantity || item.qty || 1,
+			rate: item.is_free_item ? 0 : computeBackendRate(item),
+			price_list_rate: item.is_free_item ? 0 : roundCurrency(item.price_list_rate || item.rate),
+			uom: item.uom,
+			warehouse: item.warehouse,
+			batch_no: item.batch_no,
+			serial_no: item.serial_no,
+			conversion_factor: item.conversion_factor || 1,
+			discount_percentage: roundCurrency(item.discount_percentage || 0),
+			discount_amount: roundCurrency(item.discount_amount || 0),
+			pricing_rules: stringifyPricingRules(item.pricing_rules),
+			// Manual rate edit tracking for audit logging
+			is_rate_manually_edited: item.is_rate_manually_edited || 0,
+			original_rate: item.original_rate || null,
+			is_free_item: item.is_free_item || 0,
+		}))
 	}
 
 	function addPayment(payment) {
@@ -697,6 +825,76 @@ export function useInvoice() {
 		}
 	}
 
+	function serializeInvoicePayments(rawPayments) {
+		return rawPayments
+			.filter((payment) => !payment?.is_customer_credit)
+			.map((payment) => ({
+				mode_of_payment: payment.mode_of_payment,
+				amount: payment.amount,
+				type: payment.type,
+			}))
+	}
+
+	function buildCustomerCreditPayload(rawPayments) {
+		const creditPayments = rawPayments.filter((payment) => payment?.is_customer_credit)
+
+		if (!creditPayments.length) {
+			return {
+				invoicePayments: serializeInvoicePayments(rawPayments),
+				redeemedCustomerCredit: 0,
+				customerCreditDict: [],
+			}
+		}
+
+		const creditSources = new Map()
+		for (const payment of creditPayments) {
+			for (const credit of payment.credit_details || []) {
+				if (!credit?.type || !credit?.credit_origin) continue
+				const key = `${credit.type}:${credit.credit_origin}`
+				if (!creditSources.has(key)) {
+					creditSources.set(key, credit)
+				}
+			}
+		}
+
+		const redeemedCustomerCredit = roundCurrency(
+			creditPayments.reduce((sum, payment) => sum + Number(payment.amount || 0), 0),
+		)
+
+		let remainingCreditToAllocate = redeemedCustomerCredit
+		const customerCreditDict = []
+
+		for (const credit of creditSources.values()) {
+			if (remainingCreditToAllocate <= 0) break
+
+			const availableCredit = roundCurrency(
+				Number(credit.available_credit ?? credit.total_credit ?? 0),
+			)
+			if (availableCredit <= 0) continue
+
+			const creditToRedeem = Math.min(availableCredit, remainingCreditToAllocate)
+			if (creditToRedeem <= 0) continue
+
+			customerCreditDict.push({
+				...credit,
+				credit_to_redeem: roundCurrency(creditToRedeem),
+			})
+			remainingCreditToAllocate = roundCurrency(
+				remainingCreditToAllocate - creditToRedeem,
+			)
+		}
+
+		if (remainingCreditToAllocate > 0.01) {
+			throw new Error("Unable to allocate the selected customer credit")
+		}
+
+		return {
+			invoicePayments: serializeInvoicePayments(rawPayments),
+			redeemedCustomerCredit,
+			customerCreditDict,
+		}
+	}
+
 	async function saveDraft(targetDoctype = "Sales Invoice") {
 		/**
 		 * Save invoice as draft (Step 1)
@@ -705,39 +903,15 @@ export function useInvoice() {
 		// Use toRaw() to ensure we get current, non-reactive values (prevents stale cached quantities)
 		const rawItems = toRaw(invoiceItems.value)
 		const rawPayments = toRaw(payments.value)
+		const { invoicePayments } = buildCustomerCreditPayload(rawPayments)
 
 		const invoiceData = {
 			doctype: targetDoctype,
 			pos_profile: posProfile.value,
 			posa_pos_opening_shift: posOpeningShift.value,
 			customer: customer.value?.name || customer.value,
-			items: rawItems.map((item) => ({
-				item_code: item.item_code,
-				item_name: item.item_name,
-				qty: item.quantity,
-				// IMPORTANT: Rate calculation depends on tax mode and discounts
-				// Tax-inclusive mode: Send gross amount (price after discount, before tax extraction)
-				//   - With discount: price_list_rate - discount_amount
-				//   - Without discount: price_list_rate
-				//   ERPNext will extract net amount based on included_in_print_rate flag
-				// Tax-exclusive mode: Send net amount (after discount, before tax addition)
-				rate: taxInclusive.value
-					? ((item.price_list_rate || item.rate) - (item.discount_amount || 0) / (item.quantity || 1))
-					: (item.quantity > 0 ? item.amount / item.quantity : item.rate),
-				price_list_rate: item.price_list_rate || item.rate,
-				uom: item.uom,
-				warehouse: item.warehouse,
-				batch_no: item.batch_no,
-				serial_no: item.serial_no,
-				conversion_factor: item.conversion_factor || 1,
-				discount_percentage: item.discount_percentage || 0,
-				discount_amount: item.discount_amount || 0,
-			})),
-			payments: rawPayments.map((p) => ({
-				mode_of_payment: p.mode_of_payment,
-				amount: p.amount,
-				type: p.type,
-			})),
+			items: formatItemsForSubmission(rawItems),
+			payments: invoicePayments,
 			discount_amount: additionalDiscount.value || 0,
 			coupon_code: couponCode.value,
 			is_pos: 1,
@@ -745,7 +919,7 @@ export function useInvoice() {
 		}
 
 		if (targetDoctype === "Sales Order") {
-			const today = new Date().toISOString().split('T')[0]
+			const today = new Date().toISOString().split("T")[0]
 			invoiceData.delivery_date = today
 			invoiceData.transaction_date = today
 		}
@@ -754,160 +928,176 @@ export function useInvoice() {
 		return result?.data || result
 	}
 
-	async function submitInvoice(targetDoctype = "Sales Invoice", deliveryDate = null) {
+	async function submitInvoice(
+		targetDoctype = "Sales Invoice",
+		deliveryDate = null,
+		writeOffAmount = 0,
+	) {
 		/**
-		 * Two-step submission process:
+		 * Two-step submission process with mutex protection:
 		 * 1. Create/update draft invoice
 		 * 2. Validate stock and submit
+		 *
+		 * The mutex prevents duplicate invoice creation from:
+		 * - Rapid double-clicks on payment buttons
+		 * - Concurrent submissions from multiple UI interactions
+		 * - Credit sales where full amount goes on account
+		 *
+		 * @param {string} targetDoctype - The document type to create (Sales Invoice or Sales Order)
+		 * @param {string|null} deliveryDate - Delivery date for Sales Orders
+		 * @param {number} writeOffAmount - Amount to write off (small remaining balances)
 		 */
-		try {
-			// Step 1: Create invoice draft
-			// Use toRaw() to ensure we get current, non-reactive values (prevents stale cached quantities)
-			const rawItems = toRaw(invoiceItems.value)
-			const rawPayments = toRaw(payments.value)
-			const rawSalesTeam = toRaw(salesTeam.value)
-
-			const invoiceData = {
-				doctype: targetDoctype,
-				pos_profile: posProfile.value,
-				posa_pos_opening_shift: posOpeningShift.value,
-				customer: customer.value?.name || customer.value,
-				items: rawItems.map((item) => ({
-					item_code: item.item_code,
-					item_name: item.item_name,
-					qty: item.quantity,
-					// IMPORTANT: Rate calculation depends on tax mode and discounts
-					// Tax-inclusive mode: Send gross amount (price after discount, before tax extraction)
-					//   - With discount: price_list_rate - discount_amount
-					//   - Without discount: price_list_rate
-					//   ERPNext will extract net amount based on included_in_print_rate flag
-					// Tax-exclusive mode: Send net amount (after discount, before tax addition)
-					rate: taxInclusive.value
-						? ((item.price_list_rate || item.rate) - (item.discount_amount || 0) / (item.quantity || 1))
-						: (item.quantity > 0 ? item.amount / item.quantity : item.rate),
-					price_list_rate: item.price_list_rate || item.rate,
-					uom: item.uom,
-					warehouse: item.warehouse,
-					batch_no: item.batch_no,
-					serial_no: item.serial_no,
-					conversion_factor: item.conversion_factor || 1,
-					discount_percentage: item.discount_percentage || 0,
-					discount_amount: item.discount_amount || 0,
-				})),
-				payments: rawPayments.map((p) => ({
-					mode_of_payment: p.mode_of_payment,
-					amount: p.amount,
-					type: p.type,
-				})),
-				discount_amount: additionalDiscount.value || 0,
-				coupon_code: couponCode.value,
-				is_pos: 1,
-				update_stock: 1, // Critical: Ensures stock is updated
-			}
-
-			if (targetDoctype === "Sales Order" && deliveryDate) {
-				invoiceData.delivery_date = deliveryDate
-			}
-
-			// Add sales_team if provided
-			if (rawSalesTeam && rawSalesTeam.length > 0) {
-				invoiceData.sales_team = rawSalesTeam.map((member) => ({
-					sales_person: member.sales_person,
-					allocated_percentage: member.allocated_percentage || 0,
-				}))
-			}
-
-			const draftInvoice = await updateInvoiceResource.submit({
-				data: invoiceData,
-			})
-
-			let invoiceDoc = draftInvoice
-			if (
-				draftInvoice &&
-				typeof draftInvoice === "object" &&
-				"data" in draftInvoice
-			) {
-				invoiceDoc = draftInvoice.data
-			}
-
-			if (!invoiceDoc || !invoiceDoc.name) {
-				throw new Error(
-					"Failed to create draft invoice - no invoice name returned",
+		return await submitMutex.withLock(async () => {
+			// Check if already submitting (belt and suspenders with mutex)
+			if (isSubmitting.value) {
+				log.warn(
+					"Invoice submission already in progress, skipping duplicate request",
 				)
+				return null
 			}
 
-			const submitData = {
-				change_amount:
-					remainingAmount.value < 0 ? Math.abs(remainingAmount.value) : 0,
-			}
+			isSubmitting.value = true
 
 			try {
-				const result = await submitInvoiceResource.submit({
-					invoice: invoiceDoc,
-					data: submitData,
+				// Step 1: Create invoice draft
+				// Use toRaw() to ensure we get current, non-reactive values (prevents stale cached quantities)
+				const rawItems = toRaw(invoiceItems.value)
+				const rawPayments = toRaw(payments.value)
+				const rawSalesTeam = toRaw(salesTeam.value)
+				const {
+					invoicePayments,
+					redeemedCustomerCredit,
+					customerCreditDict,
+				} = buildCustomerCreditPayload(rawPayments)
+
+				const invoiceData = {
+					doctype: targetDoctype,
+					pos_profile: posProfile.value,
+					posa_pos_opening_shift: posOpeningShift.value,
+					customer: customer.value?.name || customer.value,
+					items: formatItemsForSubmission(rawItems),
+					payments: invoicePayments,
+					discount_amount: additionalDiscount.value || 0,
+					coupon_code: couponCode.value,
+					is_pos: 1,
+					update_stock: 1, // Critical: Ensures stock is updated
+				}
+
+				if (targetDoctype === "Sales Order" && deliveryDate) {
+					invoiceData.delivery_date = deliveryDate
+				}
+
+				// Add sales_team if provided
+				if (rawSalesTeam && rawSalesTeam.length > 0) {
+					invoiceData.sales_team = rawSalesTeam.map((member) => ({
+						sales_person: member.sales_person,
+						allocated_percentage: member.allocated_percentage || 0,
+					}))
+				}
+
+				const draftInvoice = await updateInvoiceResource.submit({
+					data: invoiceData,
 				})
 
-				// Check if resource has error (frappe-ui pattern)
-				if (submitInvoiceResource.error) {
-					const resourceError = submitInvoiceResource.error
-					console.error("Submit invoice resource error:", resourceError)
-
-					// Create a detailed error object
-					const detailedError = new Error(
-						resourceError.message || "Invoice submission failed",
-					)
-					detailedError.exc_type = resourceError.exc_type
-					detailedError._server_messages = resourceError._server_messages
-					detailedError.httpStatus = resourceError.httpStatus
-					detailedError.messages = resourceError.messages
-
-					throw detailedError
+				let invoiceDoc = draftInvoice
+				if (
+					draftInvoice &&
+					typeof draftInvoice === "object" &&
+					"data" in draftInvoice
+				) {
+					invoiceDoc = draftInvoice.data
 				}
 
-				resetInvoice()
-				return result
-			} catch (error) {
-				// Preserve original error object with all its properties
-				console.error("Submit invoice error:", error)
-				console.log("submitInvoiceResource.error:", submitInvoiceResource.error)
+				if (!invoiceDoc || !invoiceDoc.name) {
+					throw new Error(
+						"Failed to create draft invoice - no invoice name returned",
+					)
+				}
 
-				// If resource has error data, extract and attach it
-				if (submitInvoiceResource.error) {
-					const resourceError = submitInvoiceResource.error
-					console.log("Resource error details:", {
-						exc_type: resourceError.exc_type,
-						_server_messages: resourceError._server_messages,
-						httpStatus: resourceError.httpStatus,
-						messages: resourceError.messages,
-						messagesContent: JSON.stringify(resourceError.messages),
-						data: resourceError.data,
-						exception: resourceError.exception,
-						keys: Object.keys(resourceError),
+				const submitData = {
+					change_amount:
+						remainingAmount.value < 0 ? Math.abs(remainingAmount.value) : 0,
+					write_off_amount: writeOffAmount || 0,
+				}
+
+				if (redeemedCustomerCredit > 0 && customerCreditDict.length > 0) {
+					submitData.redeemed_customer_credit = redeemedCustomerCredit
+					submitData.customer_credit_dict = customerCreditDict
+				}
+
+				try {
+					const result = await submitInvoiceResource.submit({
+						invoice: invoiceDoc,
+						data: submitData,
 					})
 
-					// The messages array likely contains the detailed error info
-					if (resourceError.messages && resourceError.messages.length > 0) {
-						console.log("First message:", resourceError.messages[0])
+					// Check if resource has error (frappe-ui pattern)
+					if (submitInvoiceResource.error) {
+						const resourceError = submitInvoiceResource.error
+						console.error("Submit invoice resource error:", resourceError)
+
+						// Create a detailed error object
+						const detailedError = new Error(
+							resourceError.message || "Invoice submission failed",
+						)
+						detailedError.exc_type = resourceError.exc_type
+						detailedError._server_messages = resourceError._server_messages
+						detailedError.httpStatus = resourceError.httpStatus
+						detailedError.messages = resourceError.messages
+
+						throw detailedError
 					}
 
-					// Attach all resource error properties to the error
-					error.exc_type = resourceError.exc_type || error.exc_type
-					error._server_messages = resourceError._server_messages
-					error.httpStatus = resourceError.httpStatus
-					error.messages = resourceError.messages
-					error.exception = resourceError.exception
-					error.data = resourceError.data
+					resetInvoice()
+					return result
+				} catch (error) {
+					// Preserve original error object with all its properties
+					console.error("Submit invoice error:", error)
+					console.log(
+						"submitInvoiceResource.error:",
+						submitInvoiceResource.error,
+					)
 
-					console.log("After attaching, error.messages:", error.messages)
+					// If resource has error data, extract and attach it
+					if (submitInvoiceResource.error) {
+						const resourceError = submitInvoiceResource.error
+						console.log("Resource error details:", {
+							exc_type: resourceError.exc_type,
+							_server_messages: resourceError._server_messages,
+							httpStatus: resourceError.httpStatus,
+							messages: resourceError.messages,
+							messagesContent: JSON.stringify(resourceError.messages),
+							data: resourceError.data,
+							exception: resourceError.exception,
+							keys: Object.keys(resourceError),
+						})
+
+						// The messages array likely contains the detailed error info
+						if (resourceError.messages && resourceError.messages.length > 0) {
+							console.log("First message:", resourceError.messages[0])
+						}
+
+						// Attach all resource error properties to the error
+						error.exc_type = resourceError.exc_type || error.exc_type
+						error._server_messages = resourceError._server_messages
+						error.httpStatus = resourceError.httpStatus
+						error.messages = resourceError.messages
+						error.exception = resourceError.exception
+						error.data = resourceError.data
+
+						console.log("After attaching, error.messages:", error.messages)
+					}
+
+					throw error
 				}
-
+			} catch (error) {
+				// Outer catch to ensure error propagates
+				console.error("Submit invoice outer error:", error)
 				throw error
+			} finally {
+				isSubmitting.value = false
 			}
-		} catch (error) {
-			// Outer catch to ensure error propagates
-			console.error("Submit invoice outer error:", error)
-			throw error
-		}
+		}) // End of submitMutex.withLock
 	}
 
 	/**
@@ -1057,6 +1247,7 @@ export function useInvoice() {
 		couponCode,
 		taxRules,
 		taxInclusive,
+		isSubmitting,
 
 		// Computed
 		subtotal,
@@ -1089,6 +1280,8 @@ export function useInvoice() {
 		setTaxInclusive,
 		recalculateItem,
 		rebuildIncrementalCache,
+		formatItemsForSubmission,
+		resolveUomPricing,
 
 		// Resources
 		updateInvoiceResource,

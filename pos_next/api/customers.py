@@ -8,7 +8,7 @@ from frappe import _
 
 
 @frappe.whitelist()
-def get_customers(search_term="", pos_profile=None, limit=20):
+def get_customers(search_term="", pos_profile=None, limit=20, modified_since=None):
 
     """
     Search customers for inline customer selection in POS.
@@ -17,16 +17,18 @@ def get_customers(search_term="", pos_profile=None, limit=20):
         search_term (str): Search query (name, mobile, or customer ID)
         pos_profile (str): POS Profile to filter by customer group
         limit (int): Maximum number of results to return
+        modified_since (str): Fetch customers modified after this timestamp (ISO format)
 
     Returns:
-        list: List of customer dictionaries with name, customer_name, mobile_no, email_id
+        list: List of customer dictionaries with name, customer_name, mobile_no, email_id, disabled
     """
     try:
         frappe.logger().debug(
-            f"get_customers called with search_term={search_term}, pos_profile={pos_profile}, limit={limit}"
+            f"get_customers called with search_term={search_term}, pos_profile={pos_profile}, limit={limit}, modified_since={modified_since}"
         )
 
         filters = {}
+        or_filters = []
 
         # Filter by POS Profile customer group if specified
         if pos_profile:
@@ -37,13 +39,29 @@ def get_customers(search_term="", pos_profile=None, limit=20):
                 filters["customer_group"] = profile_doc.customer_group
                 frappe.logger().debug(f"Filtering by customer_group: {profile_doc.customer_group}")
 
-        # Return all customers (for client-side filtering)
-        filters["disabled"] = 0
+        if modified_since:
+            # Delta sync: include disabled customers so frontend can purge them
+            filters["modified"] = [">=", modified_since]
+        else:
+            # Full fetch: only active customers
+            filters["disabled"] = 0
+
+        search_term = (search_term or "").strip()
+        if search_term:
+            like_term = f"%{search_term}%"
+            or_filters = [
+                ["Customer", "name", "like", like_term],
+                ["Customer", "customer_name", "like", like_term],
+                ["Customer", "mobile_no", "like", like_term],
+                ["Customer", "email_id", "like", like_term],
+            ]
+
         customer_limit = limit if limit not in (None, 0) else frappe.db.count("Customer", filters)
         result = frappe.get_all(
             "Customer",
             filters=filters,
-            fields=["name", "customer_name", "mobile_no", "email_id"],
+            or_filters=or_filters or None,
+            fields=["name", "customer_name", "mobile_no", "email_id", "disabled"],
             limit=customer_limit,
             order_by="customer_name asc",
         )
@@ -56,7 +74,15 @@ def get_customers(search_term="", pos_profile=None, limit=20):
 
 
 @frappe.whitelist()
-def create_customer(customer_name, mobile_no=None, email_id=None, customer_group="Individual", territory="All Territories", company=None):
+def create_customer(
+    customer_name,
+    mobile_no=None,
+    email_id=None,
+    customer_group="Individual",
+    territory="All Territories",
+    company=None,
+    pos_profile=None,
+):
     """
     Create a new customer from POS.
 
@@ -67,6 +93,7 @@ def create_customer(customer_name, mobile_no=None, email_id=None, customer_group
         customer_group (str): Customer group (default: Individual)
         territory (str): Territory (default: All Territories)
         company (str): Company (optional, used to auto-assign loyalty program)
+        pos_profile (str): POS Profile (optional, preferred for context-aware loyalty assignment)
 
     Returns:
         dict: Created customer document
@@ -78,10 +105,10 @@ def create_customer(customer_name, mobile_no=None, email_id=None, customer_group
     if not customer_name:
         frappe.throw(_("Customer name is required"))
 
-    # Auto-assign loyalty program based on company
-    loyalty_program = None
-    if company:
-        loyalty_program = get_default_loyalty_program(company)
+    loyalty_program = get_default_loyalty_program_from_settings(
+        company=company,
+        pos_profile=pos_profile,
+    )
 
     customer = frappe.get_doc(
         {
@@ -96,7 +123,13 @@ def create_customer(customer_name, mobile_no=None, email_id=None, customer_group
         }
     )
 
-    customer.insert()
+    frappe.flags.pos_next_customer_company = company
+    frappe.flags.pos_next_customer_pos_profile = pos_profile
+    try:
+        customer.insert()
+    finally:
+        frappe.flags.pos_next_customer_company = None
+        frappe.flags.pos_next_customer_pos_profile = None
 
     return customer.as_dict()
 
@@ -148,8 +181,11 @@ def auto_assign_loyalty_program(doc, method=None):
     if doc.loyalty_program:
         return
 
-    # Get loyalty program from POS Settings
-    loyalty_program = get_default_loyalty_program_from_settings()
+    company, pos_profile = _get_customer_assignment_context()
+    loyalty_program = get_default_loyalty_program_from_settings(
+        company=company,
+        pos_profile=pos_profile,
+    )
 
     if loyalty_program:
         # Use db_set to avoid triggering validate hooks again
@@ -159,24 +195,55 @@ def auto_assign_loyalty_program(doc, method=None):
         )
 
 
-def get_default_loyalty_program_from_settings():
+def _get_customer_assignment_context():
+    """Get company/profile context for customer auto-assignment from the current request."""
+    company = getattr(frappe.flags, "pos_next_customer_company", None)
+    pos_profile = getattr(frappe.flags, "pos_next_customer_pos_profile", None)
+
+    form_dict = getattr(frappe.local, "form_dict", None)
+    if form_dict:
+        company = company or form_dict.get("company")
+        pos_profile = pos_profile or form_dict.get("pos_profile")
+
+    return company, pos_profile
+
+
+def get_default_loyalty_program_from_settings(company=None, pos_profile=None):
     """
-    Get the default loyalty program from POS Settings.
-    Checks all enabled POS Settings and returns the first configured loyalty program.
+    Get the default loyalty program from POS Settings using explicit context.
+    Returns a program only when the company/profile context is clear enough to avoid
+    assigning the wrong loyalty program.
 
     Returns:
         str: Loyalty program name or None if not configured
     """
-    # Find POS Settings with default_loyalty_program set
+    if pos_profile:
+        pos_settings = frappe.db.get_value(
+            "POS Settings",
+            {"enabled": 1, "pos_profile": pos_profile},
+            "default_loyalty_program",
+        )
+        return pos_settings or None
+
+    if not company:
+        return None
+
     pos_settings = frappe.get_all(
         "POS Settings",
         filters={"enabled": 1, "default_loyalty_program": ["is", "set"]},
-        fields=["default_loyalty_program"],
-        limit=1
+        fields=["pos_profile", "default_loyalty_program"],
+        order_by="modified desc",
     )
 
-    if pos_settings and pos_settings[0].get("default_loyalty_program"):
-        return pos_settings[0].default_loyalty_program
+    company_programs = []
+    for row in pos_settings:
+        profile_company = frappe.get_cached_value("POS Profile", row.pos_profile, "company")
+        if profile_company == company:
+            company_programs.append(row.default_loyalty_program)
+
+    unique_programs = list(dict.fromkeys(program for program in company_programs if program))
+    if len(unique_programs) == 1:
+        return unique_programs[0]
 
     return None
 

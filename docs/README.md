@@ -11,6 +11,15 @@ Welcome to the POS Next documentation directory. This folder contains comprehens
   - Available languages
   - Troubleshooting
 
+- **[Wallet-Loyalty-User-Guide.md](Wallet-Loyalty-User-Guide.md)** - Wallet and loyalty system user guide
+
+- **[OFFERS_AND_PROMOTIONS.md](OFFERS_AND_PROMOTIONS.md)** - Offers and promotions system
+  - Pricing Rules and Promotional Schemes integration
+  - Mixed Conditions configuration
+  - Frontend architecture (stores, flow)
+  - Backend API reference
+  - Troubleshooting guide
+
 ### Architecture
 - **[STARTUP_SEQUENCE.md](STARTUP_SEQUENCE.md)** - Application initialization flow
   - PWA service worker registration
@@ -18,6 +27,23 @@ Welcome to the POS Next documentation directory. This folder contains comprehens
   - Bootstrap data preloading
   - Performance optimizations
   - Offline worker integration
+
+- **[OFFLINE_SYNC.md](OFFLINE_SYNC.md)** - Offline invoice synchronization system
+  - Architecture overview
+  - Deduplication mechanism (offline_id)
+  - Data flow diagrams
+  - API reference
+  - IndexedDB schema
+  - Troubleshooting guide
+
+- **[PRICING_AND_SUBMISSION.md](PRICING_AND_SUBMISSION.md)** - Pricing and invoice submission flow
+  - Rate vs Price List Rate concepts
+  - Tax modes (inclusive/exclusive)
+  - Discount handling (item-level and cart-level)
+  - Frontend and backend function reference
+  - Offline mode pricing
+  - Pricing rules integration
+  - Troubleshooting guide
 
 ### Version Control
 - **[VERSION_CONTROL.md](VERSION_CONTROL.md)** - Complete guide to the version control system
@@ -65,11 +91,16 @@ yarn build
 
 ```
 docs/
-├── README.md                    # This file
-├── LOCALIZATION.md              # Language settings user guide
-├── STARTUP_SEQUENCE.md          # Application initialization flow
-├── VERSION_CONTROL.md           # Comprehensive version control guide
-└── QUICKSTART_VERSION.md        # Quick reference guide
+├── README.md                        # This file
+├── LOCALIZATION.md                  # Language settings user guide
+├── OFFERS_AND_PROMOTIONS.md         # Offers and promotions system
+├── OFFLINE_SYNC.md                  # Offline invoice sync system
+├── PRICING_AND_SUBMISSION.md        # Pricing and invoice submission flow
+├── STARTUP_SEQUENCE.md              # Application initialization flow
+├── VERSION_CONTROL.md               # Comprehensive version control guide
+├── QUICKSTART_VERSION.md            # Quick reference guide
+├── Wallet-System-Technical-Guide.md # Wallet system technical docs
+└── Wallet-Loyalty-User-Guide.md     # Wallet and loyalty user guide
 ```
 
 ## 🔗 External Resources

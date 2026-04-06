@@ -31,7 +31,7 @@ def get_pos_profiles():
 
 @frappe.whitelist()
 def get_pos_profile_data(pos_profile):
-	"""Get detailed POS Profile data"""
+	"""Get detailed POS Profile data with hierarchical item groups for instant UI rendering."""
 	if not pos_profile:
 		frappe.throw(_("POS Profile is required"))
 
@@ -50,10 +50,16 @@ def get_pos_profile_data(pos_profile):
 	# Get POS Settings for this profile
 	pos_settings = get_pos_settings(pos_profile)
 
+	# Get hierarchical item groups (with child_groups info) in same call
+	# This eliminates a separate API call to get_item_groups
+	from pos_next.api.items import get_item_groups
+	item_groups_with_hierarchy = get_item_groups(pos_profile)
+
 	return {
 		"pos_profile": profile_doc,
 		"company": company_doc,
 		"pos_settings": pos_settings,
+		"item_groups_hierarchy": item_groups_with_hierarchy,  # NEW: includes child_groups
 		"print_settings": {
 			"auto_print": profile_doc.get("print_receipt_on_order_complete", 0),
 			"print_format": profile_doc.get("print_format"),
@@ -65,55 +71,22 @@ def get_pos_profile_data(pos_profile):
 @frappe.whitelist()
 def get_pos_settings(pos_profile):
 	"""Get POS Settings for a given POS Profile"""
+	from pos_next.api.constants import POS_SETTINGS_FIELDS, DEFAULT_POS_SETTINGS
+
 	if not pos_profile:
-		return {}
+		return DEFAULT_POS_SETTINGS.copy()
 
 	try:
 		# Get POS Settings linked to this POS Profile
 		pos_settings = frappe.db.get_value(
 			"POS Settings",
 			{"pos_profile": pos_profile, "enabled": 1},
-			[
-				"tax_inclusive",
-				"allow_user_to_edit_additional_discount",
-				"allow_user_to_edit_item_discount",
-				"use_percentage_discount",
-				"max_discount_allowed",
-				"disable_rounded_total",
-				"allow_credit_sale",
-				"allow_return",
-				"allow_write_off_change",
-				"allow_partial_payment",
-				"decimal_precision",
-				"allow_negative_stock",
-				"enable_sales_persons",
-				"allow_sales_order",
-				"allow_select_sales_order",
-				"create_only_sales_order"
-			],
+			POS_SETTINGS_FIELDS,
 			as_dict=True
 		)
 
-		# Return settings or defaults if not found
 		if not pos_settings:
-			pos_settings = {
-				"tax_inclusive": 0,
-				"allow_user_to_edit_additional_discount": 0,
-				"allow_user_to_edit_item_discount": 1,
-				"use_percentage_discount": 0,
-				"max_discount_allowed": 0,
-				"disable_rounded_total": 1,
-				"allow_credit_sale": 0,
-				"allow_return": 0,
-				"allow_write_off_change": 0,
-				"allow_partial_payment": 0,
-				"decimal_precision": "2",
-				"allow_negative_stock": 0,
-				"enable_sales_persons": "Disabled",
-				"allow_sales_order": 0,
-				"allow_select_sales_order": 0,
-				"create_only_sales_order": 0
-			}
+			pos_settings = DEFAULT_POS_SETTINGS.copy()
 
 		# Get allow_rate_change from POS Profile
 		allow_rate_change = frappe.db.get_value("POS Profile", pos_profile, "allow_rate_change")
@@ -123,36 +96,54 @@ def get_pos_settings(pos_profile):
 			pos_settings["allow_rate_change"] = 0
 
 		return pos_settings
-	except Exception as e:
+	except Exception:
 		frappe.log_error(frappe.get_traceback(), "Get POS Settings Error")
-		return {}
+		return DEFAULT_POS_SETTINGS.copy()
 
 
 @frappe.whitelist()
 def get_payment_methods(pos_profile):
-	"""Get available payment methods from POS Profile"""
+	"""Get available payment methods from POS Profile with optimized queries"""
 	try:
 		# Validate pos_profile parameter
 		if not pos_profile:
 			frappe.throw(_("POS Profile is required"))
 
-		payment_methods = frappe.get_list(
-			"POS Payment Method",
-			filters={"parent": pos_profile},
-			fields=["mode_of_payment", "default", "allow_in_returns"],
-			order_by="idx",
-			ignore_permissions=True
+		# Get company from POS Profile
+		company = frappe.db.get_value("POS Profile", pos_profile, "company")
+
+		from frappe.query_builder import DocType
+		from frappe.query_builder.functions import Coalesce
+
+		POSPaymentMethod = DocType("POS Payment Method")
+		ModeOfPayment = DocType("Mode of Payment")
+		ModeOfPaymentAccount = DocType("Mode of Payment Account")
+		Account = DocType("Account")
+
+		# Single query with JOINs to get payment methods with type and account info
+		query = (
+			frappe.qb.from_(POSPaymentMethod)
+			.left_join(ModeOfPayment)
+			.on(POSPaymentMethod.mode_of_payment == ModeOfPayment.name)
+			.left_join(ModeOfPaymentAccount)
+			.on(
+				(ModeOfPaymentAccount.parent == ModeOfPayment.name) &
+				(ModeOfPaymentAccount.company == company)
+			)
+			.left_join(Account)
+			.on(Account.name == ModeOfPaymentAccount.default_account)
+			.select(
+				POSPaymentMethod.mode_of_payment,
+				POSPaymentMethod.default,
+				POSPaymentMethod.allow_in_returns,
+				Coalesce(ModeOfPayment.type, "Cash").as_("type"),
+				Coalesce(Account.account_type, "").as_("account_type")
+			)
+			.where(POSPaymentMethod.parent == pos_profile)
+			.orderby(POSPaymentMethod.idx)
 		)
 
-		# Get payment type for each method
-		for method in payment_methods:
-			payment_type = frappe.db.get_value(
-				"Mode of Payment",
-				method["mode_of_payment"],
-				"type"
-			)
-			method["type"] = payment_type or "Cash"
-
+		payment_methods = query.run(as_dict=True)
 		return payment_methods
 	except Exception as e:
 		frappe.log_error(frappe.get_traceback(), "Get Payment Methods Error")
@@ -301,6 +292,51 @@ def update_warehouse(pos_profile, warehouse):
 
 
 @frappe.whitelist()
+def get_wallet_payment_flags(methods):
+	"""
+	Get is_wallet_payment flags for multiple payment methods in a single query.
+
+	Args:
+		methods: List of mode_of_payment names (can be JSON string or list)
+
+	Returns:
+		Dict mapping mode_of_payment name to is_wallet_payment flag
+	"""
+	import json
+
+	if not methods:
+		return {}
+
+	# Parse JSON string if needed
+	if isinstance(methods, str):
+		try:
+			methods = json.loads(methods)
+		except json.JSONDecodeError:
+			return {}
+
+	if not isinstance(methods, list) or len(methods) == 0:
+		return {}
+
+	from frappe.query_builder import DocType
+
+	ModeOfPayment = DocType("Mode of Payment")
+
+	query = (
+		frappe.qb.from_(ModeOfPayment)
+		.select(
+			ModeOfPayment.name,
+			ModeOfPayment.is_wallet_payment
+		)
+		.where(ModeOfPayment.name.isin(methods))
+	)
+
+	results = query.run(as_dict=True)
+
+	# Return as dict for easy lookup
+	return {r["name"]: r["is_wallet_payment"] or 0 for r in results}
+
+
+@frappe.whitelist()
 def get_sales_persons(pos_profile=None):
 	"""Get all active individual sales persons (not groups) for POS"""
 	try:
@@ -345,6 +381,7 @@ def get_create_pos_profile(*args, **kwargs):
 		- posa_cash_mode_of_payment: Cash payment methods
 		- item_groups: Available item groups
 		- customer_groups: Available customer groups
+		- brands: Available brands
 	"""
 	try:
 		user_company = check_user_company()
@@ -409,7 +446,10 @@ def get_create_pos_profile(*args, **kwargs):
 			"Customer Group",
 			filters={"is_group": 0},
 		)
-		
+		brands = frappe.get_list(
+			"Brand",
+			order_by="name",
+		)
 		data = {
 			"warehouses": warehouses,
 			"customers": customers,
@@ -421,6 +461,7 @@ def get_create_pos_profile(*args, **kwargs):
 			"posa_cash_mode_of_payment": posa_cash_mode_of_payment,
 			"item_groups": item_groups,
 			"customer_groups": customer_groups,
+			"brands": brands,
 			"apply_discount_on_options": [
 				{"value": "Grand Total", "label": "Grand Total"},
 				{"value": "Net Total", "label": "Net Total"},
@@ -451,6 +492,7 @@ def create_pos_profile(*arg ,**parameters):
 		- posa_cash_mode_of_payment: Cash payment method
 		- item_groups: List of item groups (filters)
 		- customer_groups: List of customer groups (filters)
+		- brands: List of brands (filters)
 		- apply_discount_on: Discount application method
 	"""
 
@@ -460,12 +502,14 @@ def create_pos_profile(*arg ,**parameters):
 	applicable_for_users = parameters.pop("applicable_for_users", [])
 	item_groups = parameters.pop("item_groups", [])
 	customer_groups = parameters.pop("customer_groups", [])
+	brands = parameters.pop("brands", [])
 	
 	# parse list parameters
 	payments = _parse_list_parameter(payments, "payments")
 	applicable_for_users = _parse_list_parameter(applicable_for_users, "applicable_for_users")
 	item_groups = _parse_list_parameter(item_groups, "item_groups")
 	customer_groups = _parse_list_parameter(customer_groups, "customer_groups")
+	brands = _parse_list_parameter(brands, "brands")
 	
 	# Get user's company
 	user_company_data = check_user_company()
@@ -513,6 +557,12 @@ def create_pos_profile(*arg ,**parameters):
 			customer_group_name = customer_group if isinstance(customer_group, str) else customer_group.get("customer_group")
 			pos_profile.append("customer_groups", {"customer_group": customer_group_name})
 
+	if isinstance(brands, list) and len(brands) > 0:
+		for brand in brands:
+			brand_name = brand if isinstance(brand, str) else brand.get("brand") or brand.get("name")
+			if brand_name:
+				pos_profile.append("custom_brands_table", {"brand": brand_name})
+
 	pos_profile.insert()
 	return pos_profile
 
@@ -530,12 +580,14 @@ def update_pos_profile(*args, **parameters):
 	applicable_for_users = parameters.pop("applicable_for_users", None)
 	item_groups = parameters.pop("item_groups", None)
 	customer_groups = parameters.pop("customer_groups", None)
+	brands = parameters.pop("brands", None)
 	pos_profile_name = parameters.pop("pos_profile_name", None)
 	# parse list parameters
 	payments = _parse_list_parameter(payments, "payments")
 	applicable_for_users = _parse_list_parameter(applicable_for_users, "applicable_for_users")
 	item_groups = _parse_list_parameter(item_groups, "item_groups")
 	customer_groups = _parse_list_parameter(customer_groups, "customer_groups")
+	brands = _parse_list_parameter(brands, "brands")
 	
 	pos_profile = frappe.get_doc("POS Profile", pos_profile_name)
 	
@@ -585,8 +637,27 @@ def update_pos_profile(*args, **parameters):
 			customer_group_name = customer_group if isinstance(customer_group, str) else customer_group.get("customer_group") or customer_group.get("name")
 			if customer_group_name:
 				pos_profile.append("customer_groups", {"customer_group": customer_group_name})
+
+	if brands is not None:
+		pos_profile.custom_brands_table = []
+		for brand in brands:
+			brand_name = brand if isinstance(brand, str) else brand.get("brand") or brand.get("name")
+			if brand_name:
+				pos_profile.append("custom_brands_table", {"brand": brand_name})
 		
 	pos_profile.save()
+
+	# Invalidate cached POS filters so changes are reflected immediately in POS UI
+	try:
+		cache = frappe.cache()
+		# Brands cache (used by pos_next.api.items.get_brands)
+		cache.delete_value(f"pos_brands:{pos_profile.name}")
+		# Item groups cache (used by pos_next.api.items.get_item_groups)
+		cache.delete_value(f"pos_item_groups:{pos_profile.name}")
+	except Exception:
+		# Cache invalidation issues should not block updating the POS Profile
+		frappe.log_error(frappe.get_traceback(), "POS Profile Cache Invalidation Error")
+
 	return pos_profile
 	
 @frappe.whitelist()

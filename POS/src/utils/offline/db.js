@@ -42,7 +42,9 @@ const CURRENT_SCHEMA = {
 	invoice_queue: "++id, timestamp, synced",
 
 	// Items cache with searchable fields
-	items: "&item_code, item_name, item_group, *barcodes",
+	// variant_of index allows querying variants by their template item
+	// brand index allows efficient brand-based filtering in offline mode
+	items: "&item_code, item_name, item_group, variant_of, has_variants, brand, *barcodes",
 
 	// Customers cache
 	customers: "&name, customer_name, mobile_no, email_id",
@@ -56,6 +58,9 @@ const CURRENT_SCHEMA = {
 	// Payment methods cache
 	payment_methods: "&mode_of_payment, pos_profile",
 
+	// Sales persons cache
+	sales_persons: "&name, pos_profile",
+
 	// Payment queue for offline payments
 	payment_queue: "++id, timestamp, synced",
 
@@ -64,6 +69,18 @@ const CURRENT_SCHEMA = {
 
 	// Translations cache for offline language support
 	translations: "&locale, timestamp",
+
+	// Promotional offers cache for offline use
+	// Indexed by name (unique), filterable by pos_profile
+	offers: "&name, pos_profile, apply_on, valid_upto",
+
+	// Invoice history cache for offline viewing
+	// Stores submitted invoices for offline access
+	invoice_history: "&name, pos_profile, posting_date, customer",
+
+	// Unpaid invoices cache for offline viewing
+	// Stores invoices with outstanding amounts for partial payment management
+	unpaid_invoices: "&name, pos_profile, outstanding_amount, customer",
 }
 
 /**
@@ -228,6 +245,7 @@ export const clearCachedData = async (options = {}) => {
 		stock: 0,
 		item_prices: 0,
 		payment_methods: 0,
+		sales_persons: 0,
 		invoices: 0,
 		payments: 0,
 		drafts: 0,
@@ -241,6 +259,7 @@ export const clearCachedData = async (options = {}) => {
 		results.stock = await db.stock.clear()
 		results.item_prices = await db.item_prices.clear()
 		results.payment_methods = await db.payment_methods.clear()
+		results.sales_persons = await db.sales_persons.clear()
 
 		// Conditionally clear invoice and payment queues
 		if (!preserveInvoices) {

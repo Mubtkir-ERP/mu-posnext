@@ -1,40 +1,133 @@
 <template>
 	<Dialog
-        v-model="show"
-        :options="{ title: __('Create Return Invoice'), size: '5xl' }"
-    >
+		v-model="showDialog"
+		:options="{ title: __('Create Return Invoice'), size: '5xl' }"
+	>
 		<template #body-content>
 			<div class="flex flex-col gap-4">
+				<!-- Offline Mode Warning -->
+				<div v-if="isOffline" class="bg-amber-50 border border-amber-200 rounded-lg p-4 flex items-start gap-3">
+					<div class="flex-shrink-0 w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center">
+						<FeatherIcon name="wifi-off" class="w-5 h-5 text-amber-600" />
+					</div>
+					<div class="flex-1 min-w-0 text-start">
+						<h4 class="text-sm font-bold text-amber-900">{{ __('Offline Mode') }}</h4>
+						<p class="text-xs text-amber-700 mt-1">
+							{{ __('Return invoices cannot be processed while offline. Please connect to the internet to search for invoices and create returns.') }}
+						</p>
+					</div>
+				</div>
+
 				<!-- Recent Invoices List -->
 				<div>
 					<label class="block text-sm text-start font-medium text-gray-700 mb-3">
 						{{ __('Select Invoice to Return') }}
 					</label>
 
-					<!-- Search/Filter Input -->
+					<!-- Smart Search Input with Autocomplete -->
 					<div class="mb-3 flex gap-2">
-						<Input
-							v-model="invoiceListFilter"
-							type="text"
-							:placeholder="__('Search by invoice number or customer name...')"
-							class="flex-1"
-						/>
+						<div class="flex-1 relative">
+							<div class="relative">
+								<FeatherIcon name="search" class="absolute start-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+								<input
+									ref="invoiceSearchInput"
+									v-model="invoiceListFilter"
+									type="text"
+									:placeholder="isOffline ? __('Search unavailable offline') : __('Search by invoice, customer, or mobile...')"
+									:disabled="isOffline"
+									:class="[
+										'w-full ps-10 pe-10 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500',
+										isOffline ? 'bg-gray-100 border-gray-200 text-gray-400 cursor-not-allowed' : 'border-gray-300'
+									]"
+									@input="onSearchInput"
+									@keydown.down.prevent="navigateSuggestion(1)"
+									@keydown.up.prevent="navigateSuggestion(-1)"
+									@keydown.enter.prevent="selectSuggestionOrSearch"
+									@keydown.escape="closeSuggestions"
+									@focus="showSuggestionsOnFocus"
+									@blur="onSearchBlur"
+									autocomplete="off"
+								/>
+								<button
+									v-if="invoiceListFilter"
+									@mousedown.prevent="clearSearch"
+									class="absolute end-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+								>
+									<FeatherIcon name="x" class="w-4 h-4" />
+								</button>
+							</div>
+
+							<!-- Autocomplete Suggestions Dropdown -->
+							<div
+								v-if="showSuggestions && (searchSuggestions.length > 0 || searchInvoiceByNumberResource.loading)"
+								class="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-64 overflow-y-auto"
+							>
+								<!-- Loading indicator for server search -->
+								<div v-if="searchInvoiceByNumberResource.loading" class="px-3 py-2 flex items-center gap-2 text-blue-600 bg-blue-50">
+									<FeatherIcon name="loader" class="w-4 h-4 animate-spin" />
+									<span class="text-sm font-medium">{{ __('Searching database...') }}</span>
+								</div>
+								<!-- Suggestion list -->
+								<div
+									v-for="(suggestion, index) in searchSuggestions"
+									:key="suggestion.name"
+									@mousedown.prevent="selectSuggestion(suggestion)"
+									:class="[
+										'px-3 py-2 cursor-pointer transition-colors border-b border-gray-100 last:border-b-0',
+										index === selectedSuggestionIndex ? 'bg-blue-50' : 'hover:bg-gray-50'
+									]"
+								>
+									<div class="flex items-center justify-between">
+										<div class="flex-1 min-w-0">
+											<div class="flex items-center gap-2">
+												<span class="text-sm font-medium text-gray-900" v-html="highlightSearchMatch(suggestion.name, invoiceListFilter)"></span>
+												<span :class="['px-1.5 py-0.5 text-xs font-medium rounded', getInvoiceStatusColor(suggestion)]">
+													{{ __(suggestion.status) }}
+												</span>
+											</div>
+											<p class="text-xs text-gray-500 truncate">
+												<span v-html="highlightSearchMatch(suggestion.customer_name, invoiceListFilter)"></span>
+												<span v-if="suggestion.contact_mobile" class="text-gray-400"> • <span v-html="highlightSearchMatch(suggestion.contact_mobile, invoiceListFilter)"></span></span>
+											</p>
+										</div>
+										<div class="text-end ms-2">
+											<p class="text-sm font-medium text-gray-900">{{ formatCurrency(suggestion.grand_total) }}</p>
+											<p class="text-xs text-gray-400">{{ formatDate(suggestion.posting_date) }}</p>
+										</div>
+									</div>
+								</div>
+							</div>
+						</div>
 						<Button
 							variant="subtle"
 							@click="loadInvoicesResource.reload()"
 							:loading="loadInvoicesResource.loading"
-							:title="__('Refresh')"
+							:disabled="isOffline"
+							:title="isOffline ? __('Refresh unavailable offline') : __('Refresh')"
 						>
-							<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
-							</svg>
+							<FeatherIcon name="refresh-cw" class="w-4 h-4" />
 						</Button>
 					</div>
 
-					<!-- Loading State -->
-					<div v-if="loadInvoicesResource.loading" class="text-center py-8">
-						<div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mx-auto"></div>
-						<p class="mt-2 text-xs text-gray-500">{{ __('Loading invoices...') }}</p>
+					<!-- Loading State - Skeleton Loader -->
+					<div v-if="loadInvoicesResource.loading" class="flex flex-col gap-2 pe-2">
+						<div v-for="i in 4" :key="i" class="skeleton-card bg-white border border-gray-200 rounded-lg p-3">
+							<div class="flex items-start gap-3">
+								<!-- Avatar skeleton -->
+								<div class="skeleton-pulse w-10 h-10 rounded-full bg-gray-200 flex-shrink-0"></div>
+								<!-- Content skeleton -->
+								<div class="flex-1 min-w-0">
+									<div class="flex items-center gap-2 mb-2">
+										<div class="skeleton-pulse h-4 w-32 bg-gray-200 rounded"></div>
+										<div class="skeleton-pulse h-5 w-16 bg-gray-200 rounded-full"></div>
+									</div>
+									<div class="skeleton-pulse h-3 w-24 bg-gray-200 rounded mb-1"></div>
+									<div class="skeleton-pulse h-3 w-20 bg-gray-200 rounded"></div>
+								</div>
+								<!-- Amount skeleton -->
+								<div class="skeleton-pulse h-5 w-16 bg-gray-200 rounded flex-shrink-0"></div>
+							</div>
+						</div>
 					</div>
 
 					<!-- Invoice List -->
@@ -54,7 +147,10 @@
 											{{ __(invoice.status) }}
 										</span>
 									</div>
-									<p class="text-xs text-gray-600 mt-1 text-start">{{ invoice.customer_name }}</p>
+									<p class="text-xs text-gray-600 mt-1 text-start">
+										{{ invoice.customer_name }}
+										<span v-if="invoice.contact_mobile" class="text-gray-400"> • {{ invoice.contact_mobile }}</span>
+									</p>
 									<p class="text-xs text-gray-500 text-start">{{ formatDate(invoice.posting_date) }}</p>
 								</div>
 								<!-- Amount (End Side) -->
@@ -63,15 +159,39 @@
 								</div>
 							</div>
 						</div>
-						<p v-if="!loadInvoicesResource.loading && filteredInvoiceList.length === 0" class="text-center py-8 text-gray-500 text-sm">
-							{{ __('No invoices found') }}
-						</p>
+						<!-- Searching Indicator -->
+						<div v-if="searchInvoiceByNumberResource.loading && filteredInvoiceList.length === 0" class="text-center py-12">
+							<div class="w-16 h-16 bg-blue-50 rounded-full flex items-center justify-center mx-auto mb-4">
+								<FeatherIcon name="loader" class="w-8 h-8 text-blue-500 animate-spin" />
+							</div>
+							<p class="text-sm font-medium text-gray-900 mb-1">{{ __('Searching...') }}</p>
+							<p class="text-xs text-gray-500">{{ __('Looking for invoice in database') }}</p>
+						</div>
+						<!-- Enhanced Empty State -->
+						<div v-else-if="!loadInvoicesResource.loading && filteredInvoiceList.length === 0" class="text-center py-12">
+							<!-- Offline Empty State -->
+							<template v-if="isOffline">
+								<div class="w-16 h-16 bg-amber-100 rounded-full flex items-center justify-center mx-auto mb-4">
+									<FeatherIcon name="wifi-off" class="w-8 h-8 text-amber-500" />
+								</div>
+								<p class="text-sm font-medium text-gray-900 mb-1 text-center">{{ __('No connection') }}</p>
+								<p class="text-xs text-gray-500 text-center">{{ __('Connect to the internet to load invoices') }}</p>
+							</template>
+							<!-- Online Empty State -->
+							<template v-else>
+								<div class="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+									<FeatherIcon name="file-text" class="w-8 h-8 text-gray-400" />
+								</div>
+								<p class="text-sm font-medium text-gray-900 mb-1 text-center">{{ __('No invoices found') }}</p>
+								<p class="text-xs text-gray-500 text-center">{{ __('Try a different search term or check the invoice number') }}</p>
+							</template>
+						</div>
 					</div>
 				</div>
 			</div>
 		</template>
 		<template #actions>
-			<Button variant="subtle" @click="show = false">
+			<Button variant="subtle" @click="showDialog = false">
 				{{ __('Close') }}
 			</Button>
 		</template>
@@ -89,9 +209,7 @@
 					<!-- Mobile Layout -->
 					<div class="sm:hidden flex flex-col gap-3">
 						<div class="flex items-start gap-2">
-							<svg class="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
-							</svg>
+							<FeatherIcon name="file-text" class="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
 							<div class="flex-1 min-w-0">
 								<h3 class="text-base font-bold text-gray-900">
 									{{ originalInvoice.name }}
@@ -125,9 +243,7 @@
 					<div class="hidden sm:flex items-start justify-between">
 						<div class="flex-1">
 							<div class="flex items-center gap-2">
-								<svg class="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
-								</svg>
+								<FeatherIcon name="file-text" class="w-5 h-5 text-blue-600" />
 								<h3 class="text-base font-bold text-gray-900">
 									{{ originalInvoice.name }}
 								</h3>
@@ -157,352 +273,394 @@
 
 				<!-- Return Items -->
 				<div v-if="originalInvoice">
-								<div class="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-3 gap-2">
-									<label class="text-sm font-medium text-gray-700 text-start">
-										{{ __('Select Items to Return') }}
-									</label>
-									<div class="flex gap-2 self-end sm:self-auto">
-										<Button size="sm" variant="subtle" @click="selectAllItems">
-											<span class="text-xs whitespace-nowrap">{{ __('Select All') }}</span>
-										</Button>
-										<Button size="sm" variant="subtle" @click="deselectAllItems">
-											<span class="text-xs whitespace-nowrap">{{ __('Clear All') }}</span>
-										</Button>
-									</div>
+					<div class="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-3 gap-2">
+						<label class="text-sm font-medium text-gray-700 text-start">
+							{{ __('Select Items to Return') }}
+						</label>
+						<div class="flex gap-2 self-end sm:self-auto">
+							<Button size="sm" variant="subtle" @click="selectAllFilteredItems">
+								<span class="text-xs whitespace-nowrap">{{ __('Select All') }}</span>
+							</Button>
+							<Button size="sm" variant="subtle" @click="deselectAllItems">
+								<span class="text-xs whitespace-nowrap">{{ __('Clear All') }}</span>
+							</Button>
+						</div>
+					</div>
+
+					<!-- Search bar for items (shown when more than 7 items) -->
+					<div v-if="returnItems.length > 7" class="mb-3 relative">
+						<input
+							v-model="itemSearchFilter"
+							type="text"
+							:placeholder="__('Search items by name or code...')"
+							class="w-full px-4 py-2.5 ps-10 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+						/>
+						<FeatherIcon name="search" class="absolute start-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+					</div>
+
+					<div class="flex flex-col gap-2 max-h-96 overflow-y-auto pe-2">
+						<div
+							v-for="(item, index) in filteredReturnItems"
+							:key="index"
+							@click="toggleItemSelection(item)"
+							:class="[
+								'bg-white border rounded-lg p-3 transition-all duration-200 cursor-pointer',
+								item.selected
+									? 'border-blue-400 shadow-md bg-blue-50/30'
+									: 'border-gray-200 hover:border-gray-300 hover:shadow-sm'
+							]"
+						>
+							<!-- Desktop Layout -->
+							<div class="hidden sm:flex items-center gap-3">
+								<!-- Checkbox -->
+								<input
+									type="checkbox"
+									v-model="item.selected"
+									@click.stop
+									class="h-4 w-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500 cursor-pointer"
+								/>
+
+								<!-- Item Info -->
+								<div class="flex-1 min-w-0 text-start">
+									<h4 class="text-sm font-bold text-gray-900 truncate">
+										{{ item.item_name }}
+									</h4>
+									<p class="text-xs text-gray-500 mt-0.5">
+										{{ item.item_code }}
+									</p>
+									<p v-if="item.already_returned > 0" class="text-xs text-amber-600 mt-0.5">
+										{{ __('⚠️ {0} already returned', [item.already_returned]) }}
+									</p>
 								</div>
-								<div class="flex flex-col gap-2 max-h-96 overflow-y-auto pe-2">
-									<div
-										v-for="(item, index) in returnItems"
-										:key="index"
-										@click="toggleItemSelection(item)"
-										:class="[
-											'bg-white border rounded-xl p-4 transition-all duration-200 cursor-pointer',
-											item.selected
-												? 'border-blue-400 shadow-md bg-blue-50/30'
-												: 'border-gray-200 hover:border-gray-300 hover:shadow-sm'
-										]"
-									>
-										<!-- Desktop Layout -->
-										<div class="hidden sm:flex items-center gap-4">
-											<!-- Checkbox -->
-											<input
-												type="checkbox"
-												v-model="item.selected"
-												@click.stop
-												class="h-5 w-5 text-blue-600 rounded focus:ring-2 focus:ring-blue-500 cursor-pointer"
-											/>
 
-											<!-- Item Info -->
-											<div class="flex-1 min-w-0 text-start">
-												<h4 class="text-sm font-bold text-gray-900 truncate">
-													{{ item.item_name }}
-												</h4>
-												<p class="text-xs text-gray-500 mt-0.5">
-													{{ item.item_code }}
-												</p>
-												<p v-if="item.already_returned > 0" class="text-xs text-amber-600 mt-1">
-													{{ __('⚠️ {0} already returned', [item.already_returned]) }}
-												</p>
-											</div>
-
-											<!-- Quantity Controls -->
-											<div class="flex items-center gap-3 bg-gray-50 rounded-lg px-3 py-2 border border-gray-200" @click.stop>
-												<span class="text-xs font-medium text-gray-600">{{ __('Return Qty:') }}</span>
-												<div class="flex items-center gap-2">
-													<button
-														@click="decrementQty(item)"
-														:disabled="!item.selected || item.return_qty <= 1"
-														class="w-6 h-6 rounded-full bg-white border border-gray-300 flex items-center justify-center text-gray-600 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
-													>
-														<svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-															<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 12H4"/>
-														</svg>
-													</button>
-													<input
-														v-model.number="item.return_qty"
-														:max="item.quantity"
-														:disabled="!item.selected"
-														type="number"
-														min="1"
-														step="1"
-														@change="normalizeItemQty(item)"
-														@blur="normalizeItemQty(item)"
-														class="w-14 px-2 py-1 border border-gray-300 rounded-lg text-sm text-center font-semibold focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-													/>
-													<button
-														@click="incrementQty(item)"
-														:disabled="!item.selected || item.return_qty >= item.quantity"
-														class="w-6 h-6 rounded-full bg-white border border-gray-300 flex items-center justify-center text-gray-600 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
-													>
-														<svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-															<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
-														</svg>
-													</button>
-												</div>
-												<span class="text-xs font-semibold text-gray-700">{{ __('of {0}', [item.quantity], "item qty") }}</span>
-											</div>
-
-											<!-- Rate & Amount -->
-											<div class="text-start min-w-[100px]">
-												<p class="text-sm font-bold text-gray-900">
-													{{ formatCurrency(item.rate * item.return_qty) }}
-												</p>
-												<p class="text-xs text-gray-500 mt-0.5">@ {{ formatCurrency(item.rate) }}/{{ item.uom }}</p>
-											</div>
-										</div>
-
-										<!-- Mobile Layout -->
-										<div class="sm:hidden flex flex-col gap-3">
-											<!-- Item Header with Checkbox and Name -->
-											<div class="flex items-start gap-3">
-												<input
-													type="checkbox"
-													v-model="item.selected"
-													@click.stop
-													class="h-5 w-5 mt-1 text-blue-600 rounded-md focus:ring-2 focus:ring-blue-500 cursor-pointer flex-shrink-0"
-												/>
-												<div class="flex-1 min-w-0 text-start">
-													<h4 class="text-sm font-semibold text-gray-900 leading-tight">
-														{{ item.item_name }}
-													</h4>
-													<p class="text-xs text-gray-500 mt-1">
-														{{ item.item_code }}
-													</p>
-													<p v-if="item.already_returned > 0" class="text-xs text-amber-600 mt-1">
-														{{ __('⚠️ {0} already returned', [item.already_returned]) }}
-													</p>
-												</div>
-											</div>
-
-											<!-- Quantity Controls -->
-											<div class="flex flex-col gap-2" @click.stop>
-												<div class="flex items-center justify-between">
-													<span class="text-xs font-medium text-gray-600 text-start">{{ __('Return Qty:') }}</span>
-													<span class="text-xs text-gray-500 text-end">{{ __('of {0}', [item.quantity], "item qty") }}</span>
-												</div>
-												<div class="flex items-center gap-2">
-													<button
-														@click="decrementQty(item)"
-														:disabled="!item.selected || item.return_qty <= 1"
-														class="flex-1 h-10 rounded-lg bg-white border-2 border-gray-300 flex items-center justify-center text-gray-700 active:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed font-bold text-xl"
-													>
-														−
-													</button>
-													<input
-														v-model.number="item.return_qty"
-														:max="item.quantity"
-														:disabled="!item.selected"
-														type="number"
-														min="1"
-														step="1"
-														@change="normalizeItemQty(item)"
-														@blur="normalizeItemQty(item)"
-														class="w-16 h-10 px-2 border-2 border-gray-300 rounded-lg text-lg text-center font-bold focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-													/>
-													<button
-														@click="incrementQty(item)"
-														:disabled="!item.selected || item.return_qty >= item.quantity"
-														class="flex-1 h-10 rounded-lg bg-white border-2 border-gray-300 flex items-center justify-center text-gray-700 active:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed font-bold text-xl"
-													>
-														+
-													</button>
-												</div>
-											</div>
-
-											<!-- Price -->
-											<div class="flex items-center justify-between px-1 pt-2 border-t border-gray-100">
-												<span class="text-xs text-gray-600 text-start">{{ __('Amount:') }}</span>
-												<div class="text-end">
-													<p class="text-base font-bold text-gray-900">
-														{{ formatCurrency(item.rate * item.return_qty) }}
-													</p>
-													<p class="text-xs text-gray-500">@ {{ formatCurrency(item.rate) }}/{{ item.uom }}</p>
-												</div>
-											</div>
-										</div>
+								<!-- Quantity Controls -->
+								<div class="flex items-center gap-2 bg-gray-50 rounded-lg px-3 py-1.5 border border-gray-200" @click.stop>
+									<span class="text-xs font-medium text-gray-600">{{ __('Return Qty:') }}</span>
+									<div class="flex items-center gap-1.5">
+										<button
+											type="button"
+											@click.stop="decrementReturnQuantity(item)"
+											:disabled="!item.selected || item.return_qty <= 1"
+											class="flex-shrink-0 w-8 h-8 rounded-lg bg-gray-100 hover:bg-gray-200 active:bg-gray-300 text-gray-700 font-bold text-lg transition-colors flex items-center justify-center border border-gray-300 disabled:opacity-50 disabled:cursor-not-allowed"
+										>−</button>
+										<input
+											v-model.number="item.return_qty"
+											:max="item.quantity"
+											:disabled="!item.selected"
+											type="number"
+											min="1"
+											step="1"
+											@change="normalizeItemQuantity(item)"
+											@blur="normalizeItemQuantity(item)"
+											class="w-12 px-1 py-1 border border-gray-300 rounded-lg text-sm text-center font-bold focus:ring-2 focus:ring-blue-500 focus:border-blue-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+										/>
+										<button
+											type="button"
+											@click.stop="incrementReturnQuantity(item)"
+											:disabled="!item.selected || item.return_qty >= item.quantity"
+											class="flex-shrink-0 w-8 h-8 rounded-lg bg-gray-100 hover:bg-gray-200 active:bg-gray-300 text-gray-700 font-bold text-lg transition-colors flex items-center justify-center border border-gray-300 disabled:opacity-50 disabled:cursor-not-allowed"
+										>+</button>
 									</div>
+									<span class="text-xs font-semibold text-gray-700">{{ __('of {0}', [item.quantity], "item qty") }}</span>
 								</div>
-								<p v-if="returnItems.length === 0" class="text-center py-8 text-gray-500">
-									{{ __('No items available for return') }}
-								</p>
+
+								<!-- Rate & Amount -->
+								<div class="text-center min-w-[100px]">
+									<p class="text-sm font-bold text-gray-900">
+										{{ formatCurrency((item.rate_with_tax || item.rate) * item.return_qty) }}
+									</p>
+									<p class="text-xs text-gray-500 mt-0.5 flex items-center gap-1 flex-wrap justify-center">
+										<span>@ {{ formatCurrency(item.price_list_rate || item.rate) }}/{{ item.uom }}</span>
+										<span v-if="item.discount_per_unit > 0" class="inline-flex items-center px-1 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700">−{{ formatCurrency(item.discount_per_unit) }}</span>
+										<span v-if="item.tax_per_unit > 0 && item.tax_included_in_rate" class="inline-flex items-center px-1 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-700">{{ __('incl. {0} tax', [formatCurrency(item.tax_per_unit)]) }}</span>
+										<span v-else-if="item.tax_per_unit > 0" class="inline-flex items-center px-1 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-700">+{{ formatCurrency(item.tax_per_unit) }}</span>
+									</p>
+								</div>
 							</div>
 
-							<!-- Payment Methods Selection -->
-							<div v-if="selectedItems.length > 0">
-								<!-- Credit Sale Return Notice -->
-								<div v-if="isOriginalCreditSale" class="bg-amber-50 rounded-xl p-4 border border-amber-200 mb-4 text-start">
-									<h4 class="text-sm font-bold text-amber-900 mb-1">{{ __('Credit Sale Return') }}</h4>
-									<p class="text-xs text-amber-800">
-										{{ __('This invoice was paid on account (credit sale). The return will reverse the accounts receivable balance. No cash refund will be processed.') }}
-									</p>
-								</div>
-
-								<!-- Partially Paid Invoice Notice -->
-								<div v-if="isPartiallyPaid && !isOriginalCreditSale" class="bg-blue-50 rounded-xl p-4 border border-blue-200 mb-4 text-start">
-									<h4 class="text-sm font-bold text-blue-900 mb-1">{{ __('Partially Paid Invoice') }}</h4>
-									<p class="text-xs text-blue-800 mb-2">
-										{{ __('This invoice was partially paid. The refund will be split proportionally.') }}
-									</p>
-									<div class="flex flex-col gap-1 text-xs">
-										<div class="flex justify-between items-center">
-											<span class="text-blue-700">{{ __('Cash Refund:') }}</span>
-											<span class="font-bold text-blue-900">{{ formatCurrency(maxRefundableAmount) }}</span>
-										</div>
-										<div v-if="creditAdjustmentAmount > 0" class="flex justify-between items-center">
-											<span class="text-blue-700">{{ __('Credit Adjustment:') }}</span>
-											<span class="font-bold text-blue-900">{{ formatCurrency(creditAdjustmentAmount) }}</span>
-										</div>
+							<!-- Mobile Layout -->
+							<div class="sm:hidden flex flex-col gap-3">
+								<!-- Item Header with Checkbox and Name -->
+								<div class="flex items-start gap-3">
+									<input
+										type="checkbox"
+										v-model="item.selected"
+										@click.stop
+										class="h-5 w-5 mt-1 text-blue-600 rounded-md focus:ring-2 focus:ring-blue-500 cursor-pointer flex-shrink-0"
+									/>
+									<div class="flex-1 min-w-0 text-start">
+										<h4 class="text-sm font-semibold text-gray-900 leading-tight">
+											{{ item.item_name }}
+										</h4>
+										<p class="text-xs text-gray-500 mt-1">
+											{{ item.item_code }}
+										</p>
+										<p v-if="item.already_returned > 0" class="text-xs text-amber-600 mt-1">
+											{{ __('⚠️ {0} already returned', [item.already_returned]) }}
+										</p>
 									</div>
 								</div>
 
-								<!-- Regular Payment Methods (only for non-credit sales) -->
-								<div v-if="!isOriginalCreditSale">
-								<div class="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-3 gap-2">
-									<label class="text-sm font-medium text-gray-700 text-start">
-										{{ __('Refund Payment Methods') }}
-									</label>
-									<Button size="sm" variant="subtle" @click="addPaymentRow" class="self-end sm:self-auto">
-										<span class="text-xs">{{ __('+ Add Payment') }}</span>
-									</Button>
-								</div>
-
-								<div class="flex flex-col gap-3">
-									<div
-										v-for="(payment, index) in refundPayments"
-										:key="index"
-										class="bg-white border border-gray-200 rounded-xl p-3 shadow-sm"
-									>
-										<!-- Desktop: Single Row | Mobile: Two Rows -->
-										<div class="flex flex-col sm:flex-row sm:items-center gap-3">
-											<!-- Payment Method -->
-											<div class="flex items-center gap-2 flex-1">
-												<div class="flex-shrink-0 w-10 h-10 rounded-lg bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center text-xl border border-blue-200">
-													{{ payment.mode_of_payment ? getPaymentIcon(payment.mode_of_payment) : '💰' }}
-												</div>
-												<select
-													v-model="payment.mode_of_payment"
-													:style="paymentSelectStyle"
-													class="payment-select flex-1 py-2.5 border border-gray-300 rounded-lg text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white appearance-none cursor-pointer hover:border-gray-400 transition-colors ps-3 pe-10"
-												>
-													<option value="">{{ __('Select method...') }}</option>
-													<option v-for="method in paymentMethods" :key="method.mode_of_payment" :value="method.mode_of_payment">
-														{{ method.mode_of_payment }}
-													</option>
-												</select>
-											</div>
-											<!-- Amount with Counter -->
-											<div class="flex items-center gap-2 flex-1">
-												<button
-													@click="payment.amount = Math.max(0, (payment.amount || 0) - 1)"
-													type="button"
-													class="flex-shrink-0 w-10 h-10 sm:w-9 sm:h-9 rounded-lg bg-gray-100 hover:bg-gray-200 active:bg-gray-300 text-gray-700 font-bold text-xl transition-colors flex items-center justify-center border border-gray-300"
-												>−</button>
-												<input
-													:value="payment.amount"
-													@input="payment.amount = parseFloat($event.target.value) || 0"
-													@focus="$event.target.select()"
-													type="text"
-													inputmode="decimal"
-													:placeholder="__('Amount')"
-													class="flex-1 min-w-0 px-3 py-2.5 text-base font-bold text-center border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 hover:border-gray-400 transition-colors"
-												/>
-												<button
-													@click="payment.amount = (payment.amount || 0) + 1"
-													type="button"
-													class="flex-shrink-0 w-10 h-10 sm:w-9 sm:h-9 rounded-lg bg-gray-100 hover:bg-gray-200 active:bg-gray-300 text-gray-700 font-bold text-xl transition-colors flex items-center justify-center border border-gray-300"
-												>+</button>
-											</div>
-											<!-- Delete Button -->
-											<button
-												v-if="refundPayments.length > 1"
-												@click="removePaymentRow(index)"
-												class="hidden sm:flex flex-shrink-0 w-9 h-9 items-center justify-center text-red-500 hover:text-red-700 hover:bg-red-50 active:bg-red-100 rounded-lg transition-colors"
-												:title="__('Remove')"
-											>
-												<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-													<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
-												</svg>
-											</button>
-										</div>
-										<!-- Mobile Delete Button -->
+								<!-- Quantity Controls -->
+								<div class="flex flex-col gap-2" @click.stop>
+									<div class="flex items-center justify-between">
+										<span class="text-xs font-medium text-gray-600 text-start">{{ __('Return Qty:') }}</span>
+										<span class="text-xs text-gray-500 text-end">{{ __('of {0}', [item.quantity], "item qty") }}</span>
+									</div>
+									<div class="flex items-center gap-2">
 										<button
-											v-if="refundPayments.length > 1"
-											@click="removePaymentRow(index)"
-											class="sm:hidden mt-2 w-full py-2 text-sm text-red-600 hover:bg-red-50 active:bg-red-100 rounded-lg transition-colors flex items-center justify-center gap-1"
+											@click.stop="decrementReturnQuantity(item)"
+											:disabled="!item.selected || item.return_qty <= 1"
+											class="flex-1 h-10 rounded-lg bg-white border-2 border-gray-300 flex items-center justify-center text-gray-700 active:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed font-bold text-xl"
 										>
-											<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-												<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
-											</svg>
-											{{ __('Remove') }}
+											−
+										</button>
+										<input
+											v-model.number="item.return_qty"
+											:max="item.quantity"
+											:disabled="!item.selected"
+											type="number"
+											min="1"
+											step="1"
+											@change="normalizeItemQuantity(item)"
+											@blur="normalizeItemQuantity(item)"
+											class="w-16 h-10 px-2 border-2 border-gray-300 rounded-lg text-lg text-center font-bold focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+										/>
+										<button
+											@click.stop="incrementReturnQuantity(item)"
+											:disabled="!item.selected || item.return_qty >= item.quantity"
+											class="flex-1 h-10 rounded-lg bg-white border-2 border-gray-300 flex items-center justify-center text-gray-700 active:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed font-bold text-xl"
+										>
+											+
 										</button>
 									</div>
 								</div>
 
-								<!-- Payment Summary -->
-								<div class="mt-3 p-3 bg-gray-50 rounded-lg border border-gray-200">
-									<div class="flex items-center justify-between text-sm">
-										<span class="text-gray-600">{{ isPartiallyPaid ? __('Refundable Amount:') : __('Total Refund:') }}</span>
-										<span class="font-bold text-gray-900">{{ formatCurrency(isPartiallyPaid ? maxRefundableAmount : returnTotal) }}</span>
-									</div>
-									<div class="flex items-center justify-between text-sm mt-1">
-										<span class="text-gray-600">{{ __('Payment Total:') }}</span>
-										<span :class="[
-											'font-bold',
-											Math.abs(totalPaymentAmount - (isPartiallyPaid ? maxRefundableAmount : returnTotal)) < 0.01 ? 'text-green-600' : 'text-red-600'
-										]">
-											{{ formatCurrency(totalPaymentAmount) }}
-										</span>
-									</div>
-									<p v-if="Math.abs(totalPaymentAmount - (isPartiallyPaid ? maxRefundableAmount : returnTotal)) >= 0.01" class="mt-2 text-xs text-amber-600 text-start">
-										{{ isPartiallyPaid ? __('⚠️ Payment total must equal refundable amount') : __('⚠️ Payment total must equal refund amount') }}
-									</p>
-								</div>
-								</div>
-							</div>
-
-							<!-- Return Summary -->
-							<div v-if="selectedItems.length > 0" class="bg-gradient-to-br from-red-50 to-orange-50 rounded-xl p-4 sm:p-5 border border-red-200 shadow-sm">
-								<div class="flex items-center gap-2 mb-3">
-									<svg class="w-5 h-5 text-red-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-										<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 14l6-6m-5.5.5h.01m4.99 5h.01M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16l3.5-2 3.5 2 3.5-2 3.5 2zM10 8.5a.5.5 0 11-1 0 .5.5 0 011 0zm5 5a.5.5 0 11-1 0 .5.5 0 011 0z"/>
-									</svg>
-									<h3 class="text-sm font-bold text-gray-900">{{ __('Return Summary') }}</h3>
-								</div>
-								<div class="flex flex-col gap-2">
-									<div class="flex justify-between items-center">
-										<span class="text-sm text-gray-600">{{ __('Items to Return:') }}</span>
-										<span class="px-2 py-1 bg-white rounded-lg text-sm font-bold text-gray-900 border border-red-200">{{ selectedItems.length }}</span>
-									</div>
-									<!-- Breakdown for partially paid invoices -->
-									<template v-if="showPartialBreakdown">
-										<div class="flex justify-between items-center text-sm pt-2 border-t border-red-200">
-											<span class="text-gray-600">{{ __('Return Value:') }}</span>
-											<span class="font-medium text-gray-700">{{ formatCurrency(returnTotal) }}</span>
-										</div>
-										<div class="flex justify-between items-center text-sm">
-											<span class="text-gray-600">{{ __('Credit Adjustment:') }}</span>
-											<span class="font-medium text-gray-700">-{{ formatCurrency(creditAdjustmentAmount) }}</span>
-										</div>
-									</template>
-									<!-- Final refund amount -->
-									<div class="flex justify-between items-center pt-2 border-t border-red-200">
-										<span class="text-sm sm:text-base font-semibold text-gray-700">{{ __(summaryRefundLabel) }}</span>
-										<span class="text-xl sm:text-2xl font-bold text-red-600">{{ formatCurrency(summaryRefundAmount) }}</span>
+								<!-- Price -->
+								<div class="flex items-center justify-between px-1 pt-2 border-t border-gray-100">
+									<span class="text-xs text-gray-600 text-start">{{ __('Amount:') }}</span>
+									<div class="text-end">
+										<p class="text-base font-bold text-gray-900">
+											{{ formatCurrency((item.rate_with_tax || item.rate) * item.return_qty) }}
+										</p>
+										<p class="text-xs text-gray-500 flex items-center gap-1 flex-wrap justify-end">
+											<span>@ {{ formatCurrency(item.price_list_rate || item.rate) }}/{{ item.uom }}</span>
+											<span v-if="item.discount_per_unit > 0" class="inline-flex items-center px-1 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700">−{{ formatCurrency(item.discount_per_unit) }}</span>
+											<span v-if="item.tax_per_unit > 0 && item.tax_included_in_rate" class="inline-flex items-center px-1 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-700">{{ __('incl. {0} tax', [formatCurrency(item.tax_per_unit)]) }}</span>
+											<span v-else-if="item.tax_per_unit > 0" class="inline-flex items-center px-1 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-700">+{{ formatCurrency(item.tax_per_unit) }}</span>
+										</p>
 									</div>
 								</div>
 							</div>
+						</div>
+					</div>
+					<p v-if="returnItems.length === 0" class="text-center py-8 text-gray-500">
+						{{ __('No items available for return') }}
+					</p>
+				</div>
 
-							<!-- Return Reason -->
-							<div v-if="selectedItems.length > 0">
-								<label class="block text-sm font-medium text-gray-700 mb-2 text-start">
-									{{ __('Return Reason') }} <span class="text-gray-400">({{ __('optional') }})</span>
-								</label>
-								<textarea
-									v-model="returnReason"
-									rows="3"
-									:placeholder="__('Enter reason for return (e.g., defective product, wrong item, customer request)...')"
-									class="w-full px-4 py-3 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none"
-								></textarea>
+				<!-- Payment Methods Selection -->
+				<div v-if="selectedItems.length > 0">
+					<!-- Credit Sale Return Notice -->
+					<div v-if="isOriginalCreditSale" class="bg-amber-50 rounded-xl p-4 border border-amber-200 mb-4 text-start">
+						<h4 class="text-sm font-bold text-amber-900 mb-1">{{ __('Credit Sale Return') }}</h4>
+						<p class="text-xs text-amber-800">
+							{{ __('This invoice was paid on account (credit sale). The return will reverse the accounts receivable balance. No cash refund will be processed.') }}
+						</p>
+					</div>
+
+					<!-- Add to Customer Credit Option (only for non-credit sales) -->
+					<div v-if="!isOriginalCreditSale" class="bg-emerald-50 rounded-xl p-4 border border-emerald-200 mb-4">
+						<label class="flex items-start gap-3 cursor-pointer">
+							<input
+								type="checkbox"
+								v-model="addToCustomerCredit"
+								class="mt-0.5 w-5 h-5 rounded border-emerald-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+							/>
+							<div class="flex-1 text-start">
+								<span class="text-sm font-bold text-emerald-900">{{ __('Add to Customer Credit Balance') }}</span>
+								<p class="text-xs text-emerald-700 mt-1">
+									{{ __('Instead of cash refund, add the return amount to customer credit balance for future purchases.') }}
+								</p>
+							</div>
+						</label>
+					</div>
+
+					<!-- Customer Credit Confirmation Notice -->
+					<div v-if="addToCustomerCredit && !isOriginalCreditSale" class="bg-emerald-100 rounded-xl p-4 border border-emerald-300 mb-4 text-start">
+						<div class="flex items-center gap-2 mb-2">
+							<FeatherIcon name="credit-card" class="w-5 h-5 text-emerald-600" />
+							<h4 class="text-sm font-bold text-emerald-900">{{ __('Credit Balance') }}</h4>
+						</div>
+						<p class="text-xs text-emerald-800 mb-2">
+							{{ __('The return amount will be added to the customer credit balance. No cash refund will be given.') }}
+						</p>
+						<div class="flex justify-between items-center text-sm">
+							<span class="text-emerald-700">{{ __('Amount to Credit:') }}</span>
+							<span class="font-bold text-emerald-900">{{ formatCurrency(returnTotal) }}</span>
+						</div>
+					</div>
+
+					<!-- Partially Paid Invoice Notice -->
+					<div v-if="isPartiallyPaid && !isOriginalCreditSale && !addToCustomerCredit" class="bg-blue-50 rounded-xl p-4 border border-blue-200 mb-4 text-start">
+						<h4 class="text-sm font-bold text-blue-900 mb-1">{{ __('Partially Paid Invoice') }}</h4>
+						<p class="text-xs text-blue-800 mb-2">
+							{{ __('This invoice was partially paid. The refund will be split proportionally.') }}
+						</p>
+						<div class="flex flex-col gap-1 text-xs">
+							<div class="flex justify-between items-center">
+								<span class="text-blue-700">{{ __('Cash Refund:') }}</span>
+								<span class="font-bold text-blue-900">{{ formatCurrency(maxRefundableAmount) }}</span>
+							</div>
+							<div v-if="creditAdjustmentAmount > 0" class="flex justify-between items-center">
+								<span class="text-blue-700">{{ __('Credit Adjustment:') }}</span>
+								<span class="font-bold text-blue-900">{{ formatCurrency(creditAdjustmentAmount) }}</span>
+							</div>
+						</div>
+					</div>
+
+					<!-- Regular Payment Methods (only for non-credit sales and not adding to customer credit) -->
+					<div v-if="!isOriginalCreditSale && !addToCustomerCredit">
+						<div class="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-3 gap-2">
+							<label class="text-sm font-medium text-gray-700 text-start">
+								{{ __('Refund Payment Methods') }}
+							</label>
+							<Button size="sm" variant="subtle" @click="addPaymentRow" class="self-end sm:self-auto">
+								<span class="text-xs">{{ __('+ Add Payment') }}</span>
+							</Button>
+						</div>
+
+						<div class="flex flex-col gap-3">
+							<div
+								v-for="(payment, index) in refundPayments"
+								:key="index"
+								class="bg-white border border-gray-200 rounded-xl p-3 shadow-sm"
+							>
+								<!-- Desktop: Single Row | Mobile: Two Rows -->
+								<div class="flex flex-col sm:flex-row sm:items-center gap-3">
+									<!-- Payment Method -->
+									<div class="flex items-center gap-2 flex-1">
+										<div class="flex-shrink-0 w-10 h-10 rounded-lg bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center text-xl border border-blue-200">
+											{{ payment.mode_of_payment ? getPaymentIcon(payment.mode_of_payment) : '💰' }}
+										</div>
+										<select
+											v-model="payment.mode_of_payment"
+											:style="paymentSelectStyle"
+											class="payment-select flex-1 py-2.5 border border-gray-300 rounded-lg text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white appearance-none cursor-pointer hover:border-gray-400 transition-colors ps-3 pe-10"
+										>
+											<option value="">{{ __('Select method...') }}</option>
+											<option v-for="method in paymentMethods" :key="method.mode_of_payment" :value="method.mode_of_payment">
+												{{ method.mode_of_payment }}
+											</option>
+										</select>
+									</div>
+									<!-- Amount with Counter -->
+									<div class="flex items-center gap-2 flex-1">
+										<button
+											@click="payment.amount = Math.max(0, (payment.amount || 0) - 1)"
+											type="button"
+											class="flex-shrink-0 w-10 h-10 sm:w-9 sm:h-9 rounded-lg bg-gray-100 hover:bg-gray-200 active:bg-gray-300 text-gray-700 font-bold text-xl transition-colors flex items-center justify-center border border-gray-300"
+										>−</button>
+										<input
+											:value="payment.amount"
+											@input="payment.amount = parseFloat($event.target.value) || 0"
+											@focus="$event.target.select()"
+											type="text"
+											inputmode="decimal"
+											:placeholder="__('Amount')"
+											class="flex-1 min-w-0 px-3 py-2.5 text-base font-bold text-center border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 hover:border-gray-400 transition-colors"
+										/>
+										<button
+											@click="payment.amount = (payment.amount || 0) + 1"
+											type="button"
+											class="flex-shrink-0 w-10 h-10 sm:w-9 sm:h-9 rounded-lg bg-gray-100 hover:bg-gray-200 active:bg-gray-300 text-gray-700 font-bold text-xl transition-colors flex items-center justify-center border border-gray-300"
+										>+</button>
+									</div>
+									<!-- Delete Button -->
+									<button
+										v-if="refundPayments.length > 1"
+										@click="removePaymentRow(index)"
+										class="hidden sm:flex flex-shrink-0 w-9 h-9 items-center justify-center text-red-500 hover:text-red-700 hover:bg-red-50 active:bg-red-100 rounded-lg transition-colors"
+										:title="__('Remove')"
+									>
+										<FeatherIcon name="trash-2" class="w-4 h-4" />
+									</button>
+								</div>
+								<!-- Mobile Delete Button -->
+								<button
+									v-if="refundPayments.length > 1"
+									@click="removePaymentRow(index)"
+									class="sm:hidden mt-2 w-full py-2 text-sm text-red-600 hover:bg-red-50 active:bg-red-100 rounded-lg transition-colors flex items-center justify-center gap-1"
+								>
+									<FeatherIcon name="trash-2" class="w-4 h-4" />
+									{{ __('Remove') }}
+								</button>
+							</div>
+						</div>
+
+						<!-- Payment Summary -->
+						<div class="mt-3 p-3 bg-gray-50 rounded-lg border border-gray-200">
+							<div class="flex items-center justify-between text-sm">
+								<span class="text-gray-600">{{ isPartiallyPaid ? __('Refundable Amount:') : __('Total Refund:') }}</span>
+								<span class="font-bold text-gray-900">{{ formatCurrency(isPartiallyPaid ? maxRefundableAmount : returnTotal) }}</span>
+							</div>
+							<div class="flex items-center justify-between text-sm mt-1">
+								<span class="text-gray-600">{{ __('Payment Total:') }}</span>
+								<span :class="[
+									'font-bold',
+									Math.abs(totalPaymentAmount - (isPartiallyPaid ? maxRefundableAmount : returnTotal)) < 0.01 ? 'text-green-600' : 'text-red-600'
+								]">
+									{{ formatCurrency(totalPaymentAmount) }}
+								</span>
+							</div>
+							<p v-if="Math.abs(totalPaymentAmount - (isPartiallyPaid ? maxRefundableAmount : returnTotal)) >= 0.01" class="mt-2 text-xs text-amber-600 text-start">
+								{{ isPartiallyPaid ? __('⚠️ Payment total must equal refundable amount') : __('⚠️ Payment total must equal refund amount') }}
+							</p>
+						</div>
+					</div>
+				</div>
+
+				<!-- Return Summary -->
+				<div v-if="selectedItems.length > 0" class="bg-gradient-to-br from-red-50 to-orange-50 rounded-xl p-4 sm:p-5 border border-red-200 shadow-sm">
+					<div class="flex items-center gap-2 mb-3">
+						<FeatherIcon name="corner-down-left" class="w-5 h-5 text-red-600 flex-shrink-0" />
+						<h3 class="text-sm font-bold text-gray-900">{{ __('Return Summary') }}</h3>
+					</div>
+					<div class="flex flex-col gap-2">
+						<div class="flex justify-between items-center">
+							<span class="text-sm text-gray-600">{{ __('Items to Return:') }}</span>
+							<span class="px-2 py-1 bg-white rounded-lg text-sm font-bold text-gray-900 border border-red-200">{{ selectedItems.length }}</span>
+						</div>
+						<!-- Breakdown for partially paid invoices -->
+						<template v-if="showPartialBreakdown">
+							<div class="flex justify-between items-center text-sm pt-2 border-t border-red-200">
+								<span class="text-gray-600">{{ __('Return Value:') }}</span>
+								<span class="font-medium text-gray-700">{{ formatCurrency(returnTotal) }}</span>
+							</div>
+							<div class="flex justify-between items-center text-sm">
+								<span class="text-gray-600">{{ __('Credit Adjustment:') }}</span>
+								<span class="font-medium text-gray-700">-{{ formatCurrency(creditAdjustmentAmount) }}</span>
+							</div>
+						</template>
+						<!-- Final refund amount -->
+						<div class="flex justify-between items-center pt-2 border-t border-red-200">
+							<span class="text-sm sm:text-base font-semibold text-gray-700">{{ __(summaryRefundLabel) }}</span>
+							<span class="text-xl sm:text-2xl font-bold text-red-600">{{ formatCurrency(summaryRefundAmount) }}</span>
+						</div>
+					</div>
+				</div>
+
+				<!-- Return Reason -->
+				<div v-if="selectedItems.length > 0">
+					<label class="block text-sm font-medium text-gray-700 mb-2 text-start">
+						{{ __('Return Reason') }} <span class="text-gray-400">({{ __('optional') }})</span>
+					</label>
+					<textarea
+						v-model="returnReason"
+						rows="3"
+						:placeholder="__('Enter reason for return (e.g., defective product, wrong item, customer request)...')"
+						class="w-full px-4 py-3 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none"
+					></textarea>
 				</div>
 			</div>
 		</template>
@@ -540,9 +698,7 @@
 	>
 		<template #body-content>
 			<div class="flex items-start gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3">
-				<svg class="h-5 w-5 flex-shrink-0 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L4.34 16c-.77 1.333.192 3 1.732 3z" />
-				</svg>
+				<FeatherIcon name="alert-triangle" class="h-5 w-5 flex-shrink-0 text-red-600" />
 				<div>
 					<p class="text-sm font-semibold text-red-700">{{ errorDialog.title }}</p>
 					<p class="mt-1 text-sm text-red-600 whitespace-pre-line">{{ errorDialog.message }}</p>
@@ -555,56 +711,138 @@
 			</div>
 		</template>
 	</Dialog>
+
+	<!-- Return Period Expired Dialog -->
+	<Dialog
+		v-model="returnExpiredDialog.visible"
+		:options="{ title: __('Return Period Expired'), size: 'md' }"
+	>
+		<template #body-content>
+			<div class="flex flex-col items-center text-center py-4">
+				<!-- Clock/Calendar Icon -->
+				<div class="w-16 h-16 rounded-full bg-orange-100 flex items-center justify-center mb-4">
+					<FeatherIcon name="clock" class="w-8 h-8 text-orange-600" />
+				</div>
+
+				<!-- Invoice Number -->
+				<h3 class="text-lg font-bold text-gray-900 mb-2">{{ returnExpiredDialog.invoiceName }}</h3>
+
+				<!-- Main Message -->
+				<p class="text-gray-600 mb-4">
+					{{ __('This invoice cannot be returned because the return period has expired.') }}
+				</p>
+
+				<!-- Details Box -->
+				<div class="w-full bg-gray-50 rounded-lg p-4 space-y-2">
+					<div class="flex justify-between text-sm">
+						<span class="text-start text-gray-500">{{ __('Invoice Date') }}</span>
+						<span class="text-end font-medium text-gray-900">{{ returnExpiredDialog.invoiceDate }}</span>
+					</div>
+					<div class="flex justify-between text-sm">
+						<span class="text-start text-gray-500">{{ __('Days Since Purchase') }}</span>
+						<span class="text-end font-medium text-red-600">{{ returnExpiredDialog.daysSince }} {{ __('days') }}</span>
+					</div>
+					<div class="flex justify-between text-sm">
+						<span class="text-start text-gray-500">{{ __('Return Allowed Within') }}</span>
+						<span class="text-end font-medium text-gray-900">{{ returnExpiredDialog.allowedDays }} {{ __('days') }}</span>
+					</div>
+				</div>
+
+				<!-- Help Text -->
+				<p class="text-xs text-gray-500 mt-4">
+					{{ __('Please contact your manager if you need to process this return.') }}
+				</p>
+			</div>
+		</template>
+	</Dialog>
 </template>
 
 <script setup>
+import { useOfflineStatus } from "@/composables/useOfflineStatus"
 import { useToast } from "@/composables/useToast"
 import { getPaymentIcon } from "@/utils/payment"
-import { formatCurrency as formatCurrencyUtil } from "@/utils/currency"
+import {
+	DEFAULT_CURRENCY,
+	DEFAULT_LOCALE,
+	formatCurrency as formatCurrencyUtil,
+	roundCurrency,
+} from "@/utils/currency"
 import { getInvoiceStatusColor } from "@/utils/invoice"
-import { Button, Dialog, Input, createResource } from "frappe-ui"
+import { Button, Dialog, FeatherIcon, createResource } from "frappe-ui"
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from "vue"
-import TranslatedHTML from "../common/TranslatedHTML.vue"
 
 const { showSuccess, showError, showWarning } = useToast()
+const { isOffline } = useOfflineStatus()
+
+// ============================================
+// Constants (hoisted for performance)
+// ============================================
+const INVOICE_PATTERN = /^(ACC-SINV|SINV|SI|INV|ACC)/i
+const INVOICE_FORMAT_PATTERN = /^\d{4,}$/
+const DATE_FORMAT_OPTIONS = { year: "numeric", month: "short", day: "numeric" }
+const MAX_SUGGESTIONS = 8
+const SEARCH_DEBOUNCE_MS = 300
+const MIN_SEARCH_LENGTH = 2
+const MIN_SERVER_SEARCH_LENGTH = 4
 
 const props = defineProps({
 	modelValue: Boolean,
 	posProfile: String,
-	currency: {
-		type: String,
-		default: "USD",
-	},
+	posOpeningShift: String,
+	currency: { type: String, default: DEFAULT_CURRENCY },
+	preselectedInvoice: { type: Object, default: null },
 })
 
 const emit = defineEmits(["update:modelValue", "return-created"])
 
-const show = ref(props.modelValue)
+// Computed getter/setter for v-model pattern (per codebase standard)
+const showDialog = computed({
+	get: () => props.modelValue,
+	set: (val) => emit("update:modelValue", val),
+})
+
+// State
 const originalInvoice = ref(null)
+// Stores the return document created by ERPNext's make_sales_return().
+// Contains sales_team, taxes, and other child tables copied from the original invoice.
+const preparedReturnDoc = ref(null)
 const returnItems = ref([])
 const returnReason = ref("")
 const paymentMethods = ref([])
 const refundPayments = ref([])
 const invoiceList = ref([])
 const invoiceListFilter = ref("")
+const itemSearchFilter = ref("")
 const submitError = ref("")
 const isSubmitting = ref(false)
+// When true, return amount is added to customer credit balance instead of cash refund
+const addToCustomerCredit = ref(false)
+
+// Autocomplete state
+const invoiceSearchInput = ref(null)
+const showSuggestions = ref(false)
+const selectedSuggestionIndex = ref(-1)
+
+// Invoice payment tracking
+const isOriginalCreditSale = ref(false)
+const isPartiallyPaid = ref(false)
+const originalPaidAmount = ref(0)
+const originalOutstandingAmount = ref(0)
+
+// UI state
 const errorDialog = reactive({
 	visible: false,
 	title: __("Validation Error"),
 	message: "",
 })
-const returnModal = reactive({
+const returnModal = reactive({ visible: false })
+const returnExpiredDialog = reactive({
 	visible: false,
+	invoiceName: "",
+	invoiceDate: "",
+	daysSince: 0,
+	allowedDays: 0,
 })
-
-// Track if original invoice was a credit sale (Pay on Account)
-const isOriginalCreditSale = ref(false)
-
-// Track if original invoice was partially paid
-const isPartiallyPaid = ref(false)
-const originalPaidAmount = ref(0)
-const originalOutstandingAmount = ref(0)
 
 // Resource for loading recent invoices (only those with items available for return)
 const loadInvoicesResource = createResource({
@@ -612,6 +850,7 @@ const loadInvoicesResource = createResource({
 	makeParams() {
 		return {
 			limit: 50,
+			pos_profile: props.posProfile,
 		}
 	},
 	auto: false,
@@ -623,6 +862,26 @@ const loadInvoicesResource = createResource({
 	onError(error) {
 		console.error("Error loading invoices:", error)
 		showError(__("Failed to load recent invoices"))
+	},
+})
+
+// Resource for searching a specific invoice by number (searches entire database)
+const searchInvoiceByNumberResource = createResource({
+	url: "pos_next.api.invoices.search_invoice_by_number",
+	auto: false,
+	onSuccess(data) {
+		if (data && data.length > 0) {
+			// Merge search results with existing invoice list, avoiding duplicates
+			const existingNames = new Set(invoiceList.value.map((inv) => inv.name))
+			const newInvoices = data.filter((inv) => !existingNames.has(inv.name))
+			if (newInvoices.length > 0) {
+				// Add to the beginning of the list so they appear first
+				invoiceList.value = [...newInvoices, ...invoiceList.value]
+			}
+		}
+	},
+	onError(error) {
+		console.error("Error searching invoice:", error)
 	},
 })
 
@@ -640,6 +899,16 @@ const loadPaymentMethodsResource = createResource({
 	onSuccess(data) {
 		if (data && data.payments) {
 			paymentMethods.value = data.payments
+			// Re-initialize refund payments now that we know the current
+			// profile's modes. initializePaymentsFromInvoice() may have
+			// already run (from fetchInvoiceResource.onSuccess) before
+			// paymentMethods were loaded — in that case it skipped the
+			// foreign mode remap. Now that modes are available, re-run
+			// to validate and remap any foreign modes from cross-branch
+			// returns. See initializePaymentsFromInvoice() JSDoc for details.
+			if (originalInvoice.value) {
+				initializePaymentsFromInvoice()
+			}
 		}
 	},
 	onError(error) {
@@ -647,105 +916,166 @@ const loadPaymentMethodsResource = createResource({
 	},
 })
 
-// Resource for fetching a specific invoice with return tracking
+// Resource for fetching a prepared return invoice.
+// Uses ERPNext's make_sales_return() which creates a properly structured return document
+// with all child tables (sales_team, taxes, etc.) copied from the original invoice.
+// This ensures sales commissions are correctly reversed when processing returns.
 const fetchInvoiceResource = createResource({
-	url: "pos_next.api.invoices.get_invoice_for_return",
+	url: "pos_next.api.invoices.prepare_return_invoice",
 	auto: false,
 	onSuccess(data) {
 		if (data) {
-			// Validate that invoice can be returned
-			if (data.docstatus !== 1) {
-				showWarning(__("Invoice must be submitted to create a return"))
-				return
-			}
-			if (data.is_return === 1) {
-				showWarning(__("Cannot create return against a return invoice"))
-				return
-			}
+			// Store the complete return document from make_sales_return.
+			// This includes sales_team entries needed for commission reversal.
+			preparedReturnDoc.value = data
 
-			// Check if all items have been fully returned
-			const availableItems = data.items.filter((item) => item.qty > 0)
+			// The API returns original invoice data in _original_invoice for reference
+			const origInvoice = data._original_invoice || {}
+
+			// Filter items that still have quantity available for return.
+			// The API calculates remaining_qty by subtracting previously returned quantities.
+			const availableItems = data.items.filter((item) => item.remaining_qty > 0)
 
 			if (availableItems.length === 0) {
-				showWarning(__("All items from this invoice have already been returned"))
+				showWarning(
+					__("All items from this invoice have already been returned"),
+				)
 				originalInvoice.value = null
+				preparedReturnDoc.value = null
 				returnItems.value = []
 				return
 			}
 
-			originalInvoice.value = data
-			// Map server 'qty' to 'quantity' for internal consistency
+			// Store original invoice data for display in the UI
+			originalInvoice.value = {
+				name: data.return_against,
+				customer: data.customer,
+				customer_name: origInvoice.customer_name || data.customer_name,
+				company: data.company,
+				posting_date: origInvoice.posting_date,
+				grand_total: origInvoice.grand_total,
+				paid_amount: origInvoice.paid_amount,
+				outstanding_amount: origInvoice.outstanding_amount,
+				payments: origInvoice.payments || [],
+				docstatus: 1, // Already validated by backend
+				is_return: 0,
+			}
+
+			// Map items for UI display and selection.
+			// - sales_invoice_item: links to original item row for accurate return tracking
+			// - remaining_qty: maximum quantity user can return for this item
 			returnItems.value = availableItems.map((item) => ({
 				...item,
-				quantity: item.qty, // Standardize to 'quantity' from server's 'qty'
+				name: item.sales_invoice_item,
+				quantity: item.remaining_qty,
 				selected: false,
-				return_qty: item.qty, // This will be the remaining qty after previous returns
-				original_qty: item.original_qty || item.qty, // Track original quantity
+				return_qty: item.remaining_qty,
+				original_qty: item.original_qty,
 			}))
-			returnItems.value.forEach(normalizeItemQty)
+			returnItems.value.forEach(normalizeItemQuantity)
 
-			// Track payment amounts from original invoice
-			const totalPaidFromPayments = data.payments?.reduce((sum, p) => sum + Math.abs(p.amount || 0), 0) || 0
-			originalPaidAmount.value = data.paid_amount || totalPaidFromPayments || 0
-			originalOutstandingAmount.value = data.outstanding_amount || 0
+			// Calculate payment totals from original invoice for refund handling
+			const totalPaidFromPayments =
+				origInvoice.payments?.reduce(
+					(sum, p) => sum + Math.abs(p.amount || 0),
+					0,
+				) || 0
+			originalPaidAmount.value =
+				origInvoice.paid_amount || totalPaidFromPayments || 0
+			originalOutstandingAmount.value = origInvoice.outstanding_amount || 0
 
-			// Detect if original invoice was a credit sale (Pay on Account)
-			// Credit sale indicators:
-			// 1. No payments in the payments array, OR
-			// 2. Outstanding amount equals grand total (nothing was paid)
-			const hasNoPayments = !data.payments || data.payments.length === 0
-			const isFullyUnpaid = Math.abs(data.outstanding_amount - data.grand_total) < 0.01
-			isOriginalCreditSale.value = hasNoPayments || (totalPaidFromPayments < 0.01 && isFullyUnpaid)
+			// Detect credit sale (Pay on Account): no payments recorded OR full amount outstanding.
+			// Credit sales don't require cash refund - they reverse the accounts receivable.
+			const hasNoPayments =
+				!origInvoice.payments || origInvoice.payments.length === 0
+			const isFullyUnpaid =
+				Math.abs(origInvoice.outstanding_amount - origInvoice.grand_total) <
+				0.01
+			isOriginalCreditSale.value =
+				hasNoPayments || (totalPaidFromPayments < 0.01 && isFullyUnpaid)
 
-			// Detect if invoice was partially paid (has both paid amount and outstanding)
-			isPartiallyPaid.value = originalPaidAmount.value > 0 && originalOutstandingAmount.value > 0
+			// Detect partial payment: some amount paid but still has outstanding balance.
+			// Partial payments require proportional refund calculation.
+			isPartiallyPaid.value =
+				originalPaidAmount.value > 0 && originalOutstandingAmount.value > 0
 
 			// Load payment methods if not already loaded
 			if (paymentMethods.value.length === 0 && props.posProfile) {
 				loadPaymentMethodsResource.reload()
 			}
 
-			// Initialize payment methods from invoice
+			// Set up refund payment rows based on original invoice payments
 			initializePaymentsFromInvoice()
 		}
 	},
 	onError(error) {
 		console.error("Error fetching invoice:", error)
-		showError(__("Failed to load invoice details"))
+		// Close the return modal since we can't proceed
+		returnModal.visible = false
+		// Extract and show the actual error message (e.g., return period expired)
+		const errorMsg = extractErrorMessage(
+			error,
+			__("Failed to load invoice details"),
+		)
+		showError(errorMsg)
 	},
 })
 
-// Resource for creating return invoice
+// Resource for submitting the return invoice to the server
 const createReturnResource = createResource({
 	url: "pos_next.api.invoices.submit_invoice",
 	makeParams() {
-		// Build invoice data matching the API's expected format
+		// Use the prepared return document as the base.
+		// This document was created by ERPNext's make_sales_return() and contains
+		// the sales_team entries from the original invoice.
+		const baseDoc = preparedReturnDoc.value || {}
+
 		const invoiceData = {
 			doctype: "Sales Invoice",
 			pos_profile: props.posProfile,
-			customer: originalInvoice.value.customer,
-			company: originalInvoice.value.company,
+			posa_pos_opening_shift: props.posOpeningShift,
+			customer: baseDoc.customer || originalInvoice.value.customer,
+			company: baseDoc.company || originalInvoice.value.company,
 			is_return: 1,
-			return_against: originalInvoice.value.name,
+			return_against: baseDoc.return_against || originalInvoice.value.name,
+			// Setting to 0 ensures GL entries point to original invoice,
+			// which reduces its outstanding amount and updates its status
+			update_outstanding_for_self: 0,
 			is_pos: 1,
 			update_stock: 1,
+			// Include sales_team from the prepared document.
+			// This ensures sales commission is reversed for the returned items.
+			sales_team:
+				baseDoc.sales_team?.map((member) => ({
+					sales_person: member.sales_person,
+					allocated_percentage: member.allocated_percentage || 0,
+				})) || [],
+			// Build items array from user's selection with negative quantities for return
 			items: selectedItems.value.map((item) => ({
 				item_code: item.item_code,
 				item_name: item.item_name,
-				qty: -Math.abs(item.return_qty), // Negative for returns
+				qty: -Math.abs(item.return_qty),
 				rate: item.rate,
 				warehouse: item.warehouse,
 				uom: item.uom,
 				conversion_factor: item.conversion_factor || 1,
-				// Link to original invoice item for proper return tracking
-				sales_invoice_item: item.name, // Reference to the original Sales Invoice Item
+				// Link to original invoice item row for accurate return tracking in ERPNext
+				sales_invoice_item: item.name,
 			})),
-			payments: refundPayments.value.map(payment => ({
-				mode_of_payment: payment.mode_of_payment,
-				amount: -Math.abs(payment.amount), // Negative for refunds
-			})),
+			// Flag to indicate return amount should be added to customer credit balance
+			add_to_customer_balance: addToCustomerCredit.value,
+			// Payment amounts are negative for refunds
+			// If addToCustomerCredit is true, send empty payments array so outstanding stays negative
+			// This negative outstanding becomes customer credit balance
+			payments: addToCustomerCredit.value
+				? []
+				: refundPayments.value.map((payment) => ({
+						mode_of_payment: payment.mode_of_payment,
+						amount: -Math.abs(payment.amount),
+				  })),
 			remarks:
-				returnReason.value || __('Return against {0}', [originalInvoice.value.name]),
+				returnReason.value ||
+				__("Return against {0}", [originalInvoice.value.name]),
 		}
 
 		// Return in the correct format: invoice as JSON string
@@ -772,7 +1102,7 @@ const createReturnResource = createResource({
 
 		// Close return modal and go back to invoice list
 		closeReturnModal()
-		showSuccess(__('Return invoice {0} created successfully', [data.name]))
+		showSuccess(__("Return invoice {0} created successfully", [data.name]))
 	},
 	onError(error) {
 		isSubmitting.value = false
@@ -788,325 +1118,459 @@ onMounted(() => {
 	if (props.posProfile) {
 		loadPaymentMethodsResource.reload()
 	}
-	document.addEventListener('keydown', handleKeyboardShortcuts)
+	document.addEventListener("keydown", handleKeyboardShortcuts)
 })
 
 onUnmounted(() => {
-	document.removeEventListener('keydown', handleKeyboardShortcuts)
+	document.removeEventListener("keydown", handleKeyboardShortcuts)
+	// Clean up any pending debounced search
+	if (serverSearchTimeout) {
+		clearTimeout(serverSearchTimeout)
+		serverSearchTimeout = null
+	}
 })
 
 // Watchers
 watch(
 	() => props.modelValue,
 	(val) => {
-		show.value = val
 		if (val) {
-			// Auto-load invoices when dialog opens
-			loadInvoicesResource.reload()
+			// If a preselected invoice is provided, skip showing the invoice list dialog
+			// and go directly to the Process Return modal
+			if (props.preselectedInvoice?.name) {
+				// Don't show the main dialog with invoice list - go directly to return modal
+				showDialog.value = false
+				checkValidityAndOpenModal(props.preselectedInvoice.name, true)
+			} else {
+				// Normal flow - show the invoice selection dialog
+				loadInvoicesResource.reload()
+			}
 		} else {
 			resetForm()
 		}
 	},
 )
 
-watch(show, (val) => {
-	emit("update:modelValue", val)
-	if (!val) {
-		resetForm()
-	}
-})
+// Watch for preselectedInvoice changes to handle subsequent return requests
+// This handles the case when the dialog is opened again with a different invoice
+watch(
+	() => props.preselectedInvoice,
+	(newInvoice, oldInvoice) => {
+		// Only trigger if modelValue is true and we have a new invoice
+		if (
+			props.modelValue &&
+			newInvoice?.name &&
+			newInvoice.name !== oldInvoice?.name
+		) {
+			showDialog.value = false
+			checkValidityAndOpenModal(newInvoice.name, true)
+		}
+	},
+)
+
+// Clear search input when expired dialog closes
+watch(
+	() => returnExpiredDialog.visible,
+	(val) => {
+		if (!val) {
+			invoiceListFilter.value = ""
+		}
+	},
+)
 
 // Computed properties
-const selectedItems = computed(() => {
-	if (!returnItems.value || !Array.isArray(returnItems.value)) {
-		return []
-	}
+const selectedItems = computed(() =>
+	returnItems.value.filter((item) => item.selected && item.return_qty > 0),
+)
+
+const filteredReturnItems = computed(() => {
+	if (!itemSearchFilter.value) return returnItems.value
+	const searchTerm = itemSearchFilter.value.toLowerCase()
 	return returnItems.value.filter(
-		(item) => item.selected && item.return_qty > 0,
+		(item) =>
+			item.item_name?.toLowerCase().includes(searchTerm) ||
+			item.item_code?.toLowerCase().includes(searchTerm),
 	)
 })
 
-const returnTotal = computed(() => {
-	if (!selectedItems.value || !Array.isArray(selectedItems.value)) {
-		return 0
-	}
-	return selectedItems.value.reduce((sum, item) => {
-		return sum + item.return_qty * item.rate
-	}, 0)
-})
+const hasOpenShift = computed(() => Boolean(props.posOpeningShift))
 
-// For partially paid invoices, calculate the proportional refundable amount
+// Use rate_with_tax (includes tax) for accurate refund calculation
+const returnTotal = computed(() =>
+	roundCurrency(
+		selectedItems.value.reduce(
+			(sum, item) =>
+				sum +
+				roundCurrency(item.return_qty * (item.rate_with_tax || item.rate)),
+			0,
+		),
+	),
+)
+
+const totalPaymentAmount = computed(() =>
+	roundCurrency(
+		refundPayments.value.reduce(
+			(sum, payment) => sum + (Number(payment.amount) || 0),
+			0,
+		),
+	),
+)
+
 const maxRefundableAmount = computed(() => {
 	if (!originalInvoice.value) return 0
-
-	// For fully paid invoices, refund up to return total
-	if (!isPartiallyPaid.value && !isOriginalCreditSale.value) {
+	if (!isPartiallyPaid.value && !isOriginalCreditSale.value)
 		return returnTotal.value
-	}
 
-	// For partially paid invoices, calculate proportional refund
-	// If return is 50% of grand total, refund 50% of paid amount
 	const grandTotal = Math.abs(originalInvoice.value.grand_total) || 1
 	const returnRatio = returnTotal.value / grandTotal
-	return Math.min(returnTotal.value, originalPaidAmount.value * returnRatio)
-})
-
-// Amount that will be adjusted from outstanding (credit adjustment)
-const creditAdjustmentAmount = computed(() => {
-	if (!isPartiallyPaid.value) return 0
-	return Math.max(0, returnTotal.value - maxRefundableAmount.value)
-})
-
-// Summary display values - shows breakdown for partially paid, simple for others
-const showPartialBreakdown = computed(() => isPartiallyPaid.value && !isOriginalCreditSale.value)
-const summaryRefundLabel = computed(() => showPartialBreakdown.value ? 'Cash Refund:' : 'Refund Amount:')
-const summaryRefundAmount = computed(() => showPartialBreakdown.value ? maxRefundableAmount.value : returnTotal.value)
-
-// RTL-aware style for payment select dropdown
-const paymentSelectStyle = computed(() => ({
-	backgroundPosition: document.documentElement.dir === 'rtl' ? 'left 12px center' : 'right 12px center'
-}))
-
-const totalPaymentAmount = computed(() => {
-	if (!refundPayments.value || !Array.isArray(refundPayments.value)) {
-		return 0
-	}
-	return refundPayments.value.reduce((sum, payment) => {
-		return sum + (Number(payment.amount) || 0)
-	}, 0)
-})
-
-const canCreateReturn = computed(() => {
-	if (!selectedItems.value) {
-		return false
-	}
-	const hasSelectedItems = selectedItems.value.length > 0
-
-	// For credit sales (Pay on Account), no payment validation needed
-	// The return will simply reverse the A/R entry
-	if (isOriginalCreditSale.value) {
-		return hasSelectedItems
-	}
-
-	// For partially paid invoices, payment should match the refundable portion only
-	if (isPartiallyPaid.value) {
-		if (!refundPayments.value || refundPayments.value.length === 0) {
-			return hasSelectedItems // Allow if no refund needed (all credit adjustment)
-		}
-		const hasValidPayments = refundPayments.value.every(p => p.mode_of_payment && p.amount >= 0)
-		const paymentsMatchRefundable = Math.abs(totalPaymentAmount.value - maxRefundableAmount.value) < 0.01
-		return hasSelectedItems && hasValidPayments && paymentsMatchRefundable
-	}
-
-	// For regular fully paid sales, validate payment methods
-	if (!refundPayments.value) {
-		return false
-	}
-	const hasValidPayments = refundPayments.value.length > 0 &&
-		refundPayments.value.every(p => p.mode_of_payment && p.amount > 0)
-	const paymentsMatch = Math.abs(totalPaymentAmount.value - returnTotal.value) < 0.01
-
-	return hasSelectedItems && hasValidPayments && paymentsMatch
-})
-
-const filteredInvoiceList = computed(() => {
-	if (!invoiceList.value || !Array.isArray(invoiceList.value)) {
-		return []
-	}
-	if (!invoiceListFilter.value) return invoiceList.value
-
-	const filter = invoiceListFilter.value.toLowerCase()
-	return invoiceList.value.filter(
-		(invoice) =>
-			invoice.name.toLowerCase().includes(filter) ||
-			invoice.customer_name.toLowerCase().includes(filter),
+	return roundCurrency(
+		Math.min(returnTotal.value, originalPaidAmount.value * returnRatio),
 	)
 })
 
-// Watch returnTotal to auto-populate payment amount for single payment method
+// Amount that goes toward credit balance (for partially paid invoices)
+const creditAdjustmentAmount = computed(() =>
+	isPartiallyPaid.value
+		? roundCurrency(Math.max(0, returnTotal.value - maxRefundableAmount.value))
+		: 0,
+)
+
+// Summary display helpers for the Return Summary section
+const showPartialBreakdown = computed(
+	() => isPartiallyPaid.value && !isOriginalCreditSale.value,
+)
+const summaryRefundLabel = computed(() =>
+	showPartialBreakdown.value ? "Cash Refund:" : "Refund Amount:",
+)
+const summaryRefundAmount = computed(() =>
+	showPartialBreakdown.value ? maxRefundableAmount.value : returnTotal.value,
+)
+
+// Cache RTL direction check (only needs to run once per session)
+const isRTL = document.documentElement.dir === "rtl"
+const paymentSelectStyle = {
+	backgroundPosition: isRTL ? "left 12px center" : "right 12px center",
+}
+
+const canCreateReturn = computed(() => {
+	const hasSelectedItems = selectedItems.value.length > 0
+	if (!hasSelectedItems || !hasOpenShift.value) return false
+	// Credit sale returns and "add to customer credit" returns don't need payment validation
+	if (isOriginalCreditSale.value || addToCustomerCredit.value) return true
+
+	const payments = refundPayments.value
+	if (isPartiallyPaid.value) {
+		if (!payments.length) return true
+		const hasValidPayments = payments.every(
+			(payment) => payment.mode_of_payment && payment.amount >= 0,
+		)
+		return (
+			hasValidPayments &&
+			Math.abs(totalPaymentAmount.value - maxRefundableAmount.value) < 0.01
+		)
+	}
+
+	if (!payments.length) return false
+	const hasValidPayments = payments.every(
+		(payment) => payment.mode_of_payment && payment.amount > 0,
+	)
+	return (
+		hasValidPayments &&
+		Math.abs(totalPaymentAmount.value - returnTotal.value) < 0.01
+	)
+})
+
+// Shared filter function to avoid duplicate code
+const filterInvoicesByTerm = (invoices, searchTerm) => {
+	if (!searchTerm) return invoices
+	const term = searchTerm.toLowerCase()
+	return invoices.filter(
+		(invoice) =>
+			invoice.name.toLowerCase().includes(term) ||
+			invoice.customer_name?.toLowerCase().includes(term) ||
+			invoice.contact_mobile?.toLowerCase().includes(term),
+	)
+}
+
+// Memoized search term to avoid recalculating in multiple computeds
+const normalizedSearchTerm = computed(
+	() => invoiceListFilter.value?.trim() || "",
+)
+
+const filteredInvoiceList = computed(() => {
+	return filterInvoicesByTerm(invoiceList.value, normalizedSearchTerm.value)
+})
+
+// Autocomplete suggestions - reuses filtered list, just limits results
+const searchSuggestions = computed(() => {
+	if (normalizedSearchTerm.value.length < MIN_SEARCH_LENGTH) return []
+	return filteredInvoiceList.value.slice(0, MAX_SUGGESTIONS)
+})
+
+// Debounce timer for server search (will be cleaned up on unmount)
+let serverSearchTimeout = null
+
+// Helper to check if search term looks like an invoice number
+const looksLikeInvoiceNumber = (term) =>
+	INVOICE_PATTERN.test(term) ||
+	INVOICE_FORMAT_PATTERN.test(term) ||
+	term.includes("-")
+
+// Watch for search input changes and auto-search server when no local matches
+watch(normalizedSearchTerm, (searchTerm) => {
+	// Clear any pending search
+	if (serverSearchTimeout) {
+		clearTimeout(serverSearchTimeout)
+		serverSearchTimeout = null
+	}
+
+	// Early exit conditions
+	if (!searchTerm || searchTerm.length < MIN_SERVER_SEARCH_LENGTH) return
+	if (!looksLikeInvoiceNumber(searchTerm)) return
+
+	// Check if we already have this in local results (reuse filtered list)
+	if (filteredInvoiceList.value.length > 0) return
+
+	// Debounce server search
+	serverSearchTimeout = setTimeout(() => {
+		searchInvoiceByNumberResource.submit({
+			search_term: searchTerm,
+			pos_profile: props.posProfile,
+		})
+	}, SEARCH_DEBOUNCE_MS)
+})
+
+// Auto-populate payment amount when return total changes (single payment only)
 watch(returnTotal, (newTotal) => {
-	// Only run if return modal is visible and component is active
-	if (!returnModal.visible || !show.value) {
+	if (!returnModal.visible || !showDialog.value || isOriginalCreditSale.value)
 		return
-	}
+	if (refundPayments.value.length !== 1 || newTotal <= 0) return
 
-	// For credit sales, no payment needed
-	if (isOriginalCreditSale.value) {
-		return
-	}
-
-	// Safety checks: ensure refundPayments exists and has exactly one row
-	if (refundPayments.value &&
-		Array.isArray(refundPayments.value) &&
-		refundPayments.value.length === 1 &&
-		refundPayments.value[0] &&
-		newTotal > 0) {
-		// For partially paid invoices, set the proportional refundable amount
-		if (isPartiallyPaid.value) {
-			refundPayments.value[0].amount = Number(maxRefundableAmount.value.toFixed(2))
-		} else {
-			refundPayments.value[0].amount = newTotal
-		}
-	}
+	refundPayments.value[0].amount = isPartiallyPaid.value
+		? roundCurrency(maxRefundableAmount.value)
+		: newTotal
 })
 
 // Methods
 function extractErrorMessage(
 	error,
-	fallback = __("Failed to create return invoice"),
+	fallbackMessage = __("Failed to create return invoice"),
 ) {
-	if (!error) return fallback
-
-	if (
-		error.messages &&
-		Array.isArray(error.messages) &&
-		error.messages.length > 0
-	) {
-		return error.messages.join(", ")
-	}
+	if (!error) return fallbackMessage
+	if (error.messages?.length) return error.messages.join(", ")
 
 	if (error._server_messages) {
 		try {
-			const serverMsgs = JSON.parse(error._server_messages)
-			if (Array.isArray(serverMsgs) && serverMsgs.length > 0) {
-				const firstMsg = JSON.parse(serverMsgs[0])
-				if (firstMsg?.message) {
-					return firstMsg.message
-				}
-			}
-		} catch (e) {
-			console.error("Failed to parse server messages:", e)
+			const serverMessages = JSON.parse(error._server_messages)
+			const firstMessage = serverMessages[0] && JSON.parse(serverMessages[0])
+			if (firstMessage?.message) return firstMessage.message
+		} catch (parseError) {
+			// Ignore JSON parse errors, continue to other extraction methods
 		}
 	}
 
 	if (typeof error.exc === "string") {
-		const match = error.exc.match(/ValidationError: (.+?)\\n/)
-		if (match) {
-			return match[1]
-		}
+		const validationMatch = error.exc.match(/ValidationError: (.+?)\\n/)
+		if (validationMatch) return validationMatch[1]
 	}
 
-	if (error.httpStatusText && error.httpStatusText !== "Expectation Failed") {
+	if (error.httpStatusText && error.httpStatusText !== "Expectation Failed")
 		return error.httpStatusText
-	}
-
-	if (error.message && error.message !== "ValidationError") {
-		return error.message
-	}
-
-	return fallback
+	if (error.message && error.message !== "ValidationError") return error.message
+	return fallbackMessage
 }
 
 function openErrorDialog(message, title = __("Validation Error")) {
-	errorDialog.title = title
-	errorDialog.message = message
-	errorDialog.visible = true
+	Object.assign(errorDialog, { visible: true, title, message })
 }
 
 function closeErrorDialog() {
 	errorDialog.visible = false
 }
 
-function normalizeItemQty(item) {
-	const maxQty = Number(item.quantity) || 0
-	const minQty = 1
-	let qty = Number(item.return_qty)
-	if (!Number.isFinite(qty)) {
-		qty = minQty
-	}
-	if (maxQty > 0 && qty > maxQty) {
-		qty = maxQty
-	}
-	if (qty < minQty) {
-		qty = minQty
-	}
-	item.return_qty = qty
+function normalizeItemQuantity(item) {
+	const maxQuantity = Number(item.quantity) || 0
+	const currentQuantity = Number(item.return_qty)
+	const validQuantity = Number.isFinite(currentQuantity) ? currentQuantity : 1
+	item.return_qty = Math.max(
+		1,
+		Math.min(validQuantity, maxQuantity || validQuantity),
+	)
 }
 
 function validateSelectedItems() {
 	const invalidItems = selectedItems.value.filter(
 		(item) => item.return_qty > item.quantity,
 	)
-	if (invalidItems.length === 0) {
-		return true
-	}
-	invalidItems.forEach(normalizeItemQty)
-	const details = invalidItems
-		.map((item) => __('{0}: maximum {1}', [
-			(item.item_name || item.item_code),
-			item.quantity
-		]))
+	if (!invalidItems.length) return true
+
+	invalidItems.forEach(normalizeItemQuantity)
+	const errorDetails = invalidItems
+		.map((item) =>
+			__("{0}: maximum {1}", [item.item_name || item.item_code, item.quantity]),
+		)
 		.join("\n")
-	const message = __('Adjust return quantities before submitting.\n\n{0}', [details])
-	submitError.value = message
-	openErrorDialog(message)
+	const errorMessage = __(
+		"Adjust return quantities before submitting.\n\n{0}",
+		[errorDetails],
+	)
+	submitError.value = errorMessage
+	openErrorDialog(errorMessage)
 	return false
 }
 
 function addPaymentRow() {
-	refundPayments.value.push({
-		mode_of_payment: "",
-		amount: 0
-	})
+	refundPayments.value.push({ mode_of_payment: "", amount: 0 })
 }
 
-function removePaymentRow(index) {
-	refundPayments.value.splice(index, 1)
+function removePaymentRow(paymentIndex) {
+	refundPayments.value.splice(paymentIndex, 1)
 }
 
+/**
+ * Cross-branch return — frontend safety net (Layer 2).
+ *
+ * Pre-fills refund payment rows from the original invoice's payments.
+ * The backend (prepare_return_invoice) already remaps foreign payment modes
+ * by type (Cash→Cash, Bank→Bank) via _remap_foreign_payment_modes. This
+ * function provides a second line of defense: if a mode in the original
+ * invoice doesn't exist in the current POS profile's paymentMethods, it
+ * falls back to the profile's default (first) mode.
+ *
+ * Timing:
+ *   - Called from fetchInvoiceResource.onSuccess (may run before
+ *     paymentMethods are loaded from the async profile fetch).
+ *   - If paymentMethods is empty, we skip the remap and trust the
+ *     backend's remapped values. loadPaymentMethodsResource.onSuccess
+ *     will re-call this function once methods are available.
+ *
+ * The payment mode dropdown (<select>) only shows modes from the current
+ * profile's paymentMethods. A foreign mode would appear as an unselectable
+ * value, so this remap also ensures the dropdown works correctly.
+ */
 function initializePaymentsFromInvoice() {
-	// If original invoice was a credit sale (Pay on Account), no payment method needed
-	// The return will simply reverse the A/R entry
 	if (isOriginalCreditSale.value) {
-		// For credit sales, set empty payments - the return will reverse A/R only
 		refundPayments.value = []
 		return
 	}
 
-	// Initialize refund payments from original invoice payments
-	if (originalInvoice.value && originalInvoice.value.payments && originalInvoice.value.payments.length > 0) {
-		// For partially paid invoices, we'll set the amount to 0 initially
-		// It will be updated by the watcher when returnTotal changes
-		refundPayments.value = originalInvoice.value.payments.map(payment => ({
-			mode_of_payment: payment.mode_of_payment,
-			amount: isPartiallyPaid.value ? 0 : Math.abs(payment.amount)
+	const defaultMode = paymentMethods.value[0]?.mode_of_payment || ""
+
+	const invoicePayments = originalInvoice.value?.payments
+	if (invoicePayments?.length) {
+		// Only remap when paymentMethods are loaded. When null (not yet loaded),
+		// the backend has already remapped via _remap_foreign_payment_modes,
+		// so the modes are safe to use as-is.
+		const currentModes = paymentMethods.value.length
+			? new Set(paymentMethods.value.map((m) => m.mode_of_payment))
+			: null
+
+		refundPayments.value = invoicePayments.map((payment) => ({
+			mode_of_payment:
+				currentModes && !currentModes.has(payment.mode_of_payment)
+					? defaultMode
+					: payment.mode_of_payment,
+			amount: isPartiallyPaid.value ? 0 : Math.abs(payment.amount),
 		}))
 	} else {
-		// Default to one empty row if no payments in invoice
-		refundPayments.value = [{
-			mode_of_payment: paymentMethods.value.length > 0 ? paymentMethods.value[0].mode_of_payment : "",
-			amount: 0
-		}]
+		refundPayments.value = [
+			{
+				mode_of_payment: defaultMode,
+				amount: 0,
+			},
+		]
 	}
 }
 
+// Resource for checking invoice return validity (defined early for use in helpers)
+const checkInvoiceValidityResource = createResource({
+	url: "pos_next.api.invoices.check_invoice_return_validity",
+	auto: false,
+})
+
+/**
+ * Shared validity handler - processes validity response and shows appropriate UI
+ * Returns true if invoice is valid, false otherwise
+ */
+function handleValidityResponse(validity) {
+	if (validity.valid) return true
+
+	if (validity.error_type === "return_period_expired") {
+		Object.assign(returnExpiredDialog, {
+			invoiceName: validity.invoice_name,
+			invoiceDate: validity.invoice_date,
+			daysSince: validity.days_since,
+			allowedDays: validity.allowed_days,
+			visible: true,
+		})
+	} else if (validity.error_type === "not_found") {
+		showError(validity.message || __("Invoice not found"))
+	} else {
+		showError(validity.message || __("Cannot process return for this invoice"))
+	}
+	return false
+}
+
+/**
+ * Opens return modal after fetching invoice details
+ */
 function openReturnModal(invoice) {
-	// Fetch the full invoice details with return tracking
 	submitError.value = ""
 	fetchInvoiceResource.fetch({
 		invoice_name: invoice.name,
+		pos_opening_shift: props.posOpeningShift,
 	})
 	returnModal.visible = true
 }
 
-function closeReturnModal() {
-	returnModal.visible = false
-	// Reset return items when closing
-	originalInvoice.value = null
-	returnItems.value = []
-	returnReason.value = ""
-	refundPayments.value = []
-	submitError.value = ""
-	isOriginalCreditSale.value = false
-	isPartiallyPaid.value = false
-	originalPaidAmount.value = 0
-	originalOutstandingAmount.value = 0
+/**
+ * Check validity and open return modal if valid
+ * @param {string} invoiceName - Invoice name to check
+ * @param {boolean} fallbackOnError - If true, opens modal directly on validity check error
+ */
+async function checkValidityAndOpenModal(invoiceName, fallbackOnError = false) {
+	try {
+		const validity = await checkInvoiceValidityResource.fetch({
+			invoice_name: invoiceName,
+		})
+		if (handleValidityResponse(validity)) {
+			fetchInvoiceResource.fetch({
+				invoice_name: invoiceName,
+				pos_opening_shift: props.posOpeningShift,
+			})
+			returnModal.visible = true
+		}
+	} catch (error) {
+		console.error("Error checking invoice validity:", error)
+		if (fallbackOnError) {
+			// Fallback to direct open if validity check fails
+			openReturnModal({ name: invoiceName })
+		} else {
+			showError(__("Failed to check invoice"))
+		}
+	}
 }
 
-function selectAllItems() {
-	returnItems.value.forEach((item) => {
+/**
+ * Search for an invoice directly by invoice number.
+ */
+async function searchInvoiceDirectly() {
+	const searchTerm = normalizedSearchTerm.value
+	if (!searchTerm || !looksLikeInvoiceNumber(searchTerm)) return
+	await checkValidityAndOpenModal(searchTerm, false)
+}
+
+function closeReturnModal() {
+	returnModal.visible = false
+	resetForm()
+	// Notify parent that the return dialog is closed
+	emit("update:modelValue", false)
+}
+
+function selectAllFilteredItems() {
+	filteredReturnItems.value.forEach((item) => {
 		item.selected = true
-		item.return_qty = item.quantity // Set to full quantity
+		item.return_qty = item.quantity
 	})
 }
 
@@ -1119,41 +1583,39 @@ function deselectAllItems() {
 function toggleItemSelection(item) {
 	item.selected = !item.selected
 	if (item.selected && item.return_qty === 0) {
-		item.return_qty = item.quantity // Auto-set to full quantity on select
+		item.return_qty = item.quantity
 	}
 }
 
-function handleKeyboardShortcuts(e) {
-	// Only handle shortcuts when return modal is visible
+function handleKeyboardShortcuts(event) {
 	if (!returnModal.visible) return
 
-	// Ctrl+A or Cmd+A: Select all items
-	if ((e.ctrlKey || e.metaKey) && e.key === 'a') {
-		e.preventDefault()
-		selectAllItems()
-	}
+	const isModifierPressed = event.ctrlKey || event.metaKey
 
-	// Ctrl+Enter or Cmd+Enter: Submit if valid
-	if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
-		e.preventDefault()
-		if (canCreateReturn.value && !isSubmitting.value) {
-			handleCreateReturn()
-		}
+	// Ctrl/Cmd+A selects all filtered items (respects search filter)
+	if (isModifierPressed && event.key === "a") {
+		event.preventDefault()
+		selectAllFilteredItems()
 	}
-
-	// Escape: Close modal
-	if (e.key === 'Escape') {
-		closeReturnModal()
+	if (
+		isModifierPressed &&
+		event.key === "Enter" &&
+		canCreateReturn.value &&
+		!isSubmitting.value
+	) {
+		event.preventDefault()
+		handleCreateReturn()
 	}
+	if (event.key === "Escape") closeReturnModal()
 }
 
-function incrementQty(item) {
+function incrementReturnQuantity(item) {
 	if (item.return_qty < item.quantity) {
 		item.return_qty++
 	}
 }
 
-function decrementQty(item) {
+function decrementReturnQuantity(item) {
 	if (item.return_qty > 1) {
 		item.return_qty--
 	}
@@ -1161,6 +1623,12 @@ function decrementQty(item) {
 
 async function handleCreateReturn() {
 	if (!canCreateReturn.value || isSubmitting.value) return
+	if (!hasOpenShift.value) {
+		const message = __("Open a shift before creating a return invoice.")
+		submitError.value = message
+		openErrorDialog(message)
+		return
+	}
 
 	if (!validateSelectedItems()) {
 		return
@@ -1189,35 +1657,133 @@ async function handleCreateReturn() {
 }
 
 function resetForm() {
+	// Reset invoice and return document state
 	originalInvoice.value = null
+	preparedReturnDoc.value = null
 	returnItems.value = []
 	returnReason.value = ""
 	refundPayments.value = []
+
+	// Reset list and search state
 	invoiceList.value = []
 	invoiceListFilter.value = ""
+	itemSearchFilter.value = ""
+
+	// Reset submission state
 	submitError.value = ""
 	isSubmitting.value = false
+
+	// Reset modal/dialog state
 	returnModal.visible = false
 	errorDialog.visible = false
 	errorDialog.message = ""
+
+	// Reset payment tracking state
 	isOriginalCreditSale.value = false
 	isPartiallyPaid.value = false
 	originalPaidAmount.value = 0
 	originalOutstandingAmount.value = 0
+
+	// Reset customer credit option
+	addToCustomerCredit.value = false
 }
+
+// Date formatter instance (reused for performance)
+const dateFormatter = new Intl.DateTimeFormat(DEFAULT_LOCALE, DATE_FORMAT_OPTIONS)
 
 function formatDate(dateStr) {
 	if (!dateStr) return ""
-	const date = new Date(dateStr)
-	return date.toLocaleDateString("en-US", {
-		year: "numeric",
-		month: "short",
-		day: "numeric",
-	})
+	return dateFormatter.format(new Date(dateStr))
 }
 
 function formatCurrency(amount) {
 	return formatCurrencyUtil(Number.parseFloat(amount || 0), props.currency)
+}
+
+// Autocomplete handler functions
+function onSearchInput() {
+	showSuggestions.value = true
+	selectedSuggestionIndex.value = -1
+}
+
+function showSuggestionsOnFocus() {
+	if (normalizedSearchTerm.value.length >= MIN_SEARCH_LENGTH) {
+		showSuggestions.value = true
+	}
+}
+
+function onSearchBlur() {
+	// Delay to allow click on suggestion to register
+	setTimeout(() => {
+		showSuggestions.value = false
+		selectedSuggestionIndex.value = -1
+	}, 200)
+}
+
+function navigateSuggestion(direction) {
+	if (!showSuggestions.value || searchSuggestions.value.length === 0) return
+
+	const maxIndex = searchSuggestions.value.length - 1
+	let newIndex = selectedSuggestionIndex.value + direction
+
+	if (newIndex < -1) newIndex = maxIndex
+	if (newIndex > maxIndex) newIndex = -1
+
+	selectedSuggestionIndex.value = newIndex
+}
+
+function selectSuggestionOrSearch() {
+	if (
+		selectedSuggestionIndex.value >= 0 &&
+		selectedSuggestionIndex.value < searchSuggestions.value.length
+	) {
+		// Select the highlighted suggestion
+		selectSuggestion(searchSuggestions.value[selectedSuggestionIndex.value])
+	} else if (invoiceListFilter.value?.trim()) {
+		// No suggestion selected, try direct search
+		closeSuggestions()
+		searchInvoiceDirectly()
+	}
+}
+
+async function selectSuggestion(invoice) {
+	closeSuggestions()
+	invoiceListFilter.value = invoice.name
+	// Check validity first, with fallback to direct open on error
+	await checkValidityAndOpenModal(invoice.name, true)
+}
+
+function closeSuggestions() {
+	showSuggestions.value = false
+	selectedSuggestionIndex.value = -1
+}
+
+function clearSearch() {
+	invoiceListFilter.value = ""
+	closeSuggestions()
+	invoiceSearchInput.value?.focus()
+}
+
+// ============================================
+// UX Enhancement Helper Functions
+// ============================================
+
+/**
+ * Escape special regex characters in a string
+ */
+function escapeRegex(str) {
+	return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+}
+
+/**
+ * Highlight search matches in text with yellow background
+ */
+function highlightSearchMatch(text, searchTerm) {
+	if (!text || !searchTerm) return text
+	const escaped = escapeRegex(searchTerm.trim())
+	if (!escaped) return text
+	const regex = new RegExp(`(${escaped})`, "gi")
+	return text.replace(regex, '<mark class="search-highlight">$1</mark>')
 }
 </script>
 
@@ -1253,4 +1819,42 @@ input[type="number"]::-webkit-outer-spin-button {
 	background-repeat: no-repeat;
 	background-size: 20px;
 }
+
+/* Skeleton loading animation */
+.skeleton-pulse {
+	animation: skeleton-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes skeleton-pulse {
+	0%, 100% {
+		opacity: 1;
+	}
+	50% {
+		opacity: 0.4;
+	}
+}
+
+.skeleton-card {
+	animation: skeleton-fade-in 0.3s ease-out;
+}
+
+@keyframes skeleton-fade-in {
+	from {
+		opacity: 0;
+		transform: translateY(4px);
+	}
+	to {
+		opacity: 1;
+		transform: translateY(0);
+	}
+}
+
+/* Search highlight styling */
+:deep(.search-highlight) {
+	background-color: #fef08a;
+	padding: 0 2px;
+	border-radius: 2px;
+	font-weight: 600;
+}
+
 </style>

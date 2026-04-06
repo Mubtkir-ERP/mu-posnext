@@ -9,6 +9,12 @@
         </div>
 
         <div v-else-if="closingData" class="flex flex-col gap-3 md:gap-6">
+          <!-- Idle Warning -->
+          <div v-if="showIdleWarning" class="rounded-lg bg-amber-50 border border-amber-300 p-3 flex items-center gap-2">
+            <FeatherIcon name="alert-triangle" class="w-5 h-5 text-amber-600 flex-shrink-0" />
+            <p class="text-xs md:text-sm text-amber-800 font-medium">{{ __('This dialog has been open for over a minute. Please close the shift or close this dialog to resume the shift timer.') }}</p>
+          </div>
+
           <!-- Shift Summary Header (hidden in entry mode when hideExpectedAmount is enabled) -->
           <div v-if="shouldShowSummary" class="bg-white border border-gray-200 rounded-lg p-3 md:p-6 shadow-sm">
             <div class="flex flex-col sm:flex-row justify-start items-start gap-3 mb-3 md:mb-6">
@@ -24,32 +30,32 @@
 
             <!-- Key Metrics Grid -->
             <div class="grid grid-cols-2 md:grid-cols-4 gap-2 md:gap-4">
-              <!-- Total Sales -->
+              <!-- Gross Sales (before returns) -->
               <div class="text-start bg-blue-50 border border-blue-200 rounded-lg p-3 md:p-4">
-                <div class="text-blue-600 text-xs uppercase font-medium mb-1">{{ __('Total Sales') }}</div>
-                <div class="text-lg md:text-2xl font-bold text-blue-900 mb-0.5 md:mb-1 truncate">{{ formatCurrency(closingData.grand_total) }}</div>
-                <div class="text-blue-600 text-xs">{{ __('{0} invoices', [invoiceCount]) }}</div>
+                <div class="text-blue-600 text-xs uppercase font-medium mb-1">{{ __('Gross Sales') }}</div>
+                <div class="text-lg md:text-2xl font-bold text-blue-900 mb-0.5 md:mb-1 truncate">{{ formatCurrency(grossSales) }}</div>
+                <div class="text-blue-600 text-xs">{{ __('{0} invoices', [closingData.sales_count || salesInvoiceCount]) }}</div>
               </div>
 
-              <!-- Net Amount -->
-              <div class="text-start bg-gray-50 border border-gray-200 rounded-lg p-3 md:p-4">
-                <div class="text-gray-600 text-xs uppercase font-medium mb-1">{{ __('Net Amount') }}</div>
-                <div class="text-lg md:text-2xl font-bold text-gray-900 mb-0.5 md:mb-1 truncate">{{ formatCurrency(closingData.net_total) }}</div>
-                <div class="text-gray-600 text-xs">{{ __('Before tax') }}</div>
+              <!-- Returns -->
+              <div v-if="hasReturns" class="text-start bg-red-50 border border-red-200 rounded-lg p-3 md:p-4">
+                <div class="text-red-600 text-xs uppercase font-medium mb-1">{{ __('Returns') }}</div>
+                <div class="text-lg md:text-2xl font-bold text-red-700 mb-0.5 md:mb-1 truncate">-{{ formatCurrency(closingData.returns_total) }}</div>
+                <div class="text-red-600 text-xs">{{ __('{0} returns', [closingData.returns_count]) }}</div>
               </div>
 
-              <!-- Items Sold -->
-              <div class="text-start bg-gray-50 border border-gray-200 rounded-lg p-3 md:p-4">
-                <div class="text-gray-600 text-xs uppercase font-medium mb-1">{{ __('Items Sold') }}</div>
-                <div class="text-lg md:text-2xl font-bold text-gray-900 mb-0.5 md:mb-1">{{ formatQuantity(closingData.total_quantity) }}</div>
-                <div class="text-gray-600 text-xs">{{ __('Total items') }}</div>
+              <!-- Net Sales (after returns) -->
+              <div class="text-start bg-green-50 border border-green-200 rounded-lg p-3 md:p-4">
+                <div class="text-green-600 text-xs uppercase font-medium mb-1">{{ __('Net Sales') }}</div>
+                <div class="text-lg md:text-2xl font-bold text-green-900 mb-0.5 md:mb-1 truncate">{{ formatCurrency(closingData.grand_total) }}</div>
+                <div class="text-green-600 text-xs">{{ __('After returns') }}</div>
               </div>
 
               <!-- Tax Collected -->
               <div class="text-start bg-gray-50 border border-gray-200 rounded-lg p-3 md:p-4">
                 <div class="text-gray-600 text-xs uppercase font-medium mb-1">{{ __('Tax Collected') }}</div>
                 <div class="text-lg md:text-2xl font-bold text-gray-900 mb-0.5 md:mb-1 truncate">{{ formatCurrency(totalTax) }}</div>
-                <div class="text-gray-600 text-xs">{{ __('Total tax') }}</div>
+                <div class="text-gray-600 text-xs">{{ __('Net tax') }}</div>
               </div>
             </div>
           </div>
@@ -99,12 +105,18 @@
             <div v-show="showInvoiceDetails" class="border-t border-gray-200">
               <!-- Mobile Card View -->
               <div class="md:hidden divide-y divide-gray-200">
-                <div v-for="(invoice, idx) in closingData.pos_transactions" :key="idx" class="p-3 hover:bg-gray-50">
+                <div v-for="(invoice, idx) in closingData.pos_transactions" :key="idx"
+                     :class="['p-3', invoice.is_return ? 'bg-red-50 hover:bg-red-100' : 'hover:bg-gray-50']">
                   <div class="flex justify-between items-start mb-2">
-                    <span class="text-xs font-medium text-gray-900">
-                      {{ invoice.pos_invoice || invoice.sales_invoice || __('N/A') }}
-                    </span>
-                    <span class="text-sm font-semibold text-gray-900">
+                    <div class="flex items-center gap-2">
+                      <span :class="['text-xs font-medium', invoice.is_return ? 'text-red-700' : 'text-gray-900']">
+                        {{ invoice.pos_invoice || invoice.sales_invoice || __('N/A') }}
+                      </span>
+                      <span v-if="invoice.is_return" class="px-1.5 py-0.5 text-xs font-medium bg-red-200 text-red-800 rounded">
+                        {{ __('Return') }}
+                      </span>
+                    </div>
+                    <span :class="['text-sm font-semibold', invoice.is_return ? 'text-red-700' : 'text-gray-900']">
                       {{ formatCurrency(invoice.grand_total) }}
                     </span>
                   </div>
@@ -115,7 +127,7 @@
                 </div>
                 <div class="bg-gray-50 p-3">
                   <div class="flex justify-between items-center">
-                    <span class="text-xs font-semibold text-gray-700">{{ __('Total:') }}</span>
+                    <span class="text-xs font-semibold text-gray-700">{{ __('Net Total:') }}</span>
                     <span class="text-sm font-bold text-gray-900">
                       {{ formatCurrency(closingData.grand_total) }}
                     </span>
@@ -129,16 +141,26 @@
                   <thead class="bg-gray-50">
                     <tr>
                       <th class="px-6 py-3 text-start text-xs font-medium text-gray-500 uppercase">{{ __('Invoice') }}</th>
+                      <th class="px-6 py-3 text-start text-xs font-medium text-gray-500 uppercase">{{ __('Type') }}</th>
                       <th class="px-6 py-3 text-start text-xs font-medium text-gray-500 uppercase">{{ __('Customer') }}</th>
                       <th class="px-6 py-3 text-start text-xs font-medium text-gray-500 uppercase">{{ __('Time') }}</th>
                       <th class="px-6 py-3 text-start text-xs font-medium text-gray-500 uppercase">{{ __('Amount') }}</th>
                     </tr>
                   </thead>
                   <tbody class="bg-white divide-y divide-gray-200">
-                    <tr v-for="(invoice, idx) in closingData.pos_transactions" :key="idx" class="hover:bg-gray-50">
+                    <tr v-for="(invoice, idx) in closingData.pos_transactions" :key="idx"
+                        :class="invoice.is_return ? 'bg-red-50 hover:bg-red-100' : 'hover:bg-gray-50'">
                       <td class="text-start px-6 py-4 whitespace-nowrap">
-                        <span class="text-sm font-medium text-gray-900">
+                        <span :class="['text-sm font-medium', invoice.is_return ? 'text-red-700' : 'text-gray-900']">
                           {{ invoice.pos_invoice || invoice.sales_invoice || __('N/A') }}
+                        </span>
+                      </td>
+                      <td class="text-start px-6 py-4 whitespace-nowrap">
+                        <span v-if="invoice.is_return" class="px-2 py-1 text-xs font-medium bg-red-200 text-red-800 rounded">
+                          {{ __('Return') }}
+                        </span>
+                        <span v-else class="px-2 py-1 text-xs font-medium bg-green-100 text-green-800 rounded">
+                          {{ __('Sale') }}
                         </span>
                       </td>
                       <td class="text-start px-6 py-4 whitespace-nowrap text-sm text-gray-600">
@@ -148,7 +170,7 @@
                         {{ formatTime(invoice.posting_date) }}
                       </td>
                       <td class="text-start px-6 py-4 whitespace-nowrap">
-                        <span class="text-sm font-semibold text-gray-900">
+                        <span :class="['text-sm font-semibold', invoice.is_return ? 'text-red-700' : 'text-gray-900']">
                           {{ formatCurrency(invoice.grand_total) }}
                         </span>
                       </td>
@@ -156,8 +178,8 @@
                   </tbody>
                   <tfoot class="bg-gray-50">
                     <tr>
-                      <td colspan="3" class="px-6 py-4 text-start text-sm font-semibold text-gray-700">
-                        {{ __('Total:') }}
+                      <td colspan="4" class="px-6 py-4 text-start text-sm font-semibold text-gray-700">
+                        {{ __('Net Total:') }}
                       </td>
                       <td class="px-6 py-4 whitespace-nowrap text-start">
                         <span class="text-base font-bold text-gray-900">
@@ -482,12 +504,13 @@
 </template>
 
 <script setup>
-import { Button, Dialog, Input } from "frappe-ui"
-import { computed, reactive, ref, watch } from "vue"
+import { Button, Dialog, FeatherIcon, Input } from "frappe-ui"
+import { computed, onBeforeUnmount, reactive, ref, watch } from "vue"
 import { storeToRefs } from "pinia"
-import { useShift } from "../composables/useShift"
+import { useShift, shiftState } from "../composables/useShift"
 import { useFormatters } from "../composables/useFormatters"
 import { usePOSSettingsStore } from "../stores/posSettings"
+import { usePOSShiftStore } from "../stores/posShift"
 import TranslatedHTML from "./common/TranslatedHTML.vue"
 
 const props = defineProps({
@@ -514,19 +537,48 @@ const { formatCurrency, formatQuantity, formatDateTime, formatTime } = useFormat
 const posSettingsStore = usePOSSettingsStore()
 const { hideExpectedAmount } = storeToRefs(posSettingsStore)
 
+const shiftStore = usePOSShiftStore()
+
 const closingData = ref(null)
 const closingDataResource = getClosingShiftData
 const submitResource = submitClosingShift
 const showInvoiceDetails = ref(false)
 const showSuccessReport = ref(false) // Track if shift is closed and showing report
 const errorMessage = ref('') // User-friendly error message
+const showIdleWarning = ref(false)
+let _idleWarningTimer = null
 
 // Watch dialog open state
 watch(open, async (isOpen) => {
 	if (isOpen && props.openingShift) {
+		// Pause the shift duration counter in the header
+		shiftStore.shiftTimerPaused = true
+		showIdleWarning.value = false
+
+		// Warn user if dialog stays open for more than 1 minute
+		_idleWarningTimer = setTimeout(() => {
+			showIdleWarning.value = true
+		}, 60_000)
+
 		// Refresh POS settings to get latest hideExpectedAmount value
 		await posSettingsStore.reloadSettings()
 		loadClosingData()
+	} else {
+		// Resume the shift duration counter
+		shiftStore.shiftTimerPaused = false
+		showIdleWarning.value = false
+		if (_idleWarningTimer) {
+			clearTimeout(_idleWarningTimer)
+			_idleWarningTimer = null
+		}
+	}
+})
+
+onBeforeUnmount(() => {
+	shiftStore.shiftTimerPaused = false
+	if (_idleWarningTimer) {
+		clearTimeout(_idleWarningTimer)
+		_idleWarningTimer = null
 	}
 })
 
@@ -543,9 +595,9 @@ async function loadClosingData() {
 			data.payment_reconciliation = data.payment_reconciliation.map((payment) =>
 				reactive({
 					...payment,
-					closing_amount:
-						payment.closing_amount ?? payment.expected_amount ?? 0,
+					closing_amount: payment.closing_amount ?? null,
 					difference: 0,
+					_touched: false,
 				}),
 			)
 
@@ -576,6 +628,7 @@ function calculateDifference(payment) {
 // New function to handle closing amount updates with proper reactivity
 function updateClosingAmount(payment, value) {
 	payment.closing_amount = value
+	payment._touched = true
 	calculateDifference(payment)
 }
 
@@ -583,9 +636,10 @@ const canSubmit = computed(() => {
 	if (!closingData.value || !closingData.value.payment_reconciliation)
 		return false
 
-	// Check if all closing amounts are filled
+	// Check if all closing amounts have been manually entered
 	return closingData.value.payment_reconciliation.every(
 		(payment) =>
+			payment._touched &&
 			payment.closing_amount !== null &&
 			payment.closing_amount !== undefined &&
 			payment.closing_amount !== "",
@@ -665,12 +719,30 @@ const invoiceCount = computed(() => {
 	return transactions.length
 })
 
+// Check if there are any return invoices
+const hasReturns = computed(() => {
+	if (!closingData.value) return false
+	return (closingData.value.returns_count || 0) > 0
+})
+
+// Count of sales invoices (non-returns)
+const salesInvoiceCount = computed(() => {
+	if (!closingData.value) return 0
+	const transactions = closingData.value.pos_transactions || []
+	return transactions.filter(t => !t.is_return).length
+})
+
 const totalTax = computed(() => {
 	if (!closingData.value || !closingData.value.taxes) return 0
 	return closingData.value.taxes.reduce(
 		(sum, tax) => sum + Number.parseFloat(tax.amount || 0),
 		0,
 	)
+})
+
+const grossSales = computed(() => {
+	if (!closingData.value) return 0
+	return closingData.value.sales_total ?? closingData.value.grand_total ?? 0
 })
 const getTotalExpected = computed(() => {
 	if (!closingData.value || !closingData.value.payment_reconciliation) return 0
@@ -702,15 +774,21 @@ function getSalesForPayment(payment) {
 function getShiftDuration() {
 	if (!closingData.value || !closingData.value.period_start_date) return __("N/A")
 
-	const start = new Date(closingData.value.period_start_date)
-	const end = new Date()
-	const diff = end - start
+	// Use the same timezone-safe approach as the header timer
+	const { _initialElapsedMs, _receivedAt } = shiftState.value
+	const diff = _initialElapsedMs + (Date.now() - (_receivedAt || Date.now()))
+	if (diff < 0) return __("N/A")
 
-	const hours = Math.floor(diff / (1000 * 60 * 60))
+	const days = Math.floor(diff / (1000 * 60 * 60 * 24))
+	const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60))
 	const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60))
 
+	if (days > 0) {
+		const dayLabel = days === 1 ? __('Day') : __('Days')
+		return __('{0} {1} {2}h {3}m', [days, dayLabel, hours, minutes])
+	}
 	if (hours > 0) {
-    return __('{0}h {1}m', [hours, minutes])
+		return __('{0}h {1}m', [hours, minutes])
 	}
 	return __('{0}m', [minutes])
 }
@@ -742,4 +820,3 @@ function getPaymentIcon(method) {
 	}
 }
 </script>
-

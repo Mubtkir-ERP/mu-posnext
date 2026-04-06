@@ -18,8 +18,13 @@ import { useToast } from "@/composables/useToast"
 import {
 	cacheCustomersFromServer,
 	cachePaymentMethodsFromServer,
+	cacheSalesPersonsFromServer,
 	syncOfflineInvoices,
+	cacheInvoiceHistory,
+	cacheUnpaidInvoices,
+	cacheUnpaidSummary,
 } from "@/utils/offline"
+import { call } from "@/utils/apiWrapper"
 import { logger } from "@/utils/logger"
 import { offlineState } from "@/utils/offline/offlineState"
 import { offlineWorker } from "@/utils/offline/workerClient"
@@ -242,10 +247,19 @@ export const usePOSSyncStore = defineStore("posSync", () => {
 	 * Preload data for offline use (payment methods, customers)
 	 * @param {Object} currentProfile - Current POS profile
 	 */
+	let _preloadingProfile = null
 	async function preloadDataForOffline(currentProfile) {
 		if (!currentProfile || isOffline.value) {
 			return
 		}
+
+		// Prevent duplicate concurrent preloads (e.g., from component remounts
+		// triggered by language/translation version changes)
+		if (_preloadingProfile === currentProfile.name) {
+			log.debug('Preload already in progress for this profile, skipping duplicate')
+			return
+		}
+		_preloadingProfile = currentProfile.name
 
 		try {
 			const cacheReady = await checkCacheReady()
@@ -270,6 +284,21 @@ export const usePOSSyncStore = defineStore("posSync", () => {
 				// Continue with other data loading
 			}
 
+			// Cache sales persons for offline use
+			try {
+				const salesPersonsData = await cacheSalesPersonsFromServer(currentProfile.name)
+				if (salesPersonsData.sales_persons?.length > 0) {
+					const personsWithProfile = salesPersonsData.sales_persons.map((person) => ({
+						...person,
+						pos_profile: currentProfile.name,
+					}))
+					await offlineWorker.cacheSalesPersons(personsWithProfile)
+					log.success(`Cached ${personsWithProfile.length} sales persons`)
+				}
+			} catch (error) {
+				log.error('Failed to load sales persons', error)
+			}
+
 			// Load customers if cache needs refresh
 			if (!cacheReady || needsRefresh) {
 				showSuccess(__("Loading customers for offline use..."))
@@ -279,9 +308,60 @@ export const usePOSSyncStore = defineStore("posSync", () => {
 
 				showSuccess(__("Data is ready for offline use"))
 			}
+
+			// Preload invoice history and unpaid invoices in parallel for faster startup
+			log.info('Loading invoice data for offline use')
+			try {
+				const [invoices, unpaidInvoices, unpaidSummary] = await Promise.all([
+					call("pos_next.api.invoices.get_invoices", {
+						pos_profile: currentProfile.name,
+						limit: 100,
+					}).catch(err => {
+						log.error('Failed to load invoice history', err)
+						return []
+					}),
+					call("pos_next.api.partial_payments.get_unpaid_invoices", {
+						pos_profile: currentProfile.name,
+						limit: 100,
+					}).catch(err => {
+						log.error('Failed to load unpaid invoices', err)
+						return []
+					}),
+					call("pos_next.api.partial_payments.get_unpaid_summary", {
+						pos_profile: currentProfile.name,
+					}).catch(err => {
+						log.error('Failed to load unpaid summary', err)
+						return null
+					}),
+				])
+
+				// Cache results in parallel
+				await Promise.all([
+					invoices?.length > 0
+						? cacheInvoiceHistory(invoices, currentProfile.name).then(() =>
+							log.success(`Cached ${invoices.length} invoices for offline viewing`)
+						)
+						: Promise.resolve(),
+					unpaidInvoices?.length > 0
+						? cacheUnpaidInvoices(unpaidInvoices, currentProfile.name).then(() =>
+							log.success(`Cached ${unpaidInvoices.length} unpaid invoices for offline viewing`)
+						)
+						: Promise.resolve(),
+					unpaidSummary
+						? cacheUnpaidSummary(unpaidSummary, currentProfile.name).then(() =>
+							log.debug('Cached unpaid invoice summary')
+						)
+						: Promise.resolve(),
+				])
+			} catch (error) {
+				log.error('Failed to load invoice data for offline', error)
+				// Continue - not critical for POS operation
+			}
 		} catch (error) {
 			log.error('Failed to preload offline data', error)
 			showWarning(__("Some data may not be available offline"))
+		} finally {
+			_preloadingProfile = null
 		}
 	}
 

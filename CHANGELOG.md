@@ -7,6 +7,400 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.16.0] - 2026-04-01
+
+### Added
+- **Brands Filter** (#180)
+  - Filter items by brand in the POS item selector
+  - Brand handling integrated with POS Profile configuration
+  - Offline brand filtering support in IndexedDB cache
+
+- **Credit Return to Wallet** (#181)
+  - Return invoices can credit the refund amount to customer wallet
+  - Auto-create wallet on customer insert if wallet feature is enabled
+  - Reverse wallet transactions for return invoices (full and partial returns)
+
+- **POS-Only Pricing Rules** (#169)
+  - New "POS Only" checkbox for Promotional Schemes and Pricing Rules
+  - POS-only rules are automatically excluded from non-POS documents (desk, website)
+  - Module-level monkey-patch for `get_other_conditions` since no Frappe hook exists
+
+- **Sales Persons Offline Caching** (#174)
+  - Sales persons list cached for offline use
+  - Refresh button to manually reload sales persons
+
+- **POS Reports Suite** (#158, #171, #172)
+  - Sales vs Shifts Report with advanced analytics and chart visualization
+  - Payments and Cash Control Report with expected amounts and per-shift rows
+  - Inventory Impact and Fast Movers Report with improved filters
+  - Cashier Performance Report
+  - Offline Sync and System Health Report
+  - Eliminated double-counting across all reports by using Sales Invoice Reference
+
+- **Session Lock Screen** (#161)
+  - Configurable session lock with password protection
+  - Brute-force protection with progressive lockout
+  - Offline unlock fallback
+  - Persistence across page reloads via localStorage
+  - Disabled by default in POS Settings
+
+- **QZ Tray Silent Printing** (#143)
+  - Self-signed certificate generation and server-side signing
+  - Silent printing integration for receipt printers
+  - Arabic translations for QZ Tray UI
+
+- **Cart Sort & Filter** (#145)
+  - Sort dropdown for cart items
+
+- **Show Variants as Items** (#150, #153)
+  - New POS setting to display item variants directly in the item grid
+  - Configurable per POS Profile
+
+- **Require Actual Closing Amounts** (#159)
+  - Manual entry of actual closing amounts when closing shift (no auto-fill from expected)
+
+- **Shift Reopen Initialization** (#160)
+  - Default customer, warehouse, and offline cache properly initialized on shift reopen
+
+- **Overpayment Confirmation** (#187)
+  - Confirmation dialog when cashier enters payment amount exceeding invoice total
+  - Closing shift reconciliation fixes
+
+- **Allow User to Edit Rate** (#128)
+  - Backend validation and audit logging for manual rate edits
+  - Frontend rate tracking
+
+- **Draft Invoice Printing** (#213, #223)
+  - Print draft invoices from the Drafts dialog
+  - Customizable print header and footer
+
+- **Hide POS Actions When Shift is Closed** (#212, #226)
+  - POS action buttons and print hidden when no active shift
+
+- **Auto-Select Quantity in UOM Dialog** (#222)
+  - Quantity input auto-selected when UOM dialog opens for faster editing
+
+- **UOM Handling Refactor** (#225)
+  - Refactored UOM handling in EditItemDialog for better price and factor display
+
+- **Nexus POS Manager Role**
+  - New role for desk switching functionality
+  - "Switch To Desk" button in POS Sale page
+
+- **Ignore Pricing Rule Setting** (#185)
+  - `ignore_pricing_rule` configurable in POS Profile
+
+- **Item Group Search** (#183)
+  - Search items by item group name in POS search
+
+- **Custom Fields Migration** (#179)
+  - Convert custom fields and print format from fixtures to exported customizations
+
+### Changed
+- **Customer Search** (#208)
+  - Server-side search filtering on name, customer_name, mobile_no, email_id (was browse-only before)
+  - Customer creation routed through `pos_next.api.customers.create_customer` instead of generic `frappe.client.insert`
+
+- **Loyalty Program Assignment** (#208)
+  - Context-aware loyalty assignment using explicit company/POS Profile
+  - Ambiguity guard: skips auto-assignment when multiple different loyalty programs exist for the same company
+
+- **Coupon Discount Base** (#219)
+  - Coupon dialog now respects `apply_on` setting (Grand Total vs Net Total)
+  - Previously all coupons calculated against subtotal regardless of configuration
+
+- **Partial Payments** (#216)
+  - Payment Entry creation now uses ERPNext core `get_payment_entry()` instead of manual field construction
+  - Multi-currency support via core currency setup
+  - Batch payment creation wrapped in database savepoint for atomic rollback on failure
+
+- **Return Invoice Performance** (#174)
+  - Optimized return invoice creation path
+
+### Fixed
+- **Payment Amount Preservation** (#228)
+  - ERPNext's `set_missing_values()` no longer wipes cashier-entered payment amounts during invoice creation
+  - Root cause: ERPNext removed the `if not self.get("payments")` guard in `set_pos_fields()`, causing `update_multi_mode_option()` to run unconditionally
+  - Fix: use `set_missing_values(for_validate=True)` to skip the destructive payment rebuild
+
+- **Customer Credit Redemption** (#218)
+  - Frontend now preserves customer credit metadata through the POS submit flow
+  - `customer_credit_dict` and `redeemed_customer_credit` properly sent to backend
+  - Pure customer-credit POS sales (no cash/card payment) now submit correctly
+
+- **Credit Source Ownership Validation** (#221)
+  - Validates that credit source invoices/advances belong to the same customer and company as the target invoice
+  - Defense-in-depth checks at both validation and mutation layers
+  - Rejects non-Customer or non-Receive payment entries before advance allocation
+
+- **One-Use Coupon Enforcement** (#205)
+  - Coupon usage counted across both Sales Invoice and legacy POS Invoice doctypes
+  - Prevents reuse of one-use coupons even when previous usage was on a different document type
+
+- **Cross-Branch Return Payment Modes** (#177)
+  - Foreign payment modes remapped on cross-branch return invoices
+  - Desk form closing shift path also handles remapping
+
+- **Stock Validation** (#168)
+  - Stock validation enforced across all cart entry paths (manual add, barcode, offers)
+
+- **Barcode Matching** (#129)
+  - Changed barcode matching to exact match (was substring match, causing false positives)
+  - Barcode scan queue prevents lost items at rapid scanning speeds
+
+- **Free Item Handling** (#151, #152, #154, #155)
+  - Warehouse assignment from POS Profile for free items
+  - Free items that are different products handled correctly
+  - Deduplicate free items from `mixed_conditions` pricing rules
+  - Promotions list filtered to only show selling schemes
+
+- **Pricing Rule Filter** (#155)
+  - Guard `pos_only` pricing rule filter for sites without POS Next installed
+
+- **Discount Calculation**
+  - Fixed discount calculation for fixed amount coupons
+  - Draft cleanup restricted to only POS Sales Invoices
+
+- **POS Profile Cache**
+  - Cache invalidation when POS Profile is updated
+
+- **Warehouse Settings**
+  - Warehouse change event uses event bus instead of emit (fixes settings propagation)
+
+- **Inclusive Tax Returns**
+  - Return invoice processing correctly handles inclusive taxes
+
+### Security
+- **Credit Source Validation** (#221) — Prevents cross-customer/cross-company credit theft via client-supplied document names
+- **Atomic Coupon Consumption** — Coupon usage increment protected by `SELECT FOR UPDATE` row locking (merged via #205)
+- **Session Lock** — Brute-force protection with progressive lockout for session lock screen
+
+## [1.15.0] - 2026-02-06
+
+### Added
+- **Customer Credit Balance as Payment Method**
+  - New "Add to Customer Credit Balance" option in return dialog — cashiers can choose between cash refund or adding credit to customer balance
+  - Customer credit payment method — use positive credit balance (from returns/advances) as payment
+  - New `allow_customer_credit_payment` POS Setting to enable credit balance payments
+  - Race condition protection using SELECT FOR UPDATE for concurrent credit redemption
+  - Optimistic locking with modified timestamps to prevent stale credit usage
+  - Return type indicators in Invoice Details: blue "Added to Customer Credit" vs green "Cash Refund"
+  - Separated credit calculation: regular invoice outstanding (debt) vs return invoice credit, preventing double-counting
+
+- **Shift Duration Improvements**
+  - Timezone-safe shift duration calculation — server sends `server_now` timestamp, frontend computes elapsed time without timezone mismatch
+  - Multi-day shift display with proper formatting (e.g., "2 Days 3 Hours 15 Minutes")
+  - Full word time labels on desktop: Hours, Minutes, Seconds with proper singular/plural handling
+  - Shift timer pauses automatically when closing dialog is open
+  - Idle warning when shift closing dialog stays open for over 1 minute
+
+- **Enhanced Mobile Payment UI**
+  - Physical keyboard input support (0-9, decimal, backspace, Enter) for payment numpad
+  - Consistent payment method layout across cash and non-cash payment types
+  - Context-aware quick amounts: ceiling/rounded denominations for cash, exact fractional amounts for non-cash
+  - Quick amounts always visible with proper disabled states
+
+### Changed
+- **Sidebar Navigation**
+  - Settings button moved to bottom of sidebar for better visual hierarchy
+  - Removed empty Dashboard and Reports placeholder components
+
+- **Code Quality**
+  - Centralized `DEFAULT_CURRENCY` and `DEFAULT_LOCALE` constants, eliminating hardcoded "USD" and "en-US" strings
+  - Removed redundant credit sale check from `get_available_credit` API — fetching existing credit no longer requires credit sale to be enabled
+  - Removed duplicate return success message (was showing twice from both dialog and parent)
+
+### Fixed
+- **Returns & Refunds**
+  - Use `net_rate` for accurate return refund calculation, properly accounting for coupon and invoice-level discounts
+  - Display customer name and posting date in return dialog
+  - Calculate effective rate for refunds including taxes and discounts — customers refunded exactly what they paid
+
+- **Monetary Calculations**
+  - Use `roundCurrency` consistently across all payment, return, edit, and draft dialogs
+  - 3-decimal precision (`round3`) for rate calculations preventing floating-point rounding discrepancies
+  - Backend uses `flt(..., 3)` for rate calculations matching frontend precision
+  - Fixed decimal precision issues causing incorrect "PARTIAL PAYMENT" status on fully paid invoices
+
+- **Write-Off Feature**
+  - Implemented write-off for small remaining payment amounts with visual toggle UI
+  - Centralized currency rounding using Frappe's `flt()` as single source of truth
+
+- **Invoice History**
+  - Integrated ReturnInvoiceDialog directly into InvoiceHistoryDialog (no nested modals)
+  - Fixed pagination — "Load More" button now correctly appends results
+  - Changed invoice sorting from creation date to modified date
+  - Added `canCreateReturn()` check to hide return button for fully returned invoices
+
+- **Barcode**
+  - Handle absent barcode UOM price with proper conversion factor calculation
+  - Cache calculated prices for consistency across barcode operations
+
+- **ERPNext v15/v16 Compatibility**
+  - Support both `post_change_gl_entries` field locations (Accounts Settings vs Singles table)
+  - Support both v15 `make_gle_for_change_amount()` and v16 `get_gle_for_change_amount()` methods
+  - Convert `get_stock_availability` from SQL string to Query Builder for Frappe 16
+
+- **Shift Timer**
+  - Fixed negative shift duration (-1 Hours -60 Minutes) caused by timezone mismatch between server and browser
+
+- **Translations**
+  - Added Arabic, Indonesian, and Portuguese translations for all new features
+
+## [1.14.0] - 2026-01-25
+
+### Added
+- **Frappe 16 Compatibility**
+  - Converted SQL queries to Query Builder for full Frappe 16 support
+  - Updated item filtering conditions using Query Builder patterns
+  - Replaced pypika date functions with frappe.utils for date filtering
+
+- **Enhanced Barcode Support**
+  - Added POS Barcode Rules DocType for configurable barcode parsing
+  - Integrated barcode rules into POS Settings for centralized management
+  - Implemented resolved barcode handling for weighted and priced items
+  - Auto-select UOM based on single barcode presence
+  - Enhanced barcode resolution with POS profile settings integration
+  - Warehouse availability now supports barcode UOM conversion
+
+- **Offline Mode Enhancements**
+  - Added offline support for invoice history and unpaid invoices
+  - Cache batch/serial data for offline selection
+  - Enhanced Return Invoice dialog with offline support and optimizations
+  - Eager variant caching with offline verification
+  - Disable clear cache button when offline mode is active
+
+- **Sales Person Management**
+  - Enhanced sales person selection with validation and dropdown support
+  - Keep dropdown open for multiple sales person selection
+
+- **Permissions & Roles**
+  - Added new roles and permissions for system and sales managers
+  - Correct POS Settings permissions with create for managers
+  - Moved POSNext Cashier permissions from fixtures to DocType definitions
+
+- **Payment Improvements**
+  - Added exact amount mode for payment processing
+  - Optimized payment queries for better performance
+  - Added Arabic translations for payment dialog
+  - Extract shared constants and add payment composables
+  - Add toast queue system for better notification management
+
+- **Localization**
+  - Added Indonesian translations
+  - Updated terminology and translations
+  - Corrected CSV escaping and RTL toast positioning
+
+- **POS Settings**
+  - Added use_exact_amount field with validation
+
+### Changed
+- **Promotions UX**
+  - Improved item selection UX with searchable dropdowns
+  - Added clear all functionality for promotion items
+  - Expanded template items to include variants in eligibility check
+
+- **Code Quality**
+  - Improved code quality with shared utilities and consistent patterns
+  - Standardized pricing and submission functions across frontend and backend
+  - Replaced console.warn with logger utility
+  - Replaced silent exception handling with proper error logging
+
+### Fixed
+- **InvoiceCart**
+  - Prevented event propagation on quantity buttons and input fields
+
+- **Returns**
+  - Use ERPNext make_sales_return for proper sales_team handling
+  - Set update_outstanding_for_self=0 for proper credit note handling
+
+- **Batch Display**
+  - Show actual batch quantities instead of hardcoded 999
+
+- **Offers**
+  - Expanded template items to include variants in eligibility check
+
+- **Permissions**
+  - Preserve standard ERPNext role permissions in Custom DocPerm fixtures
+
+- **Payment**
+  - Added mutex protection to prevent duplicate invoice submissions
+
+- **User Display**
+  - Prevent undefined initials when name has trailing spaces
+
+- **Localization**
+  - Removed 'id' from default locales in get_allowed_locales_from_settings
+  - Fixed RTL toast positioning
+
+- **Info Toast**
+  - Added info toast type for informational messages
+
+### DevOps
+- Added stale issue/PR automation workflow
+- Added comprehensive issue templates
+- Added .claude/settings.json to gitignore
+
+## [1.13.0] - 2026-01-07
+
+### Added
+- **POSNext Cashier Role & Permissions**
+  - Created dedicated POSNext Cashier role for POS operations
+  - Added custom permissions for Customer, Bin, Item, and Warehouse doctypes
+  - Proper role-based access control for POS users
+
+- **Offline Invoice Sync Enhancement**
+  - Added deduplication mechanism for offline invoice synchronization
+  - Prevents duplicate invoice creation during sync recovery
+  - Defensive type checks and mutex for concurrent sync operations
+
+- **Return Invoice Improvements**
+  - Added item search functionality in Return Invoice Dialog
+  - Improved code quality and user experience for returns
+
+- **Shift Closing Enhancement**
+  - Return invoices now included in shift closing calculations
+  - More accurate end-of-day reporting
+
+### Changed
+- **Offers & Promotions Optimization**
+  - Optimized apply_offers with batch queries for better performance
+  - Added dynamic debounce for offer application
+  - Support for standalone pricing rules in apply_offers
+  - Validate min_qty against eligible item quantity instead of total cart
+  - Ensures offers fetched before processing in mobile view
+  - Added offline support for promotions with mixed conditions
+
+- **Cart & Payment Improvements**
+  - Corrected subtotal display for tax-inclusive mode
+  - Enhanced mobile responsiveness and dynamic sizing in PaymentDialog
+  - Restored Hold Order button functionality
+
+- **Internationalization**
+  - Fixed translation API and added missing translations
+  - Improved i18n coverage across the application
+
+- **Build & Dependencies**
+  - Updated frappe-ui imports to use proper exports
+  - Improved build compatibility
+
+### Fixed
+- **Offers System**
+  - Fixed min_qty validation to check eligible item quantity, not total cart
+  - Fixed standalone pricing rules not being applied correctly
+  - Fixed offers not being fetched before processing in mobile view
+
+- **Cart Display**
+  - Fixed subtotal display in tax-inclusive mode showing incorrect values
+
+- **Offline Sync**
+  - Added defensive type checks preventing sync errors
+  - Added mutex to prevent concurrent sync race conditions
+
+- **UI/UX**
+  - Fixed Hold Order button missing from cart (regression fix)
+  - Enhanced mobile responsiveness in PaymentDialog
+
 ## [1.12.0] - 2025-12-18
 
 ### Added
@@ -721,7 +1115,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Shift management
 - Stock tracking
 
-[Unreleased]: https://github.com/BrainWise-DEV/POSNext/compare/v1.12.0...HEAD
+[Unreleased]: https://github.com/BrainWise-DEV/POSNext/compare/v1.15.0...HEAD
+[1.15.0]: https://github.com/BrainWise-DEV/POSNext/compare/v1.14.0...v1.15.0
+[1.14.0]: https://github.com/BrainWise-DEV/POSNext/compare/v1.13.0...v1.14.0
+[1.13.0]: https://github.com/BrainWise-DEV/POSNext/compare/v1.12.0...v1.13.0
 [1.12.0]: https://github.com/BrainWise-DEV/POSNext/compare/v1.11.0...v1.12.0
 [1.11.0]: https://github.com/BrainWise-DEV/POSNext/compare/v1.10.0...v1.11.0
 [1.10.0]: https://github.com/BrainWise-DEV/POSNext/compare/v1.9.0...v1.10.0

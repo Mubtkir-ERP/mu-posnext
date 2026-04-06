@@ -23,6 +23,13 @@ export {
 	updateLocalStock,
 	getLocalStock,
 	saveOfflinePayment,
+	cacheInvoiceHistory,
+	getCachedInvoiceHistory,
+	clearInvoiceHistoryCache,
+	cacheUnpaidInvoices,
+	getCachedUnpaidInvoices,
+	cacheUnpaidSummary,
+	getCachedUnpaidSummary,
 } from "./sync"
 
 export {
@@ -51,6 +58,8 @@ export {
 	cacheCustomersFromServer,
 	cachePaymentMethodsFromServer,
 	getCachedPaymentMethods,
+	cacheSalesPersonsFromServer,
+	getCachedSalesPersons,
 	searchCachedItems,
 	searchCachedCustomers,
 	getCachedItem,
