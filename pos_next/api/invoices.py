@@ -518,6 +518,28 @@ def update_invoice(data):
         invoice_doc.docstatus = 0
         invoice_doc.save()
 
+        # FIX: Ensure payments from frontend aren't wiped out by custom scripts or ERPNext's set_pos_data
+        if data.get("payments"):
+            payload_payments_map = {p.get("mode_of_payment"): flt(p.get("amount")) for p in data.get("payments") if p.get("mode_of_payment")}
+            needs_update = False
+            
+            for p in invoice_doc.payments:
+                if p.mode_of_payment in payload_payments_map:
+                    payload_amt = payload_payments_map[p.mode_of_payment]
+                    # If the document has 0, but payload had an amount, the script wiped it!
+                    if p.amount != payload_amt:
+                        p.amount = payload_amt
+                        if not p.base_amount or p.base_amount != payload_amt:
+                            p.base_amount = payload_amt
+                        p.db_update()
+                        needs_update = True
+            
+            if needs_update:
+                invoice_doc.paid_amount = sum(flt(p.amount) for p in invoice_doc.payments)
+                invoice_doc.base_paid_amount = invoice_doc.paid_amount
+                invoice_doc.db_update()
+
+
         return invoice_doc.as_dict()
     except Exception as e:
         frappe.log_error(frappe.get_traceback(), "Update Invoice Error")
@@ -1016,6 +1038,174 @@ def get_invoice_for_return(invoice_name):
 
     invoice_dict["items"] = updated_items
     return invoice_dict
+
+
+@frappe.whitelist()
+def prepare_return_invoice(invoice_name, pos_opening_shift=None):
+    """Prepare a return invoice using ERPNext's make_sales_return.
+
+    This uses ERPNext's standard return document creation which properly copies
+    all child tables including:
+    - sales_team: For correct commission reversal on returned items
+    - taxes: For correct tax reversal
+    - Other child tables maintained by ERPNext
+
+    The function validates:
+    - Invoice exists and is submitted (docstatus = 1)
+    - Invoice is not already a return
+    - Return is within the validity period (if configured in POS Settings)
+
+    Args:
+        invoice_name: The original Sales Invoice name to create return against
+        pos_opening_shift: The current POS Opening Shift name
+
+    Returns:
+        dict: The prepared return invoice document with:
+            - items: Only items with remaining_qty > 0 (not fully returned)
+            - _original_invoice: Reference data from original invoice (payments, amounts)
+            - Each item includes original_qty, already_returned, and remaining_qty
+    """
+    from frappe.utils import date_diff, getdate
+    from frappe.query_builder.functions import Sum, Abs, Coalesce
+    from erpnext.accounts.doctype.sales_invoice.sales_invoice import make_sales_return
+
+    # Validate invoice and get fields needed for return period check
+    si = frappe.qb.DocType("Sales Invoice")
+    invoice_check = (
+        frappe.qb.from_(si)
+        .select(
+            si.docstatus,
+            si.is_return,
+            si.pos_profile,
+            si.posting_date,
+            si.is_pos,
+            si.grand_total,
+            si.paid_amount,
+            si.outstanding_amount
+        )
+        .where(si.name == invoice_name)
+    ).run(as_dict=True)
+
+    if not invoice_check:
+        frappe.throw(_("Invoice {0} does not exist").format(invoice_name))
+
+    invoice_info = invoice_check[0]
+
+    # Validate docstatus
+    if invoice_info.docstatus != 1:
+        frappe.throw(_("Invoice must be submitted to create a return"))
+
+    # Check if it's already a return
+    if invoice_info.is_return:
+        frappe.throw(_("Cannot create return against a return invoice"))
+
+    # Check return validity period from POS Settings
+    if invoice_info.pos_profile:
+        return_validity_days = cint(
+            frappe.db.get_value(
+                "POS Settings",
+                {"pos_profile": invoice_info.pos_profile},
+                "return_validity_days"
+            ) or 0
+        )
+
+        if return_validity_days > 0:
+            from frappe.utils import nowdate
+            days_since_invoice = date_diff(getdate(nowdate()), getdate(invoice_info.posting_date))
+            if days_since_invoice > return_validity_days:
+                frappe.throw(
+                    _("Return period has expired. Invoice {0} was created {1} days ago. "
+                      "Returns are only allowed within {2} days of purchase.").format(
+                        invoice_name, days_since_invoice, return_validity_days
+                    )
+                )
+
+    # Use ERPNext's make_sales_return to create properly mapped return document
+    # This automatically copies sales_team, taxes, and other child tables
+    return_doc = make_sales_return(invoice_name)
+
+    # Set POS-specific fields
+    if pos_opening_shift:
+        return_doc.posa_pos_opening_shift = pos_opening_shift
+
+    # Ensure POS flags are set
+    return_doc.is_pos = invoice_info.is_pos
+    return_doc.pos_profile = invoice_info.pos_profile
+
+    # Aggregate quantities already returned from previous return invoices
+    ret_si = frappe.qb.DocType("Sales Invoice")
+    ret_item = frappe.qb.DocType("Sales Invoice Item")
+
+    returned_qty_results = (
+        frappe.qb.from_(ret_si)
+        .inner_join(ret_item).on(ret_item.parent == ret_si.name)
+        .select(
+            Coalesce(ret_item.sales_invoice_item, ret_item.item_code).as_("key_field"),
+            Sum(Abs(ret_item.qty)).as_("returned_qty")
+        )
+        .where(
+            (ret_si.return_against == invoice_name)
+            & (ret_si.docstatus == 1)
+            & (ret_si.is_return == 1)
+        )
+        .groupby(Coalesce(ret_item.sales_invoice_item, ret_item.item_code))
+    ).run(as_dict=True)
+
+    returned_qty_map = {row["key_field"]: flt(row["returned_qty"]) for row in returned_qty_results}
+
+    # Convert to dict and update items with remaining quantities
+    return_dict = return_doc.as_dict()
+
+    # Fetch original invoice payments for refund handling in frontend
+    si_payment = frappe.qb.DocType("Sales Invoice Payment")
+    payments_data = (
+        frappe.qb.from_(si_payment)
+        .select(
+            si_payment.mode_of_payment,
+            si_payment.amount,
+            si_payment.base_amount,
+            si_payment.account
+        )
+        .where(si_payment.parent == invoice_name)
+    ).run(as_dict=True)
+
+    # Include original invoice data for reference (payments, amounts, etc.)
+    return_dict["_original_invoice"] = {
+        "name": invoice_name,
+        "grand_total": invoice_info.grand_total,
+        "paid_amount": invoice_info.paid_amount,
+        "outstanding_amount": invoice_info.outstanding_amount,
+        "payments": payments_data,
+    }
+
+    updated_items = []
+    for item in return_dict.get("items", []):
+        # Get the original item reference (sales_invoice_item points to original item name)
+        original_item_ref = item.get("sales_invoice_item") or item.get("item_code")
+        already_returned = returned_qty_map.get(original_item_ref, 0)
+
+        # The qty from make_sales_return is already negative (full original qty negated)
+        # We need to calculate remaining returnable qty
+        original_qty = abs(flt(item.get("qty", 0)))
+        remaining_qty = original_qty - already_returned
+
+        if remaining_qty > 0:
+            item_copy = item.copy()
+            # Store quantities for frontend use
+            item_copy["original_qty"] = original_qty
+            item_copy["already_returned"] = already_returned
+            item_copy["remaining_qty"] = remaining_qty
+            # Set qty to negative of remaining (for return)
+            item_copy["qty"] = -remaining_qty
+            updated_items.append(item_copy)
+
+    return_dict["items"] = updated_items
+
+    # Check if all items have been fully returned
+    if not updated_items:
+        frappe.throw(_("All items from this invoice have already been returned"))
+
+    return return_dict
 
 
 @frappe.whitelist()
