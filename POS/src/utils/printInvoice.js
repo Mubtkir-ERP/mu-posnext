@@ -270,7 +270,7 @@ export function printInvoiceCustom(invoiceData) {
 
 				<div class="footer">
 					<div style="margin-bottom: 5px;">${invoiceData.footer || __("Thank you for your business!")}</div>
-					${invoiceData.footer ? "" : `<div style="font-size: 10px;">Powered by <a href="https://nexus.brainwise.me" target="_blank" style="color: #3b82f6; text-decoration: none; font-weight: 600;">BrainWise</a></div>`}
+					${invoiceData.footer ? "" : `<div style="font-size: 10px;">Powered by <a href="https://mubtkir.com" target="_blank" style="color: #3b82f6; text-decoration: none; font-weight: 600;">Mubtkir</a></div>`}
 				</div>
 			</div>
 

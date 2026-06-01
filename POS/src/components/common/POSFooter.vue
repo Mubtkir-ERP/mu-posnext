@@ -17,8 +17,8 @@ import { call } from '@/utils/apiWrapper'
 
 // Component state
 const footerText = ref('Powered by')
-const linkText = ref('MUBTKIR')
-const footerLink = ref('https://www.mubtkir.com/erp')
+const linkText = ref('Mubtkir')
+const footerLink = ref('https://mubtkir.com')
 const footerRoot = ref(null)
 const config = ref({})
 const serverValidationEnabled = ref(true)
@@ -26,7 +26,7 @@ const serverValidationEnabled = ref(true)
 // Dynamic class and style to prevent easy CSS targeting
 const componentId = Math.random().toString(36).substring(7)
 const footerClass = ref(`pos-footer-component pos-footer-component-${componentId}`)
-const brandSignature = computed(() => `BrainWise-${componentId}`)
+const brandSignature = computed(() => `Mubtkir-${componentId}`)
 
 const footerStyle = computed(() => ({
 	padding: config.value._s?.p || '12px 20px',
@@ -81,11 +81,11 @@ const loadBrandingConfig = async () => {
 			}
 		}
 	} catch (error) {
-		console.error('[BrainWise] Failed to load branding config:', error)
+		console.error('[Mubtkir] Failed to load branding config:', error)
 		// Use fallback values
 		footerText.value = 'Powered by'
-		linkText.value = 'MUBTKIR'
-		footerLink.value = 'https://www.mubtkir.com/erp'
+		linkText.value = 'Mubtkir'
+		footerLink.value = 'https://mubtkir.com'
 	}
 }
 
@@ -100,7 +100,7 @@ const validateWithServer = async () => {
 			brand_url: footerLink.value
 		})
 	} catch (error) {
-		console.error('[BrainWise] Server validation failed:', error)
+		console.error('[Mubtkir] Server validation failed:', error)
 	}
 }
 
@@ -123,15 +123,15 @@ const logClientEvent = async (eventType, details = {}) => {
 			})
 		})
 	} catch (error) {
-		console.error('[BrainWise] Failed to log event:', error)
+		console.error('[Mubtkir] Failed to log event:', error)
 	}
 }
 
 const ensureBranding = () => {
 	if (!footerRoot.value) return
 
-	const expectedBrand = atob(config.value._l || btoa('MUBTKIR'))
-	const expectedUrl = atob(config.value._u || btoa('https://www.mubtkir.com/erp'))
+	const expectedBrand = atob(config.value._l || btoa('Mubtkir'))
+	const expectedUrl = atob(config.value._u || btoa('https://mubtkir.com'))
 	const expectedText = atob(config.value._t || btoa('Powered by'))
 
 	// Check if values have been tampered
