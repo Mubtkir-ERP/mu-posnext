@@ -201,6 +201,7 @@ import { useCountriesStore } from "@/stores/countries"
 import { logger } from "@/utils/logger"
 import { Button, Dialog, Input, createResource } from "frappe-ui"
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue"
+import { call } from "@/utils/apiWrapper"
 
 const log = logger.create("CreateCustomerDialog")
 
@@ -238,17 +239,35 @@ const countrySearchQuery = ref("")
 const dropdownRef = ref(null)
 const countrySearchRef = ref(null)
 
-const customerGroups = ref(["Commercial", "Individual", "Non Profit", "Government"])
-const territories = ref(["All Territories"])
+const customerGroups = ref([])
+const territories = ref([])
 
 const customerData = ref({
 	customer_name: "",
 	mobile_no: "",
 	email_id: "",
-	customer_group: "Individual",
+	customer_group: "",
 	tax_id: "",
-	territory: "All Territories",
+	territory: "",
 })
+
+// =============================================================================
+// Helper Functions
+// =============================================================================
+
+const extractErrorMessage = (error, defaultMsg) => {
+	if (error && error.messages && error.messages.length > 0) {
+		try {
+			return error.messages.map(m => {
+				let parsed = JSON.parse(m);
+				return parsed.message ? parsed.message : parsed;
+			}).join(', ').replace(/<[^>]*>?/gm, '');
+		} catch (e) {
+			return error.messages.join(', ').replace(/<[^>]*>?/gm, '');
+		}
+	}
+	return error?.message || defaultMsg;
+}
 
 // =============================================================================
 // Computed
@@ -351,8 +370,8 @@ const createCustomerResource = createResource({
 			doctype: "Customer",
 			customer_name: customerData.value.customer_name,
 			customer_type: "Individual",
-			customer_group: customerData.value.customer_group || __("Individual"),
-			territory: customerData.value.territory || __("All Territories"),
+			customer_group: customerData.value.customer_group || "",
+			territory: customerData.value.territory || "",
 			mobile_no: customerData.value.mobile_no || "",
 			email_id: customerData.value.email_id || "",
 			tax_id: customerData.value.tax_id || "",
@@ -365,7 +384,7 @@ const createCustomerResource = createResource({
 	},
 	onError: (error) => {
 		log.error("Error creating customer", error)
-		showError(error.message || __("Failed to create customer"))
+		showError(extractErrorMessage(error, __("Failed to create customer")))
 	},
 })
 
@@ -374,14 +393,14 @@ const updateCustomerResource = createResource({
 	makeParams: () => ({
 		doctype: "Customer",
 		name: props.customer?.name,
-		fieldname: {
+		fieldname: JSON.stringify({
 			customer_name: customerData.value.customer_name,
-			customer_group: customerData.value.customer_group || __("Individual"),
-			territory: customerData.value.territory || __("All Territories"),
+			customer_group: customerData.value.customer_group || "",
+			territory: customerData.value.territory || "",
 			mobile_no: customerData.value.mobile_no || "",
 			email_id: customerData.value.email_id || "",
 			tax_id: customerData.value.tax_id || "",
-		},
+		}),
 	}),
 	onSuccess: (data) => {
 		showSuccess(__("Customer {0} updated successfully", [data.customer_name]))
@@ -390,7 +409,7 @@ const updateCustomerResource = createResource({
 	},
 	onError: (error) => {
 		log.error("Error updating customer", error)
-		showError(error.message || __("Failed to update customer"))
+		showError(extractErrorMessage(error, __("Failed to update customer")))
 	},
 })
 
@@ -401,7 +420,7 @@ const createListResource = (doctype, onSuccess) =>
 		makeParams: () => ({
 			doctype,
 			fields: ["name"],
-			filters: doctype === "Customer Group" ? { is_group: 0 } : {},
+			filters: { is_group: 0 },
 			limit_page_length: 500,
 		}),
 		auto: false,
@@ -464,6 +483,9 @@ const handleCreate = async () => {
 	if (!customerData.value.customer_name) {
 		return showError(__("Customer Name is required"))
 	}
+	if (!customerData.value.customer_group) {
+		return showError(__("Customer Group is required"))
+	}
 	if (isEditMode.value) {
 		await updateCustomerResource.submit()
 	} else {
@@ -476,9 +498,9 @@ const resetForm = () => {
 		customer_name: "",
 		mobile_no: "",
 		email_id: "",
-		customer_group: "Individual",
+		customer_group: "",
 		tax_id: "",
-		territory: "All Territories",
+		territory: "",
 	})
 	selectedCountryCode.value = ""
 	phoneNumber.value = ""
@@ -496,14 +518,14 @@ watch(
 // Pre-fill form when customer prop changes (edit mode)
 watch(
 	() => props.customer,
-	(customer) => {
+	async (customer) => {
 		if (customer?.name) {
 			customerData.value.customer_name = customer.customer_name || ""
 			customerData.value.email_id = customer.email_id || ""
-			customerData.value.customer_group = customer.customer_group || "Individual"
+			customerData.value.customer_group = customer.customer_group || ""
 			customerData.value.tax_id = customer.tax_id || ""
-			customerData.value.territory = customer.territory || "All Territories"
-			// Handle mobile_no with country code
+			customerData.value.territory = customer.territory || ""
+			// Handle mobile_no with country code immediately
 			if (customer.mobile_no) {
 				customerData.value.mobile_no = customer.mobile_no
 				if (customer.mobile_no.includes("-")) {
@@ -513,6 +535,34 @@ watch(
 				} else {
 					phoneNumber.value = customer.mobile_no
 				}
+			}
+			
+			// Fetch full customer details to prevent overwriting missing data
+			try {
+				const response = await call("pos_next.api.customers.get_customer_details", {
+					customer: customer.name
+				});
+				const details = response?.message || response;
+				if (details) {
+					customerData.value.customer_group = details.customer_group || "";
+					customerData.value.territory = details.territory || "";
+					customerData.value.tax_id = details.tax_id || "";
+					customerData.value.email_id = details.email_id || customer.email_id || "";
+					
+					// Update mobile if better data found
+					if (details.mobile_no && !customer.mobile_no) {
+						customerData.value.mobile_no = details.mobile_no;
+						if (details.mobile_no.includes("-")) {
+							const [code, ...rest] = details.mobile_no.split("-");
+							selectedCountryCode.value = code;
+							phoneNumber.value = rest.join("-");
+						} else {
+							phoneNumber.value = details.mobile_no;
+						}
+					}
+				}
+			} catch (e) {
+				log.warn("Could not fetch full customer details for edit", e);
 			}
 		}
 	},
