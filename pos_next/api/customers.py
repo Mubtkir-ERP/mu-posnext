@@ -263,3 +263,55 @@ def get_customer_details(customer):
         frappe.throw(_("Customer is required"))
 
     return frappe.get_cached_doc("Customer", customer).as_dict()
+
+
+@frappe.whitelist()
+def update_customer(
+    customer,
+    customer_name=None,
+    mobile_no=None,
+    email_id=None,
+    customer_group=None,
+    territory=None,
+    tax_id=None,
+):
+    """
+    Update an existing customer from POS.
+
+    Args:
+        customer (str): Customer ID (required)
+        customer_name (str): Customer name
+        mobile_no (str): Mobile number
+        email_id (str): Email address
+        customer_group (str): Customer group
+        territory (str): Territory
+        tax_id (str): Tax ID
+
+    Returns:
+        dict: Updated customer document
+    """
+    if not customer:
+        frappe.throw(_("Customer is required"))
+
+    if not frappe.has_permission("Customer", "write", customer):
+        frappe.throw(_("You don't have permission to update customers"), frappe.PermissionError)
+
+    doc = frappe.get_doc("Customer", customer)
+
+    if customer_name:
+        doc.customer_name = customer_name
+    if mobile_no is not None:
+        doc.mobile_no = mobile_no
+    if email_id is not None:
+        doc.email_id = email_id
+    if customer_group:
+        doc.customer_group = customer_group
+    if territory:
+        doc.territory = territory
+    if tax_id is not None:
+        doc.tax_id = tax_id
+
+    doc.save()
+    frappe.db.commit()
+
+    return doc.as_dict()

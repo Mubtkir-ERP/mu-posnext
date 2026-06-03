@@ -386,18 +386,15 @@ const createCustomerResource = createResource({
 })
 
 const updateCustomerResource = createResource({
-	url: "frappe.client.set_value",
+	url: "pos_next.api.customers.update_customer",
 	makeParams: () => ({
-		doctype: "Customer",
-		name: props.customer?.name,
-		fieldname: JSON.stringify({
-			customer_name: customerData.value.customer_name,
-			customer_group: customerData.value.customer_group || "",
-			territory: customerData.value.territory || "",
-			mobile_no: customerData.value.mobile_no || "",
-			email_id: customerData.value.email_id || "",
-			tax_id: customerData.value.tax_id || "",
-		}),
+		customer: props.customer?.name,
+		customer_name: customerData.value.customer_name,
+		customer_group: customerData.value.customer_group || "",
+		territory: customerData.value.territory || "",
+		mobile_no: customerData.value.mobile_no || "",
+		email_id: customerData.value.email_id || "",
+		tax_id: customerData.value.tax_id || "",
 	}),
 	onSuccess: (data) => {
 		showSuccess(__("Customer {0} updated successfully", [data.customer_name]))
