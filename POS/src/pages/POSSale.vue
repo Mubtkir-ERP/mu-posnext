@@ -2751,6 +2751,7 @@ async function loadInvoiceHistoryData() {
 		const result = await call("pos_next.api.invoices.get_invoices", {
 			pos_profile: shiftStore.profileName,
 			limit: 1000,
+			posa_pos_opening_shift: shiftStore.shiftId,
 		});
 
 		invoiceHistoryData.value = result || [];
@@ -2800,12 +2801,11 @@ async function handlePrintInvoice(invoiceData) {
 		}
 
 		// Standard browser print path
-		if (invoiceData.items && Array.isArray(invoiceData.items)) {
-			await printInvoice(invoiceData);
-		} else {
-			// If it's just an invoice object with name, fetch and print
-			// printInvoiceByName will automatically fetch the print format from the invoice's POS Profile
+		if (invoiceData.name) {
+			// Always use printInvoiceByName to fetch custom print format from POS Profile
 			await printInvoiceByName(invoiceData.name);
+		} else if (invoiceData.items && Array.isArray(invoiceData.items)) {
+			await printInvoice(invoiceData);
 		}
 	} catch (error) {
 		log.error("Error printing invoice:", error);

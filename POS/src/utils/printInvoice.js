@@ -84,13 +84,47 @@ export async function printInvoice(invoiceData, printFormat = null, letterhead =
  * then open the browser print window.
  */
 export async function printInvoiceByName(invoiceName, printFormat = null, letterhead = null) {
-	const invoiceDoc = await call("pos_next.api.invoices.get_invoice", {
-		invoice_name: invoiceName,
-	})
-	if (!invoiceDoc) throw new Error("Invoice not found")
+	// Open window synchronously to bypass popup blockers
+	const printWindow = window.open("about:blank", "_blank", "width=800,height=600")
 
-	const settings = await resolvePrintSettings(invoiceDoc.pos_profile, printFormat, letterhead)
-	return printInvoice(invoiceDoc, settings.printFormat, settings.letterhead)
+	try {
+		const invoiceDoc = await call("pos_next.api.invoices.get_invoice", {
+			invoice_name: invoiceName,
+		})
+		if (!invoiceDoc) {
+			if (printWindow) printWindow.close()
+			throw new Error("Invoice not found")
+		}
+
+		const settings = await resolvePrintSettings(invoiceDoc.pos_profile, printFormat, letterhead)
+		
+		const doctype = invoiceDoc.doctype || "Sales Invoice"
+		const format = settings.printFormat || DEFAULT_PRINT_FORMAT
+
+		const params = new URLSearchParams({
+			doctype,
+			name: invoiceDoc.name,
+			format,
+			no_letterhead: settings.letterhead ? 0 : 1,
+			_lang: "en",
+			trigger_print: 1,
+			_t: Date.now(),
+		})
+		if (settings.letterhead) params.append("letterhead", settings.letterhead)
+
+		if (printWindow) {
+			printWindow.location.href = `/printview?${params}`
+			return true
+		} else {
+			throw new Error("Popup blocked")
+		}
+	} catch (error) {
+		log.error("printInvoiceByName failed:", error)
+		if (printWindow) printWindow.close()
+		// We cannot easily do printInvoiceCustom without the full doc if the fetch failed, 
+		// but if we have it, we can fallback
+		throw error
+	}
 }
 
 // ============================================================================
