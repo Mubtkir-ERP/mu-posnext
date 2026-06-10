@@ -263,3 +263,117 @@ def get_customer_details(customer):
         frappe.throw(_("Customer is required"))
 
     return frappe.get_cached_doc("Customer", customer).as_dict()
+
+
+@frappe.whitelist()
+def update_customer(
+    customer,
+    customer_name=None,
+    mobile_no=None,
+    email_id=None,
+    customer_group=None,
+    territory=None,
+    tax_id=None,
+):
+    """
+    Update an existing customer from POS.
+
+    Args:
+        customer (str): Customer ID (required)
+        customer_name (str): Customer name
+        mobile_no (str): Mobile number
+        email_id (str): Email address
+        customer_group (str): Customer group
+        territory (str): Territory
+        tax_id (str): Tax ID
+
+    Returns:
+        dict: Updated customer document
+    """
+    if not customer:
+        frappe.throw(_("Customer is required"))
+
+    if not frappe.has_permission("Customer", "write", customer):
+        frappe.throw(_("You don't have permission to update customers"), frappe.PermissionError)
+
+    doc = frappe.get_doc("Customer", customer)
+
+    if customer_name:
+        doc.customer_name = customer_name
+    if customer_group:
+        doc.customer_group = customer_group
+    if territory:
+        doc.territory = territory
+    if tax_id is not None:
+        doc.tax_id = tax_id
+
+    # ERPNext stores mobile_no and email_id in the Primary Contact document
+    # via child tables (phone_nos and email_ids). The fields on Customer are
+    # Read Only and fetched from the Contact. We must update the Contact.
+    if doc.get("customer_primary_contact"):
+        contact = frappe.get_doc("Contact", doc.customer_primary_contact)
+        contact_updated = False
+
+        # --- Update mobile number ---
+        if mobile_no is not None:
+            # Find existing primary mobile row
+            primary_phone_row = None
+            for row in contact.phone_nos:
+                if row.is_primary_mobile_no:
+                    primary_phone_row = row
+                    break
+
+            if primary_phone_row:
+                if not mobile_no:
+                    contact.phone_nos.remove(primary_phone_row)
+                    contact_updated = True
+                elif primary_phone_row.phone != mobile_no:
+                    primary_phone_row.phone = mobile_no
+                    contact_updated = True
+            elif mobile_no:
+                # No primary mobile yet – add one
+                contact.append("phone_nos", {
+                    "phone": mobile_no,
+                    "is_primary_mobile_no": 1,
+                    "is_primary_phone": 0,
+                })
+                contact_updated = True
+
+        # --- Update email ---
+        if email_id is not None:
+            # Find existing primary email row
+            primary_email_row = None
+            for row in contact.email_ids:
+                if row.is_primary:
+                    primary_email_row = row
+                    break
+
+            if primary_email_row:
+                if not email_id:
+                    contact.email_ids.remove(primary_email_row)
+                    contact_updated = True
+                elif primary_email_row.email_id != email_id:
+                    primary_email_row.email_id = email_id
+                    contact_updated = True
+            elif email_id:
+                # No primary email yet – add one
+                contact.append("email_ids", {
+                    "email_id": email_id,
+                    "is_primary": 1,
+                })
+                contact_updated = True
+
+        if contact_updated:
+            contact.flags.ignore_permissions = True
+            contact.save(ignore_permissions=True)
+    else:
+        # No linked Contact – set directly (works when fields are not fetched)
+        if mobile_no is not None:
+            doc.mobile_no = mobile_no
+        if email_id is not None:
+            doc.email_id = email_id
+
+    doc.save(ignore_permissions=True)
+    frappe.db.commit()
+
+    return doc.as_dict()

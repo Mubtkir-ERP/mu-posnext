@@ -20,38 +20,8 @@ def get_branding_config():
 	Returns obfuscated branding data for frontend use
 	"""
 	try:
-		# Check if doctype exists and get config
-		if not frappe.db.exists("DocType", "BrainWise Branding"):
-			# Return default config if doctype doesn't exist yet
-			return get_default_config()
-
-		doc = frappe.get_single("BrainWise Branding")
-
-		if not doc.enabled:
-			return get_default_config()
-
-		# Return obfuscated configuration
-		config = {
-			"_t": base64.b64encode(doc.brand_text.encode()).decode(),
-			"_l": base64.b64encode(doc.brand_name.encode()).decode(),
-			"_u": base64.b64encode(doc.brand_url.encode()).decode(),
-			"_i": doc.check_interval or 10000,
-			"_sig": doc.encrypted_signature,
-			"_ts": frappe.utils.now(),
-			"_v": doc.enable_server_validation,
-			"_c": "pos-footer-component",
-			"_s": {
-				"p": "12px 20px",
-				"bg": "#f8f9fa",
-				"bt": "1px solid #e0e0e0",
-				"ta": "center",
-				"fs": "13px",
-				"c": "#6b7280",
-				"z": 100
-			}
-		}
-
-		return config
+		# Always return Mubtkir branding
+		return get_default_config()
 	except Exception as e:
 		frappe.log_error(f"Error fetching branding config: {str(e)}", "BrainWise Branding API")
 		return get_default_config()

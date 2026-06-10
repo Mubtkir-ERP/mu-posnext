@@ -1067,6 +1067,11 @@ onMounted(() => {
 	// Load saved filter presets from localStorage
 	filterStore.loadSavedFiltersFromStorage()
 
+	// Default to "This Week" if no date filter is currently set
+	if (!filterStore.dateFrom && !filterStore.dateTo) {
+		filterStore.setThisWeek()
+	}
+
 	if (show.value) {
 		loadUnpaidInvoices()
 		loadUnpaidSummary()

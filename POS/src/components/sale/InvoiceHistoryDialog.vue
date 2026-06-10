@@ -197,6 +197,7 @@ const invoicesResource = createResource({
 			filters: {
 				is_pos: 1,
 				...(props.posProfile && { pos_profile: props.posProfile }),
+				...(props.posOpeningShift && { posa_pos_opening_shift: props.posOpeningShift }),
 			},
 			fields: [
 				"name",
@@ -210,8 +211,8 @@ const invoicesResource = createResource({
 				"is_return",
 			],
 			order_by: "modified desc",
-			start: page.value * pageSize,
-			page_length: pageSize,
+			limit_start: page.value * pageSize,
+			limit_page_length: pageSize,
 		}
 	},
 	auto: false,
