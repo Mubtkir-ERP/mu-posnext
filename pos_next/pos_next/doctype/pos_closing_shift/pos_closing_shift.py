@@ -583,6 +583,24 @@ def make_closing_shift_from_opening(opening_shift):
         amount = get_base_value(py, "paid_amount", "base_paid_amount")
         _aggregate_payment(payments, py.mode_of_payment, amount)
 
+    # ----------------------------------------------------------------
+    # Process Cash Disbursements (صرف نقدي)
+    # Subtract each disbursement from the expected cash balance so the
+    # closing report shows the correct amount remaining in the drawer.
+    # ----------------------------------------------------------------
+    disbursements = []
+    try:
+        from pos_next.api.cash_disbursement import get_total_disbursements, get_shift_disbursements
+        total_disbursed = get_total_disbursements(opening_shift.get("name"))
+        if total_disbursed > 0:
+            # Subtract from cash mode expected amount
+            _aggregate_payment(payments, cash_mode, -flt(total_disbursed))
+
+        # Fetch details for display in closing report
+        disbursements = get_shift_disbursements(opening_shift.get("name"))
+    except Exception:
+        frappe.log_error(frappe.get_traceback(), "POS Closing: Disbursement calculation error")
+
     # Update closing shift with totals
     closing_shift.grand_total = summary["grand_total"]
     closing_shift.net_total = summary["net_total"]
@@ -605,6 +623,8 @@ def make_closing_shift_from_opening(opening_shift):
         "sales_total": summary["sales_total"],
         "sales_count": summary["sales_count"],
         "pos_transactions": pos_transactions,  # Include return info for display
+        "cash_disbursements": disbursements,   # For display in closing dialog
+        "total_disbursed": flt(total_disbursed) if disbursements else 0,
     })
 
     return result

@@ -188,6 +188,27 @@
 						</svg>
 						<span>{{ __("Lock Screen") }}</span>
 					</button>
+					<!-- Cash Disbursement -->
+					<button
+						v-if="posSettingsStore.allowCashDisbursement && shiftStore.hasOpenShift && canAccessShiftActions"
+						@click="showCashDisbursement = true"
+						class="w-full text-start px-4 py-2.5 text-sm text-gray-700 hover:bg-amber-50 flex items-center gap-3 transition-colors"
+					>
+						<svg
+							class="w-5 h-5 text-amber-500"
+							fill="none"
+							stroke="currentColor"
+							viewBox="0 0 24 24"
+						>
+							<path
+								stroke-linecap="round"
+								stroke-linejoin="round"
+								stroke-width="2"
+								d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z"
+							/>
+						</svg>
+						<span>{{ __("Cash Disbursement") }}</span>
+					</button>
 				</template>
 				<template #additional-actions>
 					<button
@@ -681,6 +702,16 @@
 				@print-invoice="handlePrintInvoice"
 			/>
 
+			<!-- Cash Disbursement Dialog -->
+			<CashDisbursementDialog
+				v-model:show="showCashDisbursement"
+				:shift-name="shiftStore.currentShift?.name || ''"
+				:pos-profile="shiftStore.profileName || ''"
+				:company="shiftStore.profileCompany || ''"
+				:currency="shiftStore.profileCurrency"
+				@disbursed="onCashDisbursed"
+			/>
+
 			<!-- Clear Cart Confirmation Dialog -->
 			<Dialog
 				v-model="uiStore.showClearCartDialog"
@@ -1032,6 +1063,7 @@ import { offlineWorker } from "@/utils/offline/workerClient";
 import { cacheInvoiceHistory, getCachedInvoiceHistory } from "@/utils/offline/sync";
 import { printInvoice, printInvoiceByName, printWithSilentFallback } from "@/utils/printInvoice";
 import { qzConnected, connect as qzConnect, disconnect as qzDisconnect } from "@/utils/qzTray";
+import CashDisbursementDialog from "@/components/cash/CashDisbursementDialog.vue";
 
 import { Button, Dialog, createResource } from "frappe-ui";
 import { call } from "@/utils/apiWrapper";
@@ -1127,6 +1159,9 @@ const showPromotionManagement = ref(false);
 
 // Settings dialog
 const showPOSSettings = ref(false);
+
+// Cash Disbursement dialog
+const showCashDisbursement = ref(false);
 
 // Stock Lookup dialog (Products menu)
 const showStockLookup = ref(false);
@@ -2786,6 +2821,12 @@ async function loadInvoiceHistoryData() {
 function handleViewInvoice(invoice) {
 	selectedInvoiceForView.value = invoice.name || invoice;
 	showInvoiceDetail.value = true;
+}
+
+// Handle cash disbursement event
+function onCashDisbursed(data) {
+	log.info("Cash disbursed:", data);
+	// Could emit to shift summary or trigger any UI update here if needed
 }
 
 // Centralized print handler - uses printInvoice.js utilities
