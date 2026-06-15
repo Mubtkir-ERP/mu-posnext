@@ -41,6 +41,7 @@ POS_SETTINGS_FIELDS = [
 	"session_lock_timeout",
 	"show_variants_as_items",
 	"allow_cash_disbursement",
+	"cash_disbursement_account",
 ]
 
 # Default POS Settings values
@@ -72,4 +73,5 @@ DEFAULT_POS_SETTINGS = {
 	"session_lock_timeout": 5,
 	"show_variants_as_items": 0,
 	"allow_cash_disbursement": 0,
+	"cash_disbursement_account": "",
 }

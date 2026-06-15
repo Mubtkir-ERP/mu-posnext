@@ -51,6 +51,7 @@ export const usePOSSettingsStore = defineStore("posSettings", () => {
 		fetch_coupon: 0,
 		// Cash Disbursement
 		allow_cash_disbursement: 0,
+		cash_disbursement_account: "",
 		// Printing
 		allow_print_last_invoice: 0,
 		silent_print: 0,
@@ -192,6 +193,7 @@ export const usePOSSettingsStore = defineStore("posSettings", () => {
 
 	// Computed - Cash Disbursement
 	const allowCashDisbursement = computed(() => Boolean(settings.value.allow_cash_disbursement))
+	const cashDisbursementAccount = computed(() => settings.value.cash_disbursement_account || "")
 
 	// Computed - Printing
 	const allowPrintLastInvoice = computed(() =>
@@ -463,6 +465,7 @@ export const usePOSSettingsStore = defineStore("posSettings", () => {
 		allowDuplicateCustomerNames,
 		fetchCoupon,
 		allowCashDisbursement,
+		cashDisbursementAccount,
 		allowPrintLastInvoice,
 		silentPrint,
 

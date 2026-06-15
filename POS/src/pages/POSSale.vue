@@ -191,7 +191,7 @@
 					<!-- Cash Disbursement -->
 					<button
 						v-if="posSettingsStore.allowCashDisbursement && shiftStore.hasOpenShift && canAccessShiftActions"
-						@click="showCashDisbursement = true"
+						@click="handleOpenCashDisbursement"
 						class="w-full text-start px-4 py-2.5 text-sm text-gray-700 hover:bg-amber-50 flex items-center gap-3 transition-colors"
 					>
 						<svg
@@ -2821,6 +2821,19 @@ async function loadInvoiceHistoryData() {
 function handleViewInvoice(invoice) {
 	selectedInvoiceForView.value = invoice.name || invoice;
 	showInvoiceDetail.value = true;
+}
+
+// Handle opening cash disbursement
+function handleOpenCashDisbursement() {
+	if (!posSettingsStore.cashDisbursementAccount) {
+		window.frappe?.msgprint?.({
+			title: __("Missing Disbursement Account"),
+			message: __("Please configure Cash Disbursement Account in POS Settings first."),
+			indicator: "orange",
+		});
+		return;
+	}
+	showCashDisbursement.value = true;
 }
 
 // Handle cash disbursement event
