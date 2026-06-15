@@ -458,7 +458,15 @@ def update_invoice(data):
         invoice_doc.disable_rounded_total = disable_rounded
 
         # Populate missing fields (company, currency, accounts, etc.)
-        invoice_doc.set_missing_values()
+        # Mute msgprint temporarily: ERPNext's update_multi_mode_option triggers
+        # "Payment methods refreshed" msgprint when payments already exist,
+        # which the frontend treats as a ValidationError.
+        # frappe.throw still works — only informational messages are suppressed.
+        frappe.flags.mute_messages = True
+        try:
+            invoice_doc.set_missing_values()
+        finally:
+            frappe.flags.mute_messages = False
 
         # Calculate totals and apply discounts (with rounding disabled)
         invoice_doc.calculate_taxes_and_totals()
