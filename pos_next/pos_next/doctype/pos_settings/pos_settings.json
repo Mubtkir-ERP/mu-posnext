@@ -53,6 +53,9 @@
   "allow_customer_purchase_order",
   "allow_duplicate_customer_names",
   "fetch_coupon",
+  "section_break_cash_disbursement",
+  "allow_cash_disbursement",
+  "cash_disbursement_account",
   "section_break_printing",
   "allow_print_last_invoice",
   "silent_print",
@@ -412,6 +415,26 @@
   },
   {
    "collapsible": 1,
+   "fieldname": "section_break_cash_disbursement",
+   "fieldtype": "Section Break",
+   "label": "Cash Disbursement"
+  },
+  {
+   "default": "0",
+   "description": "Show the Cash Disbursement (صرف نقدي) button in the POS terminal.",
+   "fieldname": "allow_cash_disbursement",
+   "fieldtype": "Check",
+   "label": "Allow Cash Disbursement"
+  },
+  {
+   "description": "GL account to debit when cashier disburses cash (e.g. employee advances, petty expenses). This account will be debited and the cash account will be credited.",
+   "fieldname": "cash_disbursement_account",
+   "fieldtype": "Link",
+   "label": "Cash Disbursement Account",
+   "options": "Account"
+  },
+  {
+   "collapsible": 1,
    "fieldname": "section_break_printing",
    "fieldtype": "Section Break",
    "label": "Printing"
@@ -550,7 +573,7 @@
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-01-11 16:52:08.009217",
+ "modified": "2026-06-15 16:00:00.000000",
  "modified_by": "Administrator",
  "module": "POS Next",
  "name": "POS Settings",

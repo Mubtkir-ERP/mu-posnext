@@ -1547,3 +1547,24 @@ Points applied: {0}. Please pay remaining {1} with {2},تم خصم النقاط:
 "Silent Print: Disconnected","طباعة صامتة: غير متصل",""
 "POS Settings","إعدادات نقاط البيع",""
 "POS Profile","بروفايل نقاط البيع",""
+
+Cash Disbursement,صرف نقدي
+Lock Screen,قفل الشاشة
+Amount,المبلغ
+"Reason / Description","السبب / الوصف"
+Cancel,إلغاء
+Confirm Disbursement,تأكيد الصرف
+Processing...,جاري المعالجة...
+"Today's Disbursements",صرفيات اليوم
+"Total:",الإجمالي:
+"صرف نقدي من الدرج","صرف نقدي من الدرج"
+"Please enter a valid amount greater than zero.","الرجاء إدخال مبلغ صحيح أكبر من الصفر."
+"Please provide a reason for the disbursement.","الرجاء كتابة سبب الصرف."
+"e.g. Employee advance – John, maintenance fee ...","مثال: سلفة للموظف أحمد، رسوم صيانة ..."
+"Cash disbursement recorded","تم تسجيل الصرف النقدي"
+"Cancel this disbursement of {0}?","إلغاء هذا الصرف بقيمة {0}؟"
+"Disbursement cancelled","تم إلغاء الصرف"
+"Please configure Cash Disbursement Account in POS Settings first.","الرجاء إعداد حساب الصرف النقدي في إعدادات نقاط البيع أولاً."
+"The configured Disbursement Account requires a Party (Customer/Supplier/Employee). Please use an Expense or Cash account instead in POS Settings.","حساب الصرف النقدي المعد مسبقاً يتطلب تحديد طرف (عميل/مورد/موظف). الرجاء استخدام حساب مصاريف بدلاً من ذلك."
+"Missing Disbursement Account","حساب الصرف النقدي غير معد"
+"Invalid Account Configuration","إعداد الحساب غير صحيح"
