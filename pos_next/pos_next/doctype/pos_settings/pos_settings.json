@@ -76,7 +76,9 @@
   "enable_session_lock",
   "session_lock_timeout",
   "barcode_tab",
-  "barcode_rules"
+  "barcode_rules",
+  "kitchen_printing_section",
+  "kitchen_printers"
  ],
  "fields": [
   {
@@ -569,6 +571,18 @@
    "fieldtype": "Table",
    "label": "Barcode Rules",
    "options": "POS Barcode Rules"
+  },
+  {
+   "fieldname": "kitchen_printing_section",
+   "fieldtype": "Section Break",
+   "label": "Kitchen Printing"
+  },
+  {
+   "description": "Map each kitchen station (set on Item Group) to its printer. Items are grouped by station and printed to the matching printer.",
+   "fieldname": "kitchen_printers",
+   "fieldtype": "Table",
+   "label": "Kitchen Printers",
+   "options": "POS Kitchen Printer"
   }
  ],
  "index_web_pages_for_search": 1,
