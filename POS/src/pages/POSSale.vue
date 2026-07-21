@@ -1062,6 +1062,7 @@ import { cleanupUserSession } from "@/utils/sessionCleanup";
 import { offlineWorker } from "@/utils/offline/workerClient";
 import { cacheInvoiceHistory, getCachedInvoiceHistory } from "@/utils/offline/sync";
 import { printInvoice, printInvoiceByName, printWithSilentFallback } from "@/utils/printInvoice";
+import { printKitchenTickets } from "@/utils/printKitchen";
 import { qzConnected, connect as qzConnect, disconnect as qzDisconnect } from "@/utils/qzTray";
 import CashDisbursementDialog from "@/components/cash/CashDisbursementDialog.vue";
 
@@ -2099,6 +2100,15 @@ async function handlePaymentCompleted(paymentData) {
 			// Get item codes from cart before clearing
 			const soldItemCodes = cartStore.invoiceItems.map((item) => item.item_code);
 
+			// Capture lines for the kitchen tickets BEFORE the cart is cleared.
+			const kitchenLines = cartStore.invoiceItems.map((item) => ({
+				item_code: item.item_code,
+				item_name: item.item_name,
+				qty: item.quantity,
+				modifier_summary: item.modifier_summary || "",
+				item_note: item.item_note || "",
+			}));
+
 			const result = await cartStore.submitInvoice();
 
 			if (result) {
@@ -2118,6 +2128,12 @@ async function handlePaymentCompleted(paymentData) {
 
 				// Refresh stock - Direct API (50-200ms), no Socket.IO lag!
 				await stockStore.refresh(soldItemCodes, shiftStore.profileWarehouse);
+
+				// Fire kitchen tickets (grouped by station → printer). No-op if no
+				// kitchen printers are configured. Non-blocking; never fails the sale.
+				printKitchenTickets(shiftStore.profileName, kitchenLines, invoiceName).catch(
+					(err) => log.debug("Kitchen print failed:", err)
+				);
 
 				// Refresh invoice history cache in background (non-blocking)
 				loadInvoiceHistoryData().catch((err) =>
