@@ -9,8 +9,6 @@ __pycache__
 # Build artifacts
 pos_next/public/pos/
 pos_next/www/
-yarn.lock
-package-lock.json
 
 # IDE and editor files
 .vscode/
