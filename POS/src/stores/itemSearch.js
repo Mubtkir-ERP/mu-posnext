@@ -20,46 +20,69 @@ const log = logger.create('ItemSearch')
  * @param {Array} items - Items array to check for batch/serial items
  * @param {string} warehouse - Warehouse to fetch stock from
  */
-async function cacheBatchSerialForItems(items, warehouse) {
-	if (!items || items.length === 0 || !warehouse) return
+async function cacheBatchSerialForItemCodes(itemCodes, warehouse) {
+	if (!itemCodes?.length || !warehouse) return true
 
-	// Find items with batch or serial tracking
-	const batchSerialItems = items.filter(
-		item => item.has_batch_no || item.has_serial_no
-	)
+	const REQUEST_BATCH_SIZE = 20
+	const MAX_RETRIES = 3
 
-	if (batchSerialItems.length === 0) {
-		log.debug("No batch/serial items found - skipping batch/serial caching")
-		return
-	}
+	for (let i = 0; i < itemCodes.length; i += REQUEST_BATCH_SIZE) {
+		const batchCodes = itemCodes.slice(i, i + REQUEST_BATCH_SIZE)
+		let lastError = null
 
-	log.info(`Caching batch/serial data for ${batchSerialItems.length} items`)
-
-	// Fetch in batches to avoid too large requests
-	const BATCH_SIZE = 20
-	const itemCodes = batchSerialItems.map(item => item.item_code)
-
-	for (let i = 0; i < itemCodes.length; i += BATCH_SIZE) {
-		const batchCodes = itemCodes.slice(i, i + BATCH_SIZE)
-
-		try {
-			const response = await call("pos_next.api.items.get_batch_serial_data_for_items", {
-				item_codes: JSON.stringify(batchCodes),
-				warehouse: warehouse,
-			})
-
-			const data = response?.message || response || {}
-
-			if (Object.keys(data).length > 0) {
-				await updateItemBatchSerialData(data)
-				log.debug(`Cached batch/serial data for ${Object.keys(data).length} items`)
+		for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+			try {
+				const response = await call("pos_next.api.items.get_batch_serial_data_for_items", {
+					item_codes: JSON.stringify(batchCodes),
+					warehouse,
+				})
+				const data = response?.message || response || {}
+				if (Object.keys(data).length > 0) {
+					await updateItemBatchSerialData(data)
+				}
+				lastError = null
+				break
+			} catch (error) {
+				lastError = error
+				const delay = Math.min(500 * (2 ** (attempt - 1)), 4000)
+				log.warn(`Batch/serial request failed (${attempt}/${MAX_RETRIES})`, {
+					items: batchCodes.length,
+					error: error.message,
+				})
+				if (attempt < MAX_RETRIES) {
+					await new Promise(resolve => setTimeout(resolve, delay))
+				}
 			}
-		} catch (error) {
-			log.warn(`Failed to fetch batch/serial data for batch ${i}:`, error.message)
+		}
+
+		if (lastError) {
+			throw new Error(`Batch/serial sync failed after ${MAX_RETRIES} attempts: ${lastError.message}`)
 		}
 	}
+	return true
+}
 
-	log.success(`Finished caching batch/serial data for offline use`)
+/**
+ * Cache batch/serial metadata for the entire offline catalog in pages.
+ * This replaces the previous hard 10,000-item ceiling.
+ */
+async function cacheAllBatchSerialData(warehouse) {
+	if (!warehouse) return true
+	const PAGE_SIZE = 500
+	let offset = 0
+	let total = 0
+
+	while (true) {
+		const itemCodes = await offlineWorker.getBatchSerialItemCodes(PAGE_SIZE, offset)
+		if (!itemCodes?.length) break
+		await cacheBatchSerialForItemCodes(itemCodes, warehouse)
+		total += itemCodes.length
+		offset += itemCodes.length
+		if (itemCodes.length < PAGE_SIZE) break
+	}
+
+	log.success(`Finished caching batch/serial data for ${total} tracked items`)
+	return true
 }
 
 export const useItemSearchStore = defineStore("itemSearch", () => {
@@ -493,6 +516,16 @@ export const useItemSearchStore = defineStore("itemSearch", () => {
 		return new Set([groupName])
 	}
 
+	const getProfileGroupsToFilter = () => {
+		const groups = new Set()
+		for (const row of profileItemGroups.value || []) {
+			const groupName = row?.item_group || row
+			if (!groupName) continue
+			for (const name of getGroupsToFilter(groupName)) groups.add(name)
+		}
+		return Array.from(groups)
+	}
+
 	const filteredItems = computed(() => {
 		// Step 1: Determine source items (search results or all items)
 		const sourceItems = searchTerm.value?.trim()
@@ -742,7 +775,7 @@ export const useItemSearchStore = defineStore("itemSearch", () => {
 			const offline = isOffline()
 
 			const cacheStatsPromise = Promise.race([
-				offlineWorker.getCacheStats(),
+				offlineWorker.getCacheStats(profile),
 				new Promise((_, reject) => setTimeout(() => reject(new Error('Cache stats timeout')), 3000))
 			]).catch(statsError => {
 				log.warn("Cache stats unavailable, proceeding with defaults:", statsError.message)
@@ -788,34 +821,46 @@ export const useItemSearchStore = defineStore("itemSearch", () => {
 			// - WITHOUT filters: Load first batch (limit: itemsPerPage)
 			if (offline) {
 				log.info("Offline mode - loading from cache")
-				if (stats.cacheReady && stats.items > 0) {
+				// Partial cache is still usable if connectivity drops during the first
+				// synchronization, but cacheReady remains false until the full catalog
+				// (and batch/serial metadata) has completed successfully.
+				if (stats.items > 0) {
 					try {
-						// Load first page from cache for display
 						const limit = itemsPerPage.value
-						const cached = await offlineWorker.searchCachedItems("", limit)
+						let cached = []
+						if (selectedItemGroup.value) {
+							const groupsToFilter = Array.from(getGroupsToFilter(selectedItemGroup.value))
+							cached = await offlineWorker.searchCachedItemsByGroup(groupsToFilter, limit, 0)
+						} else if (!selectedBrand.value && profileItemGroups.value?.length) {
+							cached = await offlineWorker.searchCachedItemsByGroup(getProfileGroupsToFilter(), limit, 0)
+						} else if (selectedBrand.value) {
+							cached = await offlineWorker.searchCachedItemsByBrand(selectedBrand.value, limit, 0)
+						} else {
+							cached = await offlineWorker.searchCachedItems("", limit, 0)
+						}
 
 						if (cached && cached.length > 0) {
 							replaceAllItems(cached)
 							totalItemsLoaded.value = cached.length
 							currentOffset.value = cached.length
-							// Use server count if available (excludes variants), fallback to IndexedDB count
 							totalServerItems.value = cacheStats.value?.totalServerItems || stats.items
 							hasMore.value = cached.length >= limit
-							log.success(`Loaded ${cached.length} items from cache (offline, total: ${stats.items})`)
+							cacheReady.value = Boolean(stats.cacheReady)
+							log.success(`Loaded ${cached.length} items from cache (offline, complete=${stats.cacheReady})`)
 						} else {
 							replaceAllItems([])
-							log.warn("No items in cache")
+							log.warn("No matching items in offline cache")
 						}
 					} catch (cacheError) {
 						log.error("Cache load failed in offline mode", cacheError)
 						replaceAllItems([])
 					}
 				} else {
-					log.warn("Cache not ready in offline mode")
+					log.warn("No cached product data is available offline")
 					replaceAllItems([])
 				}
 				loading.value = false
-				return // Exit early - offline mode complete
+				return
 			}
 
 			// ====================================================================
@@ -879,7 +924,7 @@ export const useItemSearchStore = defineStore("itemSearch", () => {
 			// ----------------------------------------------------------------
 			// Load ONLY first batch from first group. Other groups load on-demand
 			// when user clicks the tab. This prevents loading 65K items at once.
-			if (hasFilters && selectedItemGroup.value) {
+			if (hasFilters) {
 				log.debug(`Fetching first ${INITIAL_LIMIT} items (${isSmallCatalog ? 'small catalog — loading all' : 'large catalog mode'})`)
 
 				// Load items from first group only - other groups load on tab click
@@ -897,23 +942,15 @@ export const useItemSearchStore = defineStore("itemSearch", () => {
 					offlineWorker.cacheItems(fetchedItems).catch(err => {
 						log.warn("Background item caching failed:", err.message)
 					})
-					cacheReady.value = true
+					cacheReady.value = false
 					serverDataFresh.value = true
 
 					log.success(`Loaded ${fetchedItems.length} items (server-side filtering)`)
 
-					// Cache batch/serial data for offline use
-					if (shiftStore.profileWarehouse) {
-						cacheBatchSerialForItems(fetchedItems, shiftStore.profileWarehouse).catch(err => {
-							log.warn("Background batch/serial caching failed:", err.message)
-						})
-					}
 
-					// START BACKGROUND SYNC for offline support (large catalogs only)
-					// Small catalogs already loaded everything — no sync needed
-					if (!isSmallCatalog) {
-						startBackgroundCacheSync(profile, itemGroupFilters)
-					}
+					// Always run a verified full offline sync, even for small catalogs.
+					// The bulk sync also caches hidden variants required for barcode scans.
+					startBackgroundCacheSync(profile, itemGroupFilters)
 				} else {
 					log.info('No items found for the selected filter groups')
 				}
@@ -958,19 +995,12 @@ export const useItemSearchStore = defineStore("itemSearch", () => {
 
 					log.success(`Loaded ${list.length} items from server`)
 
-					// Cache batch/serial data for offline use
-					if (shiftStore.profileWarehouse) {
-						cacheBatchSerialForItems(list, shiftStore.profileWarehouse).catch(err => {
-							log.warn("Background batch/serial caching failed:", err.message)
-						})
-					}
 				}
 
-				// Start background sync for large catalogs to cache ALL items to IndexedDB
-				// Small catalogs already loaded everything
-				if (!isSmallCatalog) {
-					startBackgroundCacheSync(profile, [], list.length)
-				}
+				// Always run a verified full offline sync from offset 0. The bulk
+				// dataset includes variants, so using the visible list offset could skip
+				// items when variants are hidden in the grid.
+				startBackgroundCacheSync(profile, [])
 			}
 		} catch (error) {
 			log.error("Error loading items", error)
@@ -1005,26 +1035,22 @@ export const useItemSearchStore = defineStore("itemSearch", () => {
 		if (!itemGroups?.length) return []
 
 		const effectiveLimit = limit || itemsPerPage.value
-
-		// For large catalogs: Load items from first/selected group only
-		// Other groups load on-demand when user clicks the tab
-		const firstGroup = itemGroups[0]?.item_group
-		log.debug(`Fetching first ${effectiveLimit} items from group: ${firstGroup}`)
+		const groupNames = [...new Set(itemGroups.map(row => row?.item_group || row).filter(Boolean))]
+		log.debug(`Fetching first ${effectiveLimit} items from ${groupNames.length} profile groups`)
 
 		try {
-			const response = await call("pos_next.api.items.get_items", {
+			const response = await call("pos_next.api.items.get_items_bulk", {
 				pos_profile: profile,
-				search_term: "",
-				item_group: firstGroup, // Server-side filter via DB index
+				item_groups: JSON.stringify(groupNames),
 				start: 0,
 				limit: effectiveLimit,
 				show_variants_as_items: getShowVariantsFlag(),
 			})
 			const items = response?.message || response || []
-			log.info(`Fetched ${items.length} items from ${firstGroup}`)
+			log.info(`Fetched ${items.length} items from profile item groups`)
 			return items
 		} catch (error) {
-			log.error("Failed to fetch items", error)
+			log.error("Failed to fetch profile-group items", error)
 			return []
 		}
 	}
@@ -1127,6 +1153,10 @@ export const useItemSearchStore = defineStore("itemSearch", () => {
 					if (selectedItemGroup.value) {
 						const groupsToFilter = Array.from(getGroupsToFilter(selectedItemGroup.value))
 						items = await offlineWorker.searchCachedItemsByGroup(groupsToFilter, pageSize, start)
+					} else if (!selectedBrand.value && profileItemGroups.value?.length) {
+						items = await offlineWorker.searchCachedItemsByGroup(getProfileGroupsToFilter(), pageSize, start)
+					} else if (selectedBrand.value) {
+						items = await offlineWorker.searchCachedItemsByBrand(selectedBrand.value, pageSize, start)
 					} else {
 						items = await offlineWorker.searchCachedItems("", pageSize, start)
 					}
@@ -1162,6 +1192,15 @@ export const useItemSearchStore = defineStore("itemSearch", () => {
 					start,
 					pageSize,
 				)
+			} else if (profileItemGroups.value?.length) {
+				const response = await call("pos_next.api.items.get_items_bulk", {
+					pos_profile: posProfile.value,
+					item_groups: JSON.stringify(profileItemGroups.value.map(row => row?.item_group || row).filter(Boolean)),
+					start,
+					limit: pageSize,
+					show_variants_as_items: getShowVariantsFlag(),
+				})
+				items = response?.message || response || []
 			} else {
 				const response = await call("pos_next.api.items.get_items", {
 					pos_profile: posProfile.value,
@@ -1192,6 +1231,10 @@ export const useItemSearchStore = defineStore("itemSearch", () => {
 				if (selectedItemGroup.value) {
 					const groupsToFilter = Array.from(getGroupsToFilter(selectedItemGroup.value))
 					cached = await offlineWorker.searchCachedItemsByGroup(groupsToFilter, pageSize, start)
+				} else if (!selectedBrand.value && profileItemGroups.value?.length) {
+					cached = await offlineWorker.searchCachedItemsByGroup(getProfileGroupsToFilter(), pageSize, start)
+				} else if (selectedBrand.value) {
+					cached = await offlineWorker.searchCachedItemsByBrand(selectedBrand.value, pageSize, start)
 				} else {
 					cached = await offlineWorker.searchCachedItems("", pageSize, start)
 				}
@@ -1242,9 +1285,36 @@ export const useItemSearchStore = defineStore("itemSearch", () => {
 
 		try {
 			let list = []
+			const readyForOfflinePaging = isOffline() || cacheReady.value
 
-			if (selectedItemGroup.value) {
-				// User has a specific group tab selected — fetch more from that group
+			if (readyForOfflinePaging) {
+				if (selectedItemGroup.value) {
+					const groupsToFilter = Array.from(getGroupsToFilter(selectedItemGroup.value))
+					list = await offlineWorker.searchCachedItemsByGroup(
+						groupsToFilter,
+						itemsPerPage.value,
+						currentOffset.value,
+					)
+				} else if (!selectedBrand.value && profileItemGroups.value?.length) {
+					list = await offlineWorker.searchCachedItemsByGroup(
+						getProfileGroupsToFilter(),
+						itemsPerPage.value,
+						currentOffset.value,
+					)
+				} else if (selectedBrand.value) {
+					list = await offlineWorker.searchCachedItemsByBrand(
+						selectedBrand.value,
+						itemsPerPage.value,
+						currentOffset.value,
+					)
+				} else {
+					list = await offlineWorker.searchCachedItems(
+						"",
+						itemsPerPage.value,
+						currentOffset.value,
+					)
+				}
+			} else if (selectedItemGroup.value) {
 				list = await fetchItemsForGroup(
 					posProfile.value,
 					selectedItemGroup.value,
@@ -1252,15 +1322,22 @@ export const useItemSearchStore = defineStore("itemSearch", () => {
 					itemsPerPage.value,
 				)
 			} else if (selectedBrand.value) {
-				// User has a specific brand tab selected — fetch more from that brand
 				list = await fetchItemsForBrand(
 					posProfile.value,
 					selectedBrand.value,
 					currentOffset.value,
 					itemsPerPage.value,
 				)
+			} else if (profileItemGroups.value?.length) {
+				const response = await call("pos_next.api.items.get_items_bulk", {
+					pos_profile: posProfile.value,
+					item_groups: JSON.stringify(profileItemGroups.value.map(row => row?.item_group || row).filter(Boolean)),
+					start: currentOffset.value,
+					limit: itemsPerPage.value,
+					show_variants_as_items: getShowVariantsFlag(),
+				})
+				list = response?.message || response || []
 			} else {
-				// "All Items" tab — fetch next batch without group filter
 				const response = await call("pos_next.api.items.get_items", {
 					pos_profile: posProfile.value,
 					search_term: "",
@@ -1284,8 +1361,11 @@ export const useItemSearchStore = defineStore("itemSearch", () => {
 				// If we got fewer items than requested, we've reached the end
 				hasMore.value = list.length >= itemsPerPage.value
 
-				// Cache new batch for offline support
-				await offlineWorker.cacheItems(list)
+				// Cache only network-fetched pages. Offline/cache paging already reads
+				// the same IndexedDB rows and should not rewrite them.
+				if (!readyForOfflinePaging) {
+					await offlineWorker.cacheItems(list)
+				}
 
 				log.debug(`Loaded ${list.length} more items, total: ${totalItemsLoaded.value}`)
 			} else {
@@ -1316,252 +1396,192 @@ export const useItemSearchStore = defineStore("itemSearch", () => {
 	 *
 	 * @param {string} profile - POS Profile name
 	 * @param {Array} filterGroups - Item group filters from POS Profile (optional)
-	 * @param {number} initialOffset - Items already loaded before sync started
-	 */
-	async function startBackgroundCacheSync(profile, filterGroups = [], initialOffset = 0) {
-		// Cancel any previous sync and start fresh
+		 */
+	async function startBackgroundCacheSync(profile, filterGroups = []) {
+		// Cancel any previous sync and start a new verified generation.
 		syncGeneration++
 		const myGeneration = syncGeneration
-
-		if (cacheSyncing.value) {
-			log.info(`Cancelling previous sync, starting new sync (gen=${myGeneration})`)
-		}
-
-		const hasFilters = filterGroups.length > 0
-
-		log.info(`Starting background sync gen=${myGeneration} ${hasFilters ? `for ${filterGroups.length} groups` : '(all items)'}`)
 		cacheSyncing.value = true
+		cacheReady.value = false
 
-		// Tuning knobs
+		const filterNames = [...new Set(
+			(filterGroups || []).map(group => group?.item_group || group).filter(Boolean),
+		)]
+		const hasFilters = filterNames.length > 0
 		const batchSize = 2000
 		const PARALLEL_REQUESTS = Math.min(3, performanceConfig.getRecommendedWorkerCount() + 1)
-		const BATCH_DELAY_MS = 200
-		const MAX_SYNC_RETRIES = 5
+		const BATCH_DELAY_MS = 150
+		const MAX_BATCH_RETRIES = 5
+		const startedAt = Date.now()
 		let batchCount = 0
-		let consecutiveErrors = 0
-
-		// Track unique items to avoid double-counting from overlapping groups
+		let syncOffset = 0 // Always start at zero; bulk data includes hidden variants.
+		let syncExpectedItems = null
 		const uniqueItemsSeen = new Set()
 
-		// For unfiltered sync: start from where initial load left off
-		let syncOffset = initialOffset
+		log.info(`Starting verified offline sync gen=${myGeneration}`, {
+			profile,
+			filters: filterNames,
+			parallel: PARALLEL_REQUESTS,
+		})
 
-		// For filtered sync: track progress per group
-		let groupIndex = 0
-		let groupOffset = 0
-
-		// Get all groups to sync — deduplicated (parent groups may share children)
-		const groupsToSync = hasFilters
-			? [...new Set(filterGroups.flatMap(g => {
-				const groupInfo = itemGroups.value?.find(ig => ig.item_group === g.item_group)
-				if (groupInfo?.child_groups?.length) {
-					return [g.item_group, ...groupInfo.child_groups]
-				}
-				return [g.item_group]
-			}))]
-			: []
-
-		// Use already-fetched total from loadAllItems (stored in reactive ref)
-		// Avoids a duplicate get_items_count API call
-		let syncTotalItems = totalServerItems.value || 0
-		log.info(`Total server items (from loadAllItems): ${syncTotalItems}`)
-
-		// Dynamic IndexedDB batch size — larger catalogs benefit from fewer transactions
-		const workerBatchSize = syncTotalItems > 20000 ? 2000
-			: syncTotalItems > 5000 ? 1000
-			: 500
-
-		// Helper: update progress stats
-		const updateProgress = () => {
-			const totalCached = initialOffset + uniqueItemsSeen.size
-			const syncProgress = syncTotalItems > 0
-				? Math.round((totalCached / syncTotalItems) * 100)
-				: null
-			cacheStats.value = {
-				...cacheStats.value,
-				items: totalCached,
-				totalServerItems: syncTotalItems,
-				syncProgress,
-				lastSync: new Date().toISOString()
+		try {
+			// Unfiltered catalogs can use an exact expected count (including hidden
+			// variants cached for barcode scans). Filtered catalogs are still verified
+			// by exhausting the combined server result set without skipping offsets.
+			try {
+				const countResponse = await call("pos_next.api.items.get_items_count", {
+					pos_profile: profile,
+					include_variants: 1,
+					show_variants_as_items: getShowVariantsFlag(),
+					...(hasFilters ? { item_groups: JSON.stringify(filterNames) } : {}),
+				})
+				syncExpectedItems = Number(countResponse?.message ?? countResponse ?? 0) || null
+			} catch (countError) {
+				log.warn("Could not get raw offline catalog count", countError.message)
 			}
-			cacheReady.value = true
-			return { totalCached, syncProgress }
-		}
 
-		// CONTINUOUS SYNC LOOP
-		const syncLoop = async () => {
-			while (myGeneration === syncGeneration) {
-				try {
-					if (hasFilters && groupsToSync.length > 0) {
-						// ============================================================
-						// FILTERED SYNC: Fetch items group by group using get_items_bulk
-						// Sequential per-group (groups are typically small)
-						// ============================================================
-						if (groupIndex >= groupsToSync.length) {
-							break // All groups synced
-						}
+			await offlineWorker.setItemSyncState({
+				profile,
+				complete: false,
+				expectedCount: syncExpectedItems,
+				syncedCount: 0,
+				startedAt,
+				error: null,
+			})
 
-						const currentGroup = groupsToSync[groupIndex]
-						log.debug(`Syncing ${currentGroup} at offset ${groupOffset}`)
-
+			const fetchBatchWithRetry = async (offset) => {
+				let lastError = null
+				for (let attempt = 1; attempt <= MAX_BATCH_RETRIES; attempt++) {
+					if (myGeneration !== syncGeneration) {
+						throw new Error("Offline sync cancelled")
+					}
+					try {
 						const response = await call("pos_next.api.items.get_items_bulk", {
 							pos_profile: profile,
-							item_groups: JSON.stringify([currentGroup]),
-							start: groupOffset,
+							...(hasFilters ? { item_groups: JSON.stringify(filterNames) } : {}),
+							start: offset,
 							limit: batchSize,
 							show_variants_as_items: getShowVariantsFlag(),
-							include_variants: 1, // Always cache variants for offline barcode scanning
+							include_variants: 1,
 						})
-						if (myGeneration !== syncGeneration) return
-						const list = response?.message || response || []
-
-						if (list.length > 0) {
-							await offlineWorker.cacheItems(list, workerBatchSize)
-							if (myGeneration !== syncGeneration) return
-							for (const item of list) {
-								if (item.item_code) uniqueItemsSeen.add(item.item_code)
-							}
-							batchCount++
-							consecutiveErrors = 0
-						}
-
-						if (list.length < batchSize) {
-							groupIndex++
-							groupOffset = 0
-							log.debug(`Completed group ${currentGroup} (${groupIndex}/${groupsToSync.length})`)
-						} else {
-							groupOffset += list.length
-						}
-
-						updateProgress()
-
-						// Log progress every 5 batches
-						if (batchCount % 5 === 0) {
-							const { totalCached, syncProgress } = updateProgress()
-							const progressStr = syncProgress != null ? ` (${syncProgress}%)` : ''
-							log.info(`Sync progress: ${totalCached} items cached${progressStr} (${batchCount} batches)`)
-						}
-
-						await new Promise(resolve => setTimeout(resolve, BATCH_DELAY_MS))
-					} else {
-						// ============================================================
-						// UNFILTERED SYNC: Parallel fetch using get_items_bulk
-						// Fire PARALLEL_REQUESTS concurrent calls at consecutive offsets
-						// ============================================================
-						const promises = []
-						const offsets = []
-
-						for (let i = 0; i < PARALLEL_REQUESTS; i++) {
-							const offset = syncOffset + i * batchSize
-							offsets.push(offset)
-							promises.push(
-								call("pos_next.api.items.get_items_bulk", {
-									pos_profile: profile,
-									start: offset,
-									limit: batchSize,
-									show_variants_as_items: getShowVariantsFlag(),
-									include_variants: 1, // Always cache variants for offline barcode scanning
-								}).then(r => r?.message || r || [])
-								.catch(err => {
-									log.warn(`Parallel batch at offset ${offset} failed:`, err.message)
-									return null // Mark as failed, don't break the whole round
-								})
-							)
-						}
-
-						const results = await Promise.allSettled(promises)
-						if (myGeneration !== syncGeneration) return
-
-						// Process results in offset order
-						let anyFailed = false
-						let lastBatchShort = false
-
-						for (let i = 0; i < results.length; i++) {
-							const result = results[i]
-							const list = result.status === 'fulfilled' ? result.value : null
-
-							if (list === null) {
-								anyFailed = true
-								continue
-							}
-
-							if (list.length > 0) {
-								await offlineWorker.cacheItems(list, workerBatchSize)
-								if (myGeneration !== syncGeneration) return
-								for (const item of list) {
-									if (item.item_code) uniqueItemsSeen.add(item.item_code)
-								}
-								batchCount++
-							}
-
-							if (list.length < batchSize) {
-								lastBatchShort = true
-							}
-						}
-
-						// Advance offset by total items requested this round
-						syncOffset += PARALLEL_REQUESTS * batchSize
-						consecutiveErrors = anyFailed ? consecutiveErrors + 1 : 0
-
-						const { totalCached, syncProgress } = updateProgress()
-
-						// Log progress every few rounds
-						if (batchCount % 5 === 0) {
-							const progressStr = syncProgress != null ? ` (${syncProgress}%)` : ''
-							log.info(`Sync progress: ${totalCached} items cached${progressStr} (${batchCount} batches, ${PARALLEL_REQUESTS}x parallel)`)
-						}
-
-						// If any batch returned fewer items than requested, we've reached the end
-						if (lastBatchShort) {
-							break
-						}
-
-						await new Promise(resolve => setTimeout(resolve, BATCH_DELAY_MS))
+						return response?.message || response || []
+					} catch (error) {
+						lastError = error
+						if (attempt >= MAX_BATCH_RETRIES) break
+						const backoff = Math.min(750 * (2 ** (attempt - 1)), 10000)
+						log.warn(`Retrying offline batch offset=${offset} (${attempt}/${MAX_BATCH_RETRIES})`, error.message)
+						await new Promise(resolve => setTimeout(resolve, backoff))
 					}
-				} catch (error) {
-					consecutiveErrors++
-					if (consecutiveErrors >= MAX_SYNC_RETRIES) {
-						log.error(`Sync failed after ${MAX_SYNC_RETRIES} consecutive errors, stopping`, error.message)
-						break
+				}
+				throw new Error(`Offline batch offset ${offset} failed: ${lastError?.message || "unknown error"}`)
+			}
+
+			let reachedEnd = false
+			while (!reachedEnd && myGeneration === syncGeneration) {
+				const offsets = Array.from(
+					{ length: PARALLEL_REQUESTS },
+					(_, index) => syncOffset + index * batchSize,
+				)
+
+				// Each offset retries independently. We advance only after EVERY request
+				// in the round succeeds, so a failed middle batch can never be skipped.
+				const lists = await Promise.all(offsets.map(offset => fetchBatchWithRetry(offset)))
+				if (myGeneration !== syncGeneration) return
+
+				for (let index = 0; index < lists.length; index++) {
+					const list = lists[index]
+					if (list.length > 0) {
+						await offlineWorker.cacheItems(list, syncExpectedItems > 20000 ? 2000 : 1000)
+						for (const item of list) {
+							if (item.item_code) uniqueItemsSeen.add(item.item_code)
+						}
+						batchCount++
 					}
-					const backoffMs = Math.min(2000 * Math.pow(2, consecutiveErrors - 1), 30000)
-					log.warn(`Sync batch error (${consecutiveErrors}/${MAX_SYNC_RETRIES}), retrying in ${backoffMs}ms...`, error.message)
-					await new Promise(resolve => setTimeout(resolve, backoffMs))
+				}
+
+				syncOffset += PARALLEL_REQUESTS * batchSize
+				// Do not use list.length < batchSize as EOF: get_items_bulk can
+				// post-filter unavailable Product Bundles after SQL pagination, making a
+				// non-final page shorter than the requested limit. The server count gives
+				// us the authoritative SQL range. If count is unavailable, require an
+				// entirely empty round before stopping.
+				reachedEnd = syncExpectedItems != null
+					? syncOffset >= syncExpectedItems
+					: lists.every(list => list.length === 0)
+				const progress = syncExpectedItems
+					? Math.min(99, Math.round((uniqueItemsSeen.size / syncExpectedItems) * 100))
+					: null
+				cacheStats.value = {
+					...cacheStats.value,
+					items: uniqueItemsSeen.size,
+					totalServerItems: syncExpectedItems || totalServerItems.value,
+					syncProgress: progress,
+					syncComplete: false,
+				}
+				cacheReady.value = false
+
+				if (batchCount && batchCount % 5 === 0) {
+					log.info(`Offline sync progress: ${uniqueItemsSeen.size} cached${progress != null ? ` (${progress}%)` : ""}`)
+				}
+				if (!reachedEnd) {
+					await new Promise(resolve => setTimeout(resolve, BATCH_DELAY_MS))
 				}
 			}
 
-			// Only finalize if this sync generation is still active
-			if (myGeneration !== syncGeneration) {
-				log.info(`Sync gen=${myGeneration} cancelled (current gen=${syncGeneration})`)
-				return
-			}
+			if (myGeneration !== syncGeneration) return
 
-			// Sync complete!
-			const finalStats = await offlineWorker.getCacheStats()
-			const finalCached = initialOffset + uniqueItemsSeen.size
+			// Batch/serial metadata is part of Offline Ready. Paginate through every
+			// tracked item; there is no longer a 10,000-item ceiling.
+			if (shiftStore.profileWarehouse) {
+				log.info("Synchronizing all batch/serial metadata for offline use...")
+				await cacheAllBatchSerialData(shiftStore.profileWarehouse)
+			}
+			if (myGeneration !== syncGeneration) return
+
+			await offlineWorker.setItemSyncState({
+				profile,
+				complete: true,
+				expectedCount: syncExpectedItems,
+				syncedCount: uniqueItemsSeen.size,
+				startedAt,
+				completedAt: Date.now(),
+				error: null,
+			})
+
+			const finalStats = await offlineWorker.getCacheStats(profile)
 			cacheStats.value = {
 				...finalStats,
-				totalServerItems: syncTotalItems,
-				syncProgress: syncTotalItems > 0 ? Math.round((finalCached / syncTotalItems) * 100) : null,
+				totalServerItems: totalServerItems.value || finalStats.items,
+				syncProgress: 100,
 			}
-			cacheReady.value = true
-			cacheSyncing.value = false
-			log.success(`Background sync COMPLETE - ${finalCached} items cached in ${batchCount} batches (${PARALLEL_REQUESTS}x parallel)`)
-
-			// Cache batch/serial data after items are synced (in background)
-			if (shiftStore.profileWarehouse && finalCached > 0) {
-				log.info("Starting batch/serial data sync...")
-				offlineWorker.searchCachedItems("", 10000).then(async (items) => {
-					const batchSerialItems = items.filter(i => i.has_batch_no || i.has_serial_no)
-					if (batchSerialItems.length > 0) {
-						await cacheBatchSerialForItems(batchSerialItems, shiftStore.profileWarehouse)
-					}
-				}).catch(err => log.warn("Batch/serial sync failed:", err.message))
+			cacheReady.value = Boolean(finalStats.cacheReady)
+			log.success(`Offline catalog sync COMPLETE - ${uniqueItemsSeen.size} records in ${batchCount} batches`)
+		} catch (error) {
+			if (myGeneration !== syncGeneration) return
+			log.error("Offline catalog sync failed; cache remains incomplete", error)
+			cacheReady.value = false
+			cacheStats.value = {
+				...cacheStats.value,
+				syncComplete: false,
+				syncError: error.message,
+			}
+			try {
+				await offlineWorker.setItemSyncState({
+					profile,
+					complete: false,
+					expectedCount: syncExpectedItems,
+					syncedCount: uniqueItemsSeen.size,
+					startedAt,
+					error: error.message,
+				})
+			} catch (stateError) {
+				log.warn("Could not persist failed sync state", stateError.message)
+			}
+		} finally {
+			if (myGeneration === syncGeneration) {
+				cacheSyncing.value = false
 			}
 		}
-
-		// Start the sync loop (runs in background via microtask queue)
-		syncLoop()
 	}
 
 	function stopBackgroundCacheSync() {
@@ -1610,6 +1630,16 @@ export const useItemSearchStore = defineStore("itemSearch", () => {
 
 						// Resolve with cached results
 						resolve(cached)
+					}
+
+					// Offline search is complete from IndexedDB. Never wait for a server
+					// timeout after the worker has already searched the full local catalog.
+					if (isOffline()) {
+						if (!cached || cached.length === 0) {
+							setSearchResults([])
+							resolve([])
+						}
+						return
 					}
 
 					// Now search server in background for fresh results
@@ -1684,14 +1714,31 @@ export const useItemSearchStore = defineStore("itemSearch", () => {
 				throw new Error("POS Profile not set")
 			}
 
-			log.debug("Calling searchByBarcode API", { posProfile: posProfile.value })
+			// Exact standard barcodes are resolved locally first. This makes scanner
+			// operation instant offline and avoids unnecessary API calls online.
+			const cachedItem = await offlineWorker.getCachedItemByBarcode(barcode)
+			if (cachedItem) {
+				log.debug("Barcode resolved from offline cache", { barcode })
+				return cachedItem
+			}
 
+			if (isOffline()) {
+				log.info("Barcode not found in offline cache", { barcode })
+				return null
+			}
+
+			// Server fallback also supports optional weighted/priced barcode resolver
+			// rules that cannot be inferred from a standard Item Barcode row alone.
 			const result = await searchByBarcodeResource.submit({
-				barcode: barcode,
+				barcode,
 				pos_profile: posProfile.value,
 			})
-
 			const item = result?.message || result
+			if (item) {
+				await offlineWorker.cacheItems([item]).catch(error => {
+					log.warn("Could not cache barcode result", error.message)
+				})
+			}
 			return item
 		} catch (error) {
 			log.error("Store searchByBarcode error", error)
@@ -1701,7 +1748,7 @@ export const useItemSearchStore = defineStore("itemSearch", () => {
 
 	async function getItem(itemCode) {
 		try {
-			const cacheReady = await offlineWorker.isCacheReady()
+			const cacheReady = await offlineWorker.isCacheReady(posProfile.value)
 			if (isOffline() || cacheReady) {
 				const items = await offlineWorker.searchCachedItems(itemCode, 1)
 				return items?.[0] || null
@@ -1815,13 +1862,16 @@ export const useItemSearchStore = defineStore("itemSearch", () => {
 							items = cached || []
 							totalCount = count || items.length
 						} else {
-							// "All Items" tab — load first page alphabetically
+							// "All Items" still respects POS Profile item-group restrictions.
+							const profileGroups = getProfileGroupsToFilter()
 							const [cached, stats] = await Promise.all([
-								offlineWorker.searchCachedItems("", pageSize, 0),
-								offlineWorker.getCacheStats(),
+								profileGroups.length
+									? offlineWorker.searchCachedItemsByGroup(profileGroups, pageSize, 0)
+									: offlineWorker.searchCachedItems("", pageSize, 0),
+								offlineWorker.getCacheStats(posProfile.value),
 							])
 							items = cached || []
-							totalCount = stats?.totalServerItems || stats?.items || items.length
+							totalCount = stats?.items || items.length
 						}
 
 						if (items.length > 0) {
@@ -1858,6 +1908,9 @@ export const useItemSearchStore = defineStore("itemSearch", () => {
 				const countPromise = call("pos_next.api.items.get_items_count", {
 					pos_profile: posProfile.value,
 					item_group: group || undefined,
+					...(!group && profileItemGroups.value?.length
+						? { item_groups: JSON.stringify(profileItemGroups.value.map(row => row?.item_group || row).filter(Boolean)) }
+						: {}),
 					show_variants_as_items: getShowVariantsFlag(),
 				}).catch(err => {
 					log.warn("Could not fetch item count:", err.message)
@@ -1870,15 +1923,23 @@ export const useItemSearchStore = defineStore("itemSearch", () => {
 					items = await fetchItemsForGroup(posProfile.value, group, 0, pageSize)
 					log.info(`Loaded ${items.length} items for group: ${group}`)
 				} else {
-					// "All Items" tab: fetch first page (no group filter)
-					const response = await call("pos_next.api.items.get_items", {
-						pos_profile: posProfile.value,
-						search_term: "",
-						item_group: null,
-						start: 0,
-						limit: pageSize,
-						show_variants_as_items: getShowVariantsFlag(),
-					})
+					const groupNames = profileItemGroups.value?.map(row => row?.item_group || row).filter(Boolean) || []
+					const response = groupNames.length
+						? await call("pos_next.api.items.get_items_bulk", {
+							pos_profile: posProfile.value,
+							item_groups: JSON.stringify(groupNames),
+							start: 0,
+							limit: pageSize,
+							show_variants_as_items: getShowVariantsFlag(),
+						})
+						: await call("pos_next.api.items.get_items", {
+							pos_profile: posProfile.value,
+							search_term: "",
+							item_group: null,
+							start: 0,
+							limit: pageSize,
+							show_variants_as_items: getShowVariantsFlag(),
+						})
 					items = response?.message || response || []
 					log.info(`Loaded ${items.length} items for "All Items" tab`)
 				}
@@ -1925,7 +1986,10 @@ export const useItemSearchStore = defineStore("itemSearch", () => {
 						items = cached || []
 						totalCount = count || items.length
 					} else {
-						items = await offlineWorker.searchCachedItems("", pageSize, 0) || []
+						const profileGroups = getProfileGroupsToFilter()
+						items = profileGroups.length
+							? await offlineWorker.searchCachedItemsByGroup(profileGroups, pageSize, 0) || []
+							: await offlineWorker.searchCachedItems("", pageSize, 0) || []
 						totalCount = items.length
 					}
 					if (items.length > 0) {
@@ -1967,21 +2031,17 @@ export const useItemSearchStore = defineStore("itemSearch", () => {
 			const offline = isOffline()
 
 			if (offline) {
-				let filtered = []
-				if (brand) {
-					// Use IndexedDB brand index via worker for efficient offline filtering
-					filtered = await offlineWorker.searchCachedItemsByBrand(brand, 5000, 0)
-				} else {
-					filtered = await offlineWorker.searchCachedItems("", 5000, 0)
-				}
+				// Page directly from IndexedDB. The previous 5,000-row materialization
+				// silently truncated large brand catalogs and wasted memory on low-end PCs.
+				const pageItems = brand
+					? await offlineWorker.searchCachedItemsByBrand(brand, pageSize, 0)
+					: await offlineWorker.searchCachedItems("", pageSize, 0)
 
-				const pageItems = filtered.slice(0, pageSize)
-
-				replaceAllItems(pageItems)
-				totalItemsLoaded.value = pageItems.length
-				currentOffset.value = pageItems.length
-				totalServerItems.value = filtered.length
-				hasMore.value = filtered.length > pageItems.length
+				replaceAllItems(pageItems || [])
+				totalItemsLoaded.value = pageItems?.length || 0
+				currentOffset.value = pageItems?.length || 0
+				totalServerItems.value = pageItems?.length || 0
+				hasMore.value = (pageItems?.length || 0) >= pageSize
 				return
 			}
 
@@ -1989,6 +2049,9 @@ export const useItemSearchStore = defineStore("itemSearch", () => {
 				pos_profile: posProfile.value,
 				item_group: undefined,
 				brand: brand || undefined,
+				...(!brand && profileItemGroups.value?.length
+					? { item_groups: JSON.stringify(profileItemGroups.value.map(row => row?.item_group || row).filter(Boolean)) }
+					: {}),
 				show_variants_as_items: getShowVariantsFlag(),
 			}).catch(err => {
 				log.warn("Could not fetch item count:", err.message)
@@ -2000,14 +2063,23 @@ export const useItemSearchStore = defineStore("itemSearch", () => {
 				items = await fetchItemsForBrand(posProfile.value, brand, 0, pageSize)
 				log.info(`Loaded ${items.length} items for brand: ${brand}`)
 			} else {
-				const response = await call("pos_next.api.items.get_items", {
-					pos_profile: posProfile.value,
-					search_term: "",
-					item_group: null,
-					start: 0,
-					limit: pageSize,
-					show_variants_as_items: getShowVariantsFlag(),
-				})
+				const groupNames = profileItemGroups.value?.map(row => row?.item_group || row).filter(Boolean) || []
+				const response = groupNames.length
+					? await call("pos_next.api.items.get_items_bulk", {
+						pos_profile: posProfile.value,
+						item_groups: JSON.stringify(groupNames),
+						start: 0,
+						limit: pageSize,
+						show_variants_as_items: getShowVariantsFlag(),
+					})
+					: await call("pos_next.api.items.get_items", {
+						pos_profile: posProfile.value,
+						search_term: "",
+						item_group: null,
+						start: 0,
+						limit: pageSize,
+						show_variants_as_items: getShowVariantsFlag(),
+					})
 				items = response?.message || response || []
 				log.info(`Loaded ${items.length} items for "All Items" tab`)
 			}

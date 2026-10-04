@@ -404,7 +404,10 @@ function getCacheIconColor() {
 	if (props.cacheSyncing) {
 		return "text-orange-600" // Orange: Syncing in progress
 	}
-	return "text-green-600" // Green: Cache ready
+	if (!props.cacheStats.cacheReady) {
+		return "text-amber-600" // Amber: Partial/incomplete cache
+	}
+	return "text-green-600" // Green: Verified cache ready
 }
 
 function getCacheStatus() {
@@ -413,6 +416,9 @@ function getCacheStatus() {
 	}
 	if (props.cacheSyncing) {
 		return __("Syncing")
+	}
+	if (!props.cacheStats.cacheReady) {
+		return __("Incomplete")
 	}
 	return __("Ready")
 }
@@ -423,6 +429,9 @@ function getCacheStatusBadgeClass() {
 	}
 	if (props.cacheSyncing) {
 		return "bg-orange-500/20 text-orange-300"
+	}
+	if (!props.cacheStats.cacheReady) {
+		return "bg-amber-500/20 text-amber-300"
 	}
 	return "bg-green-500/20 text-green-300"
 }
@@ -445,6 +454,9 @@ function getCacheAriaLabel() {
 	}
 	if (props.cacheSyncing) {
 		return __("Cache syncing")
+	}
+	if (!props.cacheStats.cacheReady) {
+		return __("Cache incomplete")
 	}
 	return __("Cache ready")
 }

@@ -410,6 +410,14 @@ class OfflineWorkerClient {
 		return this.sendMessage("SEARCH_ITEMS", { searchTerm, limit, offset })
 	}
 
+	async getCachedItemByBarcode(barcode) {
+		return this.sendMessage("GET_ITEM_BY_BARCODE", { barcode })
+	}
+
+	async getBatchSerialItemCodes(limit = 500, offset = 0) {
+		return this.sendMessage("GET_BATCH_SERIAL_ITEM_CODES", { limit, offset })
+	}
+
 	async searchCachedItemsByGroup(itemGroups = [], limit = 50, offset = 0) {
 		return this.sendMessage("SEARCH_ITEMS_BY_GROUP", { itemGroups, limit, offset })
 	}
@@ -454,12 +462,16 @@ class OfflineWorkerClient {
 		return this.sendMessage("GET_SALES_PERSONS", { posProfile })
 	}
 
-	async isCacheReady() {
-		return this.sendMessage("IS_CACHE_READY")
+	async isCacheReady(posProfile = null) {
+		return this.sendMessage("IS_CACHE_READY", { posProfile })
 	}
 
-	async getCacheStats() {
-		return this.sendMessage("GET_CACHE_STATS")
+	async getCacheStats(posProfile = null) {
+		return this.sendMessage("GET_CACHE_STATS", { posProfile })
+	}
+
+	async setItemSyncState(state) {
+		return this.sendMessage("SET_ITEM_SYNC_STATE", { state })
 	}
 
 	async deleteOfflineInvoice(id) {

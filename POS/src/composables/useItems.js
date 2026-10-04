@@ -123,11 +123,19 @@ export function useItems(posProfile, cartItems = ref([])) {
 	// Methods
 	async function searchByBarcode(barcode) {
 		try {
+			const cached = await offlineWorker.getCachedItemByBarcode(barcode)
+			if (cached) return cached
+			if (isOffline()) return null
+
 			const result = await searchByBarcodeResource.submit({
 				barcode,
-				pos_profile: posProfile,
+				pos_profile: toValue(posProfile),
 			})
-			return result?.message || result
+			const item = result?.message || result
+			if (item) {
+				await offlineWorker.cacheItems([item]).catch(() => {})
+			}
+			return item
 		} catch (error) {
 			console.error("Error searching by barcode:", error)
 			return null
@@ -145,7 +153,7 @@ export function useItems(posProfile, cartItems = ref([])) {
 	// Cache-first loading function using worker
 	async function loadItems() {
 		// Check if cache is ready using worker
-		const cacheReady = await offlineWorker.isCacheReady()
+		const cacheReady = await offlineWorker.isCacheReady(toValue(posProfile))
 
 		// If offline or cache is ready, use cache via worker
 		if (isOffline() || cacheReady) {
@@ -171,7 +179,7 @@ export function useItems(posProfile, cartItems = ref([])) {
 	// Get item by code (cache-first) using worker
 	async function getItem(itemCode) {
 		try {
-			const cacheReady = await offlineWorker.isCacheReady()
+			const cacheReady = await offlineWorker.isCacheReady(toValue(posProfile))
 			if (isOffline() || cacheReady) {
 				const items = await offlineWorker.searchCachedItems(itemCode, 1)
 				return items?.[0] || null
@@ -187,7 +195,7 @@ export function useItems(posProfile, cartItems = ref([])) {
 
 	// Check if cache is ready
 	async function checkCacheReady() {
-		return await offlineWorker.isCacheReady()
+		return await offlineWorker.isCacheReady(toValue(posProfile))
 	}
 
 	return {

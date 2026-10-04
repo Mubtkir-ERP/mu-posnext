@@ -213,23 +213,38 @@ function recordMetric(operation, duration, isError = false) {
  * @returns {Array<string>} Normalized barcode array
  */
 function extractBarcodes(item) {
-	// Fast path: already normalized
-	if (Array.isArray(item.barcodes)) return item.barcodes
+	const normalizeList = (values) => [...new Set(
+		(values || [])
+			.flatMap(value => {
+				if (value == null) return []
+				if (typeof value === "object") return value.barcode ? [value.barcode] : []
+				// Legacy list endpoints used GROUP_CONCAT, so split comma-separated values.
+				return String(value).split(",")
+			})
+			.map(value => String(value).trim())
+			.filter(Boolean)
+	)]
 
-	// Single barcode
-	if (item.barcode) return [item.barcode]
-
-	// item_barcode field (various formats)
-	if (item.item_barcode) {
-		if (Array.isArray(item.item_barcode)) {
-			return item.item_barcode
-				.map(b => (typeof b === "object" ? b.barcode : b))
-				.filter(Boolean)
-		}
-		return [item.item_barcode]
+	if (Array.isArray(item.item_barcodes) && item.item_barcodes.length > 0) {
+		return normalizeList(item.item_barcodes)
 	}
-
+	if (Array.isArray(item.barcodes) && item.barcodes.length > 0) {
+		return normalizeList(item.barcodes)
+	}
+	if (item.barcode) return normalizeList([item.barcode])
+	if (item.item_barcode) return normalizeList(
+		Array.isArray(item.item_barcode) ? item.item_barcode : [item.item_barcode],
+	)
 	return []
+}
+
+function extractBarcodeDetails(item) {
+	if (Array.isArray(item.item_barcodes)) {
+		return item.item_barcodes
+			.filter(row => row && row.barcode)
+			.map(row => ({ barcode: String(row.barcode).trim(), uom: row.uom || null }))
+	}
+	return extractBarcodes(item).map(barcode => ({ barcode, uom: null }))
 }
 
 /**
@@ -484,8 +499,6 @@ function shouldShowItem(item) {
  */
 async function searchCachedItems(searchTerm = "", limit = 50, offset = 0) {
 	const startTime = performance.now()
-
-	// Check cache first (5-10x faster for repeated queries)
 	const cacheKey = `search:${searchTerm}:${limit}:${offset}`
 	const cached = getCachedQuery(cacheKey)
 	if (cached) {
@@ -496,8 +509,6 @@ async function searchCachedItems(searchTerm = "", limit = 50, offset = 0) {
 	try {
 		const db = await initDB()
 
-		// Empty search - return top N items sorted alphabetically
-		// Exclude disabled and template items (templates are not shown in grid, variants are)
 		if (!searchTerm || searchTerm.trim().length === 0) {
 			const results = await db.table("items")
 				.orderBy("item_name")
@@ -512,90 +523,129 @@ async function searchCachedItems(searchTerm = "", limit = 50, offset = 0) {
 		const term = searchTerm.toLowerCase().trim()
 		const searchWords = term.split(/\s+/).filter(Boolean)
 
-		// Optimize: Use indexes for single-word searches
-		if (searchWords.length === 1) {
-			// Try barcode index first (most specific)
-			const barcodeResults = await db.table("items")
-				.where("barcodes")
-				.equals(term)
-				.filter(item => !item.disabled)
-				.limit(limit)
-				.toArray()
-
-			if (barcodeResults.length > 0) {
-				cacheQueryResult(cacheKey, barcodeResults)
-				recordMetric('searchCachedItems', performance.now() - startTime, false)
-				return barcodeResults
-			}
-
-			// Try item_code index (second most specific)
-			const codeResults = await db.table("items")
-				.where("item_code")
-				.startsWithIgnoreCase(term)
-				.filter(item => !item.disabled)
-				.limit(limit)
-				.toArray()
-
-			if (codeResults.length > 0) {
-				cacheQueryResult(cacheKey, codeResults)
-				recordMetric('searchCachedItems', performance.now() - startTime, false)
-				return codeResults
-			}
-
-			// Try item_name index
-			const nameResults = await db.table("items")
-				.where("item_name")
-				.startsWithIgnoreCase(term)
-				.filter(item => !item.disabled)
-				.limit(limit)
-				.toArray()
-
-			if (nameResults.length > 0) {
-				cacheQueryResult(cacheKey, nameResults)
-				recordMetric('searchCachedItems', performance.now() - startTime, false)
-				return nameResults
-			}
+		// Exact barcode lookup must include cached variants even when variants are
+		// hidden from the browse grid. Barcode scans are an explicit item lookup.
+		const barcodeResults = await db.table("items")
+			.where("barcodes")
+			.equals(searchTerm.trim())
+			.filter(item => !item.disabled)
+			.limit(limit)
+			.toArray()
+		if (barcodeResults.length > 0) {
+			cacheQueryResult(cacheKey, barcodeResults)
+			recordMetric('searchCachedItems', performance.now() - startTime, false)
+			return barcodeResults
 		}
 
-		// Fallback: Multi-word or complex search
-		// Fetch larger sample and filter in memory (trade memory for speed)
-		const allItems = await db.table("items")
-			.filter(item => !item.disabled)
-			.limit(limit * 10)
-			.toArray()
+		// Exact item code is another fast path.
+		const exactCode = await db.table("items").get(searchTerm.trim())
+		if (exactCode && shouldShowItem(exactCode)) {
+			const result = [exactCode]
+			cacheQueryResult(cacheKey, result)
+			recordMetric('searchCachedItems', performance.now() - startTime, false)
+			return result
+		}
 
-		const results = allItems
-			.map(item => {
-				const searchable = `${item.item_code || ""} ${item.item_name || ""} ${item.description || ""}`.toLowerCase()
+		// Full-catalog scan runs inside the Web Worker, so it does not block the UI.
+		// This replaces the old limit*10 sampling which could silently miss valid
+		// products located later in large catalogs.
+		const scored = []
+		const keep = Math.max(limit + offset, limit, 1)
+		await db.table("items").each(item => {
+			if (!shouldShowItem(item)) return
 
-				// All words must match
-				if (!searchWords.every(word => searchable.includes(word))) {
-					return null
-				}
+			const searchable = `${item.item_code || ""} ${item.item_name || ""} ${item.description || ""} ${item.item_group || ""} ${item.brand || ""}`.toLowerCase()
+			if (!searchWords.every(word => searchable.includes(word))) return
 
-				// Score for relevance ranking
-				let score = 100
-				if (item.item_name?.toLowerCase() === term) score = 1000
-				else if (item.item_code?.toLowerCase() === term) score = 900
-				else if (item.item_name?.toLowerCase().startsWith(term)) score = 500
-				else if (item.item_code?.toLowerCase().startsWith(term)) score = 400
+			let score = 100
+			const itemName = (item.item_name || "").toLowerCase()
+			const itemCode = (item.item_code || "").toLowerCase()
+			if (itemName === term) score = 1000
+			else if (itemCode === term) score = 900
+			else if (itemName.startsWith(term)) score = 500
+			else if (itemCode.startsWith(term)) score = 400
 
-				return { item, score }
-			})
-			.filter(Boolean)
-			.sort((a, b) => b.score - a.score)
-			.slice(0, limit)
+			scored.push({ item, score })
+			// Keep memory bounded even for very broad searches on 50K+ catalogs.
+			if (scored.length > keep * 4) {
+				scored.sort((a, b) => b.score - a.score || String(a.item.item_name || "").localeCompare(String(b.item.item_name || "")))
+				scored.length = keep
+			}
+		})
+
+		const results = scored
+			.sort((a, b) => b.score - a.score || String(a.item.item_name || "").localeCompare(String(b.item.item_name || "")))
+			.slice(offset, offset + limit)
 			.map(({ item }) => item)
 
-		const duration = Math.round(performance.now() - startTime)
-		recordMetric('searchCachedItems', duration, false)
-
+		recordMetric('searchCachedItems', performance.now() - startTime, false)
 		cacheQueryResult(cacheKey, results)
 		return results
-
 	} catch (error) {
 		recordMetric('searchCachedItems', performance.now() - startTime, true)
 		log.error("Error searching cached items", error)
+		return []
+	}
+}
+
+/**
+ * Resolve a standard cached barcode completely offline, including barcode UOM.
+ * Advanced weighted/priced barcode rules still require their resolver data from
+ * the server, but normal Item Barcode rows work without any network request.
+ */
+async function getCachedItemByBarcode(barcode) {
+	if (!barcode) return null
+	try {
+		const db = await initDB()
+		const normalized = String(barcode).trim()
+		const item = await db.table("items")
+			.where("barcodes")
+			.equals(normalized)
+			.filter(row => !row.disabled)
+			.first()
+		if (!item) return null
+
+		const result = { ...item }
+		const details = Array.isArray(item.barcode_details) ? item.barcode_details : []
+		const detail = details.find(row => String(row?.barcode || "").trim() === normalized)
+		const barcodeUom = detail?.uom || null
+
+		if (barcodeUom) {
+			const uoms = Array.isArray(item.item_uoms) ? item.item_uoms : []
+			const conversion = barcodeUom === item.stock_uom
+				? 1
+				: Number(uoms.find(row => row?.uom === barcodeUom)?.conversion_factor || 1)
+			const uomPrice = item.uom_prices?.[barcodeUom]
+
+			result.uom = barcodeUom
+			result.price_uom = barcodeUom
+			result.conversion_factor = conversion || 1
+			if (uomPrice != null) {
+				result.rate = Number(uomPrice) || 0
+				result.price_list_rate = result.rate
+				result.price_list_rate_price_uom = result.rate
+			}
+		}
+		return result
+	} catch (error) {
+		log.error("Error resolving cached barcode", error)
+		return null
+	}
+}
+
+/** Return batch/serial tracked item codes in deterministic pages. */
+async function getBatchSerialItemCodes(limit = 500, offset = 0) {
+	try {
+		const db = await initDB()
+		const rows = await db.table("items")
+			.orderBy("item_code")
+			.filter(item => !item.disabled && (item.has_batch_no || item.has_serial_no))
+			.offset(offset)
+			.limit(limit)
+			.toArray()
+		return rows.map(item => item.item_code).filter(Boolean)
+	} catch (error) {
+		log.error("Error reading batch/serial item codes", error)
 		return []
 	}
 }
@@ -822,6 +872,7 @@ async function cacheItemsFromServer(items, batchSize) {
 				const processedItems = batch.map(item => ({
 					...item,
 					barcodes: extractBarcodes(item),
+					barcode_details: extractBarcodeDetails(item),
 				}))
 
 				// Bulk insert items (single DB round trip per batch)
@@ -883,11 +934,6 @@ async function cacheItemsFromServer(items, batchSize) {
 				totalProcessed += batch.length
 			}
 
-			// Update sync metadata (inside transaction)
-			await db.table("settings").put({
-				key: "items_last_sync",
-				value: Date.now(),
-			})
 		})
 
 		const duration = Math.round(performance.now() - startTime)
@@ -975,7 +1021,16 @@ async function clearItemsCache() {
 		await db.transaction('rw', 'items', 'item_prices', 'settings', async () => {
 			await db.table("items").clear()
 			await db.table("item_prices").clear()
-			await db.table("settings").put({ key: "items_last_sync", value: null })
+			await db.table("settings").bulkPut([
+				{ key: "items_last_sync", value: null },
+				{ key: "items_sync_complete", value: false },
+				{ key: "items_sync_profile", value: null },
+				{ key: "items_sync_expected_count", value: null },
+				{ key: "items_sync_synced_count", value: 0 },
+				{ key: "items_sync_error", value: null },
+				{ key: "items_sync_started_at", value: null },
+				{ key: "items_sync_completed_at", value: null },
+			])
 		})
 
 		invalidateCache('items')
@@ -1293,53 +1348,112 @@ async function clearOffersCache(posProfile = null) {
 	}
 }
 
-// Check if cache is ready
-async function isCacheReady() {
+// Item sync metadata is deliberately separate from items_last_sync. Individual
+// search/page writes are partial and must never make the POS claim Offline Ready.
+async function setItemSyncState(state = {}) {
+	const db = await initDB()
+	const now = Date.now()
+	const rows = [
+		{ key: "items_sync_complete", value: Boolean(state.complete) },
+		{ key: "items_sync_profile", value: state.profile || null },
+		{ key: "items_sync_expected_count", value: state.expectedCount ?? null },
+		{ key: "items_sync_synced_count", value: state.syncedCount ?? null },
+		{ key: "items_sync_error", value: state.error || null },
+	]
+	if (state.startedAt !== undefined) {
+		rows.push({ key: "items_sync_started_at", value: state.startedAt })
+	}
+	if (state.complete) {
+		rows.push({ key: "items_sync_completed_at", value: state.completedAt || now })
+		rows.push({ key: "items_last_sync", value: state.completedAt || now })
+	}
+	await db.table("settings").bulkPut(rows)
+	return { success: true }
+}
+
+async function readItemSyncState() {
+	const db = await initDB()
+	const keys = [
+		"items_sync_complete",
+		"items_sync_profile",
+		"items_sync_expected_count",
+		"items_sync_synced_count",
+		"items_sync_error",
+		"items_sync_started_at",
+		"items_sync_completed_at",
+		"items_last_sync",
+	]
+	const rows = await db.table("settings").bulkGet(keys)
+	const values = Object.fromEntries(keys.map((key, index) => [key, rows[index]?.value ?? null]))
+	return {
+		complete: Boolean(values.items_sync_complete),
+		profile: values.items_sync_profile,
+		expectedCount: values.items_sync_expected_count,
+		syncedCount: values.items_sync_synced_count,
+		error: values.items_sync_error,
+		startedAt: values.items_sync_started_at,
+		completedAt: values.items_sync_completed_at,
+		lastSync: values.items_last_sync,
+	}
+}
+
+async function isCacheReady(posProfile = null) {
 	try {
 		const db = await initDB()
-		const itemCount = await db.table("items").count()
-		return itemCount > 0
+		const [itemCount, syncState] = await Promise.all([
+			db.table("items").count(),
+			readItemSyncState(),
+		])
+		const profileMatches = !posProfile || !syncState.profile || syncState.profile === posProfile
+		return itemCount > 0 && syncState.complete && profileMatches
 	} catch (error) {
 		return false
 	}
 }
 
-// Get cache stats
-async function getCacheStats() {
+async function getCacheStats(posProfile = null) {
 	try {
 		const db = await initDB()
-
-		const [totalCount, hiddenCount, customerCount, queuedInvoices, lastSyncSetting] =
+		const [totalCount, hiddenCount, customerCount, queuedInvoices, syncState] =
 			await Promise.all([
 				db.table("items").count(),
-				// Count items hidden from display based on current mode:
-				// showVariantsAsItems=true: hide templates (has_variants)
-				// showVariantsAsItems=false: hide variants (variant_of)
 				showVariantsAsItems
 					? db.table("items").filter(item => !!item.has_variants).count()
 					: db.table("items").filter(item => !!item.variant_of).count(),
 				db.table("customers").count(),
 				getOfflineInvoiceCount(),
-				db.table("settings").get("items_last_sync"),
+				readItemSyncState(),
 			])
-		// Exclude hidden items from display count
 		const itemCount = totalCount - hiddenCount
+		const profileMatches = !posProfile || !syncState.profile || syncState.profile === posProfile
+		const cacheReady = itemCount > 0 && syncState.complete && profileMatches
 
 		return {
 			items: itemCount,
+			rawItems: totalCount,
 			customers: customerCount,
 			queuedInvoices,
-			cacheReady: itemCount > 0,
-			lastSync: lastSyncSetting?.value || null,
+			cacheReady,
+			lastSync: syncState.lastSync,
+			syncComplete: syncState.complete,
+			syncProfile: syncState.profile,
+			expectedItems: syncState.expectedCount,
+			syncedItems: syncState.syncedCount,
+			syncError: syncState.error,
+			syncStartedAt: syncState.startedAt,
+			syncCompletedAt: syncState.completedAt,
 		}
 	} catch (error) {
 		log.error("Error getting cache stats", error)
 		return {
 			items: 0,
+			rawItems: 0,
 			customers: 0,
 			queuedInvoices: 0,
 			cacheReady: false,
 			lastSync: null,
+			syncComplete: false,
+			syncProfile: null,
 		}
 	}
 }
@@ -1656,6 +1770,14 @@ self.onmessage = async (event) => {
 				result = await searchCachedItems(payload.searchTerm, payload.limit, payload.offset || 0)
 				break
 
+			case "GET_ITEM_BY_BARCODE":
+				result = await getCachedItemByBarcode(payload.barcode)
+				break
+
+			case "GET_BATCH_SERIAL_ITEM_CODES":
+				result = await getBatchSerialItemCodes(payload.limit || 500, payload.offset || 0)
+				break
+
 			case "SEARCH_ITEMS_BY_GROUP":
 				result = await searchCachedItemsByGroup(payload.itemGroups, payload.limit, payload.offset || 0)
 				break
@@ -1716,11 +1838,15 @@ self.onmessage = async (event) => {
 				break
 
 			case "IS_CACHE_READY":
-				result = await isCacheReady()
+				result = await isCacheReady(payload.posProfile || null)
 				break
 
 			case "GET_CACHE_STATS":
-				result = await getCacheStats()
+				result = await getCacheStats(payload.posProfile || null)
+				break
+
+			case "SET_ITEM_SYNC_STATE":
+				result = await setItemSyncState(payload.state || {})
 				break
 
 			case "DELETE_INVOICE":

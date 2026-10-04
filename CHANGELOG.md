@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.18.0] - 2026-10-04
+
+### Fixed
+- Reworked product offline synchronization so failed middle batches retry the same offset and can no longer create silent holes in the catalog.
+- Offline cache is only marked Ready after the complete product scan and batch/serial synchronization finish successfully.
+- Offline search now scans the full local catalog in a Web Worker instead of sampling only the first `limit × 10` records.
+- Standard Item Barcodes are resolved fully offline, including the barcode-specific UOM and matching UOM price when available.
+- Infinite scrolling and page navigation now read from IndexedDB while offline.
+- Product barcode metadata is cached losslessly with its UOM instead of relying on comma-concatenated barcode strings.
+- POS Profile item-group filters are respected by offline browsing and full-catalog synchronization.
+- Batch/serial offline synchronization is paged through the complete tracked catalog; the previous 10,000-item ceiling is removed.
+- Batch/serial API failures are surfaced and retried instead of being treated as a successful empty sync.
+- Cache readiness/status is POS-profile-aware and no longer shows Ready for a partial or failed product cache.
+
+### Performance
+- Product synchronization uses 2,000-record pages with bounded parallel requests and retry backoff.
+- Large offline searches run in the Web Worker to avoid blocking the POS interface on low-spec cashier devices.
+- Brand and item-group offline pagination no longer materializes thousands of records into browser memory.
+
 ## [1.17.0] - 2026-10-04
 
 ### Changed

@@ -262,8 +262,8 @@ export const usePOSSyncStore = defineStore("posSync", () => {
 		_preloadingProfile = currentProfile.name
 
 		try {
-			const cacheReady = await checkCacheReady()
-			const stats = await getCacheStats()
+			const cacheReady = await checkCacheReady(currentProfile.name)
+			const stats = await getCacheStats(currentProfile.name)
 			const needsRefresh = !stats.lastSync || Date.now() - stats.lastSync > 24 * 60 * 60 * 1000
 
 			// Always load payment methods for reliable offline support
@@ -306,7 +306,15 @@ export const usePOSSyncStore = defineStore("posSync", () => {
 				const customersData = await cacheCustomersFromServer(currentProfile.name)
 				await cacheData([], customersData.customers || [])
 
-				showSuccess(__("Data is ready for offline use"))
+				// Do not announce Offline Ready while the product catalog is still
+				// synchronizing. Product readiness is finalized by itemSearch only after
+				// every item batch and batch/serial metadata are cached successfully.
+				const itemStats = await getCacheStats(currentProfile.name)
+				if (itemStats.cacheReady) {
+					showSuccess(__("Data is ready for offline use"))
+				} else {
+					log.info("Customer data cached; product offline sync is still in progress")
+				}
 			}
 
 			// Preload invoice history and unpaid invoices in parallel for faster startup
@@ -371,10 +379,15 @@ export const usePOSSyncStore = defineStore("posSync", () => {
 	 * Check if offline cache is available and warn user if not
 	 * @returns {boolean} Whether cache is ready
 	 */
-	async function checkOfflineCacheAvailability() {
-		const cacheReady = await checkCacheReady()
+	async function checkOfflineCacheAvailability(posProfile = null) {
+		const cacheReady = await checkCacheReady(posProfile)
 		if (!cacheReady && isOffline.value) {
-			showWarning(__("POS is offline without cached data. Please connect to sync."))
+			const stats = await getCacheStats(posProfile)
+			if ((stats?.items || 0) > 0) {
+				showWarning(__("Some data may not be available offline"))
+			} else {
+				showWarning(__("POS is offline without cached data. Please connect to sync."))
+			}
 		}
 		return cacheReady
 	}
@@ -382,15 +395,15 @@ export const usePOSSyncStore = defineStore("posSync", () => {
 	/**
 	 * Check if the offline cache is ready
 	 */
-	async function checkCacheReady() {
-		return await offlineWorker.isCacheReady()
+	async function checkCacheReady(posProfile = null) {
+		return await offlineWorker.isCacheReady(posProfile)
 	}
 
 	/**
 	 * Get cache statistics
 	 */
-	async function getCacheStats() {
-		return await offlineWorker.getCacheStats()
+	async function getCacheStats(posProfile = null) {
+		return await offlineWorker.getCacheStats(posProfile)
 	}
 
 	// =========================================================================

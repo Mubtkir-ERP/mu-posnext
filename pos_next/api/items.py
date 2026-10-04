@@ -31,6 +31,42 @@ ITEM_RESULT_FIELDS = [
 ITEM_RESULT_COLUMNS = ",\n\t".join(ITEM_RESULT_FIELDS)
 
 
+def _attach_item_barcodes(items):
+	"""Attach lossless barcode/UOM metadata to item rows for offline caching.
+
+	The list endpoints historically returned GROUP_CONCAT strings which lose the
+	barcode -> UOM relationship and can be cached as one combined barcode.
+	Offline scanning needs the exact barcode rows, so enrich the current page in
+	one bulk query.
+	"""
+	if not items:
+		return items
+
+	item_codes = [item.get("item_code") for item in items if item.get("item_code")]
+	if not item_codes:
+		return items
+
+	rows = frappe.get_all(
+		"Item Barcode",
+		filters={"parent": ["in", item_codes]},
+		fields=["parent", "barcode", "uom", "idx"],
+		order_by="parent asc, idx asc",
+	)
+	barcode_map = defaultdict(list)
+	for row in rows:
+		if row.barcode:
+			barcode_map[row.parent].append({"barcode": row.barcode, "uom": row.uom})
+
+	for item in items:
+		details = barcode_map.get(item.get("item_code"), [])
+		item["item_barcodes"] = details
+		item["barcodes"] = [row["barcode"] for row in details]
+		# Keep the legacy field for existing UI code, but make it deterministic.
+		item["barcode"] = ",".join(item["barcodes"])
+
+	return items
+
+
 def get_stock_availability(item_code, warehouse):
 	"""Return total available quantity for an item in the given warehouse."""
 	if not warehouse:
@@ -404,6 +440,13 @@ def search_by_barcode(barcode, pos_profile):
 					uom_prices[p["uom"]] = p["price_list_rate"]
 
 		item_details["uom_prices"] = uom_prices
+		# Preserve the resolved Item Barcode row when this response is cached by
+		# the frontend. This makes subsequent standard scans work offline too.
+		item_details["item_barcodes"] = [
+			{"barcode": effective_barcode, "uom": barcode_uom}
+		] if effective_barcode else []
+		item_details["barcodes"] = [effective_barcode] if effective_barcode else []
+		item_details["barcode"] = effective_barcode or ""
 
 		# Apply resolved barcode data (weighted/priced) to the item details
 		if resolved_barcode_data:
@@ -1238,6 +1281,7 @@ def get_items(pos_profile, search_term=None, item_group=None, start=0, limit=20,
 
 		# Prepare maps for enrichment
 		item_codes = [item["item_code"] for item in items]
+		_attach_item_barcodes(items)
 		conversion_map = defaultdict(dict)  # parent -> {uom: factor}
 		uom_map = {}  # parent -> [ {uom, conversion_factor}, ... ]
 		uom_prices_map = {}  # item_code -> {uom: price_list_rate}
@@ -1564,6 +1608,7 @@ def get_items_bulk(pos_profile, item_groups=None, start=0, limit=2000, include_v
 
 		# Bulk enrichment (same as get_items)
 		item_codes = [item["item_code"] for item in items]
+		_attach_item_barcodes(items)
 		conversion_map = defaultdict(dict)
 		uom_map = {}
 		uom_prices_map = {}
@@ -1685,7 +1730,7 @@ def get_items_bulk(pos_profile, item_groups=None, start=0, limit=2000, include_v
 
 
 @frappe.whitelist()
-def get_items_count(pos_profile, item_group=None, brand=None, include_variants=0, show_variants_as_items=0):
+def get_items_count(pos_profile, item_group=None, brand=None, include_variants=0, show_variants_as_items=0, item_groups=None):
 	"""
 	Get total count of POS-eligible items for progress tracking and smart pagination.
 
@@ -1716,6 +1761,21 @@ def get_items_count(pos_profile, item_group=None, brand=None, include_variants=0
 			exclude_templates=exclude_templates,
 			hide_unavailable=hide_unavailable, warehouse=pos_profile_doc.warehouse,
 		)
+
+		# Optional multi-group count used by the offline synchronizer and the
+		# profile-filtered "All Items" view. Expand descendants once and count the
+		# union so overlapping parent/child filters are never double-counted.
+		if item_groups and not item_group:
+			if isinstance(item_groups, str):
+				item_groups = json.loads(item_groups)
+			all_groups = set()
+			for group in item_groups or []:
+				if group:
+					all_groups.update(_get_item_group_with_descendants(group))
+			if all_groups:
+				placeholders = ", ".join(["%s"] * len(all_groups))
+				conditions.append(f"i.item_group IN ({placeholders})")
+				params.extend(all_groups)
 
 		where_clause = " AND ".join(conditions)
 		query = f"""
@@ -2358,4 +2418,7 @@ def get_batch_serial_data_for_items(item_codes, warehouse):
 
 	except Exception as e:
 		frappe.log_error(frappe.get_traceback(), "Get Batch/Serial Data for Items Error")
-		return {}
+		# Offline readiness depends on this dataset. Surface the error so the
+		# frontend can retry the exact batch instead of silently marking an empty
+		# response as synchronized.
+		frappe.throw(_("Error fetching batch/serial data: {0}").format(str(e)))

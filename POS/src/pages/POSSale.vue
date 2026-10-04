@@ -1468,7 +1468,7 @@ onMounted(async () => {
 		const backgroundOps = Promise.allSettled([
 			cartStore.setDefaultCustomer(),
 			offlineStore.isOffline
-				? offlineStore.checkOfflineCacheAvailability()
+				? offlineStore.checkOfflineCacheAvailability(shiftStore.profileName)
 				: offlineStore.preloadDataForOffline(shiftStore.currentProfile),
 			draftsStore.updateDraftsCount(),
 		]);
@@ -1741,7 +1741,7 @@ async function handleStockSyncComplete(event) {
 
 		// Refresh cache stats to update the "Last Sync" timestamp in the tooltip
 		try {
-			const stats = await offlineWorker.getCacheStats();
+			const stats = await offlineWorker.getCacheStats(shiftStore.profileName);
 			itemStore.cacheStats = stats;
 		} catch (error) {
 			log.error("Failed to refresh cache stats:", error);
@@ -1804,7 +1804,7 @@ async function handleShiftOpened() {
 	const backgroundOps = Promise.allSettled([
 		cartStore.setDefaultCustomer(),
 		offlineStore.isOffline
-			? offlineStore.checkOfflineCacheAvailability()
+			? offlineStore.checkOfflineCacheAvailability(shiftStore.profileName)
 			: offlineStore.preloadDataForOffline(shiftStore.currentProfile),
 		draftsStore.updateDraftsCount(),
 	]);
@@ -2468,7 +2468,7 @@ async function handleRefresh() {
 		]);
 
 		// Refresh cache stats to update "Last Updated" timestamp
-		const stats = await offlineWorker.getCacheStats();
+		const stats = await offlineWorker.getCacheStats(shiftStore.profileName);
 		itemStore.cacheStats = stats;
 
 		log.success("Manual refresh completed (items, customers, stock)");
@@ -2526,7 +2526,7 @@ async function confirmClearCache() {
 			await stockStore.refresh(null, shiftStore.profileWarehouse);
 
 			// Update cache stats
-			const stats = await offlineWorker.getCacheStats();
+			const stats = await offlineWorker.getCacheStats(shiftStore.profileName);
 			itemStore.cacheStats = stats;
 
 			// Close overlay and reset state
