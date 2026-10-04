@@ -198,6 +198,7 @@
 import { usePOSPermissions } from "@/composables/usePermissions"
 import { useToast } from "@/composables/useToast"
 import { useCountriesStore } from "@/stores/countries"
+import { usePOSSettingsStore } from "@/stores/posSettings"
 import { logger } from "@/utils/logger"
 import { Button, Dialog, Input, createResource } from "frappe-ui"
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue"
@@ -210,6 +211,7 @@ const log = logger.create("CreateCustomerDialog")
 // =============================================================================
 
 const countriesStore = useCountriesStore()
+const posSettingsStore = usePOSSettingsStore()
 const { canCreateCustomer } = usePOSPermissions()
 const { showSuccess, showError } = useToast()
 
@@ -448,9 +450,22 @@ const loadDialogData = async () => {
 	// Lazy load countries (non-blocking)
 	countriesStore.loadCountries()
 
-	// Load form options
-	await territoriesResource.reload()
-	customerGroupsResource.reload()
+	// Ensure the profile-specific POS Settings are available so a new customer
+	// can inherit the configured default customer group.
+	if (props.posProfile && (
+		!posSettingsStore.isLoaded ||
+		posSettingsStore.settings.pos_profile !== props.posProfile
+	)) {
+		await posSettingsStore.loadSettings(props.posProfile)
+	}
+
+	// Load form options before applying the default.
+	await Promise.allSettled([territoriesResource.reload(), customerGroupsResource.reload()])
+
+	if (!isEditMode.value && !customerData.value.customer_group) {
+		customerData.value.customer_group = posSettingsStore.defaultCustomerGroup || ""
+	}
+
 	checkPermissions()
 
 	// Set country from POS Profile
@@ -492,7 +507,7 @@ const resetForm = () => {
 		customer_name: "",
 		mobile_no: "",
 		email_id: "",
-		customer_group: "",
+		customer_group: isEditMode.value ? "" : (posSettingsStore.defaultCustomerGroup || ""),
 		tax_id: "",
 		territory: "",
 	})

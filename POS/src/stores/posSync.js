@@ -313,16 +313,18 @@ export const usePOSSyncStore = defineStore("posSync", () => {
 			log.info('Loading invoice data for offline use')
 			try {
 				const [invoices, unpaidInvoices, unpaidSummary] = await Promise.all([
-					call("pos_next.api.invoices.get_invoices", {
+					call("pos_next.api.invoices.search_invoices", {
 						pos_profile: currentProfile.name,
-						limit: 100,
-					}).catch(err => {
+						page: 1,
+						page_length: 50,
+					}).then(result => result?.data || []).catch(err => {
 						log.error('Failed to load invoice history', err)
 						return []
 					}),
 					call("pos_next.api.partial_payments.get_unpaid_invoices", {
 						pos_profile: currentProfile.name,
-						limit: 100,
+						limit: 30,
+						include_payment_history: 0,
 					}).catch(err => {
 						log.error('Failed to load unpaid invoices', err)
 						return []

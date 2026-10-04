@@ -27,7 +27,7 @@
 						<div class="flex items-center gap-2">
 							<Button
 								@click="refreshCurrentTab"
-								:loading="loading"
+								:loading="loading || managementLoading"
 								variant="ghost"
 								size="sm"
 							>
@@ -299,12 +299,18 @@
 									<InvoiceFilters
 										:unique-customers="invoiceFilters.uniqueCustomers.value"
 										:unique-products="invoiceFilters.uniqueProducts.value"
-										:filter-stats="invoiceFilters.filterStats.value"
+										:filter-stats="managementFilterStats"
+										:server-mode="true"
 									/>
 								</div>
 
+								<div v-if="managementLoading && filteredHistoryInvoices.length === 0" class="flex flex-col items-center justify-center py-16">
+									<div class="animate-spin rounded-full h-10 w-10 border-b-2 border-indigo-500"></div>
+									<p class="mt-3 text-sm text-gray-500">{{ __('Loading invoices...') }}</p>
+								</div>
+
 								<!-- Empty State -->
-								<div v-if="filteredHistoryInvoices.length === 0" class="flex flex-col items-center justify-center py-16 text-center">
+								<div v-else-if="filteredHistoryInvoices.length === 0" class="flex flex-col items-center justify-center py-16 text-center">
 									<svg class="w-16 h-16 text-gray-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 										<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
 									</svg>
@@ -439,6 +445,11 @@
 										</div>
 									</div>
 								</div>
+								<div v-if="managementHasMore" class="flex justify-center mt-6">
+									<Button variant="subtle" :loading="managementLoading" @click="loadMoreManagement">
+										{{ __('Load More') }}
+									</Button>
+								</div>
 							</div>
 
 							<!-- Draft Invoices Tab -->
@@ -505,8 +516,12 @@
 
 							<!-- Return Invoices Tab -->
 							<div v-if="activeTab === 'returns'">
+								<div v-if="managementLoading && returnInvoices.length === 0" class="flex flex-col items-center justify-center py-16">
+									<div class="animate-spin rounded-full h-10 w-10 border-b-2 border-red-500"></div>
+									<p class="mt-3 text-sm text-gray-500">{{ __('Loading invoices...') }}</p>
+								</div>
 								<!-- Empty State -->
-								<div v-if="returnInvoices.length === 0" class="flex flex-col items-center justify-center py-16 text-center">
+								<div v-else-if="returnInvoices.length === 0" class="flex flex-col items-center justify-center py-16 text-center">
 									<svg class="w-16 h-16 text-gray-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 										<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"/>
 									</svg>
@@ -565,6 +580,11 @@
 										</div>
 									</div>
 								</div>
+								<div v-if="managementHasMore" class="flex justify-center mt-6">
+									<Button variant="subtle" :loading="managementLoading" @click="loadMoreManagement">
+										{{ __('Load More') }}
+									</Button>
+								</div>
 							</div>
 						</div>
 					</div>
@@ -620,11 +640,6 @@ const props = defineProps({
 		type: String,
 		default: DEFAULT_CURRENCY,
 	},
-	// Pass in data from parent stores
-	historyInvoices: {
-		type: Array,
-		default: () => [],
-	},
 	draftInvoices: {
 		type: Array,
 		default: () => [],
@@ -637,19 +652,33 @@ const emit = defineEmits([
 	"print-invoice",
 	"load-draft",
 	"delete-draft",
-	"refresh-history",
 ])
 
 const show = ref(props.modelValue)
 const loading = ref(false)
-const activeTab = ref("partial")
+const activeTab = ref("history")
 
 // Initialize filter store and composable
 const filterStore = useInvoiceFiltersStore()
 
-// Create a computed ref for history invoices to use with filter composable
-const historyInvoicesRef = computed(() => props.historyInvoices)
-const invoiceFilters = useInvoiceFilters(historyInvoicesRef)
+// Server-side paginated invoice management data. Only a small page is kept in
+// memory so low-spec POS terminals are not forced to render hundreds of cards.
+const managementInvoices = ref([])
+const managementTotal = ref(0)
+const managementHistoryTotal = ref(0)
+const managementReturnsTotal = ref(0)
+const managementPage = ref(1)
+const managementPageSize = 20
+const managementLoading = ref(false)
+const managementHasMore = computed(() => managementInvoices.value.length < managementTotal.value)
+const managementInvoicesRef = computed(() => managementInvoices.value)
+// Reuse only the lightweight option/stat helpers on the current page. Actual
+// filtering is done by the server across the full invoice history.
+const invoiceFilters = useInvoiceFilters(managementInvoicesRef)
+const managementFilterStats = computed(() => ({
+	filtered: managementTotal.value,
+	total: managementTotal.value,
+}))
 
 // Unpaid invoices data
 const unpaidInvoices = ref([])
@@ -693,28 +722,14 @@ const filteredUnpaidSummary = computed(() => {
 	}
 })
 
-// Return invoices (filtered from history)
-const returnInvoices = computed(() => {
-	const allInvoices = Array.isArray(props.historyInvoices)
-		? props.historyInvoices
-		: []
-	return allInvoices.filter((inv) => inv.is_return)
-})
-
-// Filtered history using the composable (exclude returns, show in separate tab)
-const filteredHistoryInvoices = computed(() => {
-	// Filter out return invoices, then apply all filters from the store
-	const allInvoices = Array.isArray(props.historyInvoices)
-		? props.historyInvoices
-		: []
-	const nonReturnInvoices = allInvoices.filter((inv) => !inv.is_return)
-
-	// Use the filter composable with non-return invoices
-	const tempInvoicesRef = computed(() => nonReturnInvoices)
-	const tempFilters = useInvoiceFilters(tempInvoicesRef)
-
-	return tempFilters.filteredInvoices.value
-})
+// Management data already arrives filtered from the server. Keeping these
+// computeds simple avoids rebuilding filter composables during Vue renders.
+const returnInvoices = computed(() =>
+	managementInvoices.value.filter((inv) => Boolean(inv.is_return)),
+)
+const filteredHistoryInvoices = computed(() =>
+	managementInvoices.value.filter((inv) => !inv.is_return),
+)
 
 // Tabs configuration
 const tabs = computed(() => [
@@ -732,7 +747,7 @@ const tabs = computed(() => [
 		icon: "M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z",
 		color: "indigo",
 		activeClass: "text-indigo-600",
-		badge: () => filteredHistoryInvoices.value.length,
+		badge: () => managementHistoryTotal.value,
 	},
 	{
 		id: "drafts",
@@ -748,7 +763,7 @@ const tabs = computed(() => [
 		icon: "M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6",
 		color: "red",
 		activeClass: "text-red-600",
-		badge: () => returnInvoices.value.length,
+		badge: () => managementReturnsTotal.value,
 	},
 ])
 
@@ -809,11 +824,11 @@ watch(
 	(val) => {
 		show.value = val
 		if (val) {
-			loadUnpaidInvoices()
-			loadUnpaidSummary()
-			// Also request history refresh if we don't have data
-			if (props.historyInvoices.length === 0) {
-				emit("refresh-history")
+			if (activeTab.value === "partial") {
+				loadUnpaidInvoices()
+				loadUnpaidSummary()
+			} else if (activeTab.value === "history" || activeTab.value === "returns") {
+				loadManagementInvoices(true)
 			}
 		}
 	},
@@ -823,14 +838,12 @@ watch(show, (val) => {
 	emit("update:modelValue", val)
 })
 
-// Watch for tab changes to emit refresh event for history/returns tabs
+// History/returns are queried on demand. This avoids loading the entire invoice
+// table when Invoice Management is opened.
 watch(activeTab, (newTab) => {
-	// Always emit refresh event when switching to history or returns tabs
-	// This ensures up-to-date outstanding amounts and invoice data
 	if (newTab === "history" || newTab === "returns") {
-		emit("refresh-history")
+		loadManagementInvoices(true)
 	} else if (newTab === "partial") {
-		// Refresh unpaid invoices when switching to partial tab
 		loadUnpaidInvoices()
 		loadUnpaidSummary()
 	}
@@ -844,16 +857,86 @@ function handleClose() {
 async function refreshCurrentTab() {
 	if (activeTab.value === "partial") {
 		await Promise.all([loadUnpaidInvoices(), loadUnpaidSummary()])
-	} else if (activeTab.value === "history") {
-		// Request parent to refresh history data
-		emit("refresh-history")
-	} else if (activeTab.value === "drafts") {
-		// Drafts are passed from parent, emit event if needed
-		emit("refresh-history")
-	} else if (activeTab.value === "returns") {
-		// Returns would also need a refresh
-		emit("refresh-history")
+	} else if (activeTab.value === "history" || activeTab.value === "returns") {
+		await loadManagementInvoices(true)
 	}
+}
+
+let managementSearchTimer = null
+
+function scheduleManagementSearch() {
+	if (activeTab.value !== "history" && activeTab.value !== "returns") return
+	if (managementSearchTimer) clearTimeout(managementSearchTimer)
+	managementSearchTimer = setTimeout(() => loadManagementInvoices(true), 350)
+}
+
+watch(
+	() => [
+		filterStore.searchTerm,
+		filterStore.dateFrom,
+		filterStore.dateTo,
+		filterStore.customer,
+		filterStore.status,
+		filterStore.product,
+		filterStore.customerNumber,
+		filterStore.posStatus,
+	],
+	() => scheduleManagementSearch(),
+)
+
+async function loadManagementInvoices(reset = false) {
+	if (!props.posProfile) return
+
+	if (isOffline()) {
+		managementInvoices.value = []
+		managementTotal.value = 0
+		return
+	}
+
+	if (reset) {
+		managementPage.value = 1
+		managementInvoices.value = []
+	}
+
+	managementLoading.value = true
+	try {
+		const result = await call("pos_next.api.invoices.search_invoices", {
+			pos_profile: props.posProfile,
+			page: managementPage.value,
+			page_length: managementPageSize,
+			search: filterStore.searchTerm || null,
+			date_from: filterStore.dateFrom || null,
+			date_to: filterStore.dateTo || null,
+			status: filterStore.status || null,
+			customer: filterStore.customer || null,
+			customer_phone: filterStore.customerNumber || null,
+			pos_status: filterStore.posStatus || null,
+			product: filterStore.product || null,
+			returns: activeTab.value === "returns" ? 1 : 0,
+		})
+
+		const rows = result?.data || []
+		managementInvoices.value = reset
+			? rows
+			: [...managementInvoices.value, ...rows]
+		managementTotal.value = result?.total || 0
+		if (activeTab.value === "returns") {
+			managementReturnsTotal.value = managementTotal.value
+		} else {
+			managementHistoryTotal.value = managementTotal.value
+		}
+	} catch (error) {
+		log.error("Error loading invoice management data:", error)
+		showError(error.message || __("Failed to load invoices"))
+	} finally {
+		managementLoading.value = false
+	}
+}
+
+async function loadMoreManagement() {
+	if (managementLoading.value || !managementHasMore.value) return
+	managementPage.value += 1
+	await loadManagementInvoices(false)
 }
 
 async function loadUnpaidInvoices() {
@@ -865,7 +948,7 @@ async function loadUnpaidInvoices() {
 	// Load cached data immediately for instant display
 	try {
 		const cachedInvoices = await getCachedUnpaidInvoices(props.posProfile, {
-			limit: 100,
+			limit: 30,
 		})
 		if (cachedInvoices && cachedInvoices.length > 0) {
 			unpaidInvoices.value = cachedInvoices
@@ -889,7 +972,8 @@ async function loadUnpaidInvoices() {
 			"pos_next.api.partial_payments.get_unpaid_invoices",
 			{
 				pos_profile: props.posProfile,
-				limit: 100,
+				limit: 30,
+				include_payment_history: 0,
 			},
 		)
 
@@ -972,8 +1056,8 @@ async function updatePosStatus(invoiceId, newStatus) {
         });
 		console.log("response", response)
         if (response.success) {
-          // Update local data - find invoice in historyInvoices array
-          const invoice = props.historyInvoices.find(inv => inv.name === invoiceId)
+          // Update the currently loaded management page without reloading all data
+          const invoice = managementInvoices.value.find(inv => inv.name === invoiceId)
           if (invoice) {
             invoice.pos_status = newStatus
           }
@@ -1025,9 +1109,6 @@ async function handlePaymentCompleted(paymentData) {
 		await loadUnpaidInvoices()
 		await loadUnpaidSummary()
 
-		// Also refresh history data to show updated outstanding amounts
-		emit("refresh-history")
-
 		selectedInvoice.value = null
 	} catch (error) {
 		console.error("Error adding payment:", error)
@@ -1067,14 +1148,13 @@ onMounted(() => {
 	// Load saved filter presets from localStorage
 	filterStore.loadSavedFiltersFromStorage()
 
-	// Default to "This Week" if no date filter is currently set
-	if (!filterStore.dateFrom && !filterStore.dateTo) {
-		filterStore.setThisWeek()
-	}
-
 	if (show.value) {
-		loadUnpaidInvoices()
-		loadUnpaidSummary()
+		if (activeTab.value === "partial") {
+			loadUnpaidInvoices()
+			loadUnpaidSummary()
+		} else if (activeTab.value === "history" || activeTab.value === "returns") {
+			loadManagementInvoices(true)
+		}
 	}
 })
 </script>

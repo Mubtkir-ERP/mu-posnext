@@ -781,96 +781,234 @@ def get_invoice(invoice_name):
 	return invoice.as_dict()
 
 
+def _normalize_phone_sql(expression):
+    """Normalize common phone formatting characters for SQL LIKE searches."""
+    return (
+        f"REPLACE(REPLACE(REPLACE(REPLACE(REPLACE({expression}, '+', ''), ' ', ''), '-', ''), '(', ''), ')', '')"
+    )
+
+
+def _phone_search_value(value):
+    """Return a tolerant phone fragment (Saudi local/international formats match)."""
+    digits = "".join(ch for ch in cstr(value or "") if ch.isdigit())
+    if len(digits) >= 9:
+        # Last 9 digits makes 05XXXXXXXX and 9665XXXXXXXX match each other.
+        return digits[-9:]
+    return digits
+
+
+def _get_invoice_phone_sql():
+    """Return SQL fragments for customer phone without assuming custom fields exist."""
+    sales_invoice_meta = frappe.get_meta("Sales Invoice")
+    customer_meta = frappe.get_meta("Customer")
+
+    phone_sources = []
+    normalized_sources = []
+
+    if sales_invoice_meta.has_field("custom_phone"):
+        phone_sources.append("NULLIF(si.custom_phone, '')")
+        normalized_sources.append(_normalize_phone_sql("COALESCE(si.custom_phone, '')"))
+
+    if customer_meta.has_field("mobile_no"):
+        phone_sources.append("NULLIF(c.mobile_no, '')")
+        normalized_sources.append(_normalize_phone_sql("COALESCE(c.mobile_no, '')"))
+
+    phone_expression = "COALESCE(" + ", ".join(phone_sources) + ", '')" if phone_sources else "''"
+    return phone_expression, normalized_sources
+
+
+@frappe.whitelist()
+def search_invoices(
+    pos_profile=None,
+    page=1,
+    page_length=30,
+    search=None,
+    date_from=None,
+    date_to=None,
+    status=None,
+    customer=None,
+    customer_phone=None,
+    pos_status=None,
+    product=None,
+    returns=None,
+    posa_pos_opening_shift=None,
+):
+    """
+    Lightweight, server-side paginated invoice search for POS.
+
+    - With ``posa_pos_opening_shift`` it is used by Invoice History and returns
+      only invoices from the current session.
+    - Without a shift it searches all POS invoices for the POS Profile company,
+      across sessions and POS profiles. This powers Invoice Management.
+    - Invoice items are *not* loaded. Full details are fetched only when a user
+      opens an invoice.
+    """
+    if not pos_profile:
+        frappe.throw(_("POS Profile is required"))
+
+    profile = frappe.db.get_value(
+        "POS Profile", pos_profile, ["name", "company"], as_dict=True
+    )
+    if not profile:
+        frappe.throw(_("POS Profile {0} does not exist").format(pos_profile))
+
+    has_access = frappe.db.exists(
+        "POS Profile User", {"parent": pos_profile, "user": frappe.session.user}
+    )
+    if not has_access and not frappe.has_permission("Sales Invoice", "read"):
+        frappe.throw(_("You don't have access to this POS Profile"))
+
+    sales_invoice_meta = frappe.get_meta("Sales Invoice")
+
+    page = max(cint(page), 1)
+    page_length = min(max(cint(page_length), 1), 100)
+    offset = (page - 1) * page_length
+
+    conditions = [
+        "si.company = %(company)s",
+        "si.docstatus = 1",
+        "si.is_pos = 1",
+    ]
+    params = {
+        "company": profile.company,
+        "limit": page_length,
+        "offset": offset,
+    }
+
+    if posa_pos_opening_shift:
+        conditions.append("si.posa_pos_opening_shift = %(posa_pos_opening_shift)s")
+        params["posa_pos_opening_shift"] = posa_pos_opening_shift
+
+    if returns not in (None, "", "all"):
+        return_value = cint(returns)
+        conditions.append("si.is_return = %(is_return)s")
+        params["is_return"] = 1 if return_value else 0
+
+    if date_from:
+        conditions.append("si.posting_date >= %(date_from)s")
+        params["date_from"] = date_from
+    if date_to:
+        conditions.append("si.posting_date <= %(date_to)s")
+        params["date_to"] = date_to
+    if status:
+        conditions.append("si.status = %(status)s")
+        params["status"] = status
+    if customer:
+        params["customer"] = f"%{cstr(customer).strip()}%"
+        conditions.append("(si.customer LIKE %(customer)s OR si.customer_name LIKE %(customer)s)")
+    if pos_status and sales_invoice_meta.has_field("pos_status"):
+        conditions.append("si.pos_status = %(pos_status)s")
+        params["pos_status"] = pos_status
+
+    phone_expression, normalized_phone_sources = _get_invoice_phone_sql()
+    pos_status_expression = "si.pos_status" if sales_invoice_meta.has_field("pos_status") else "''"
+
+    if customer_phone:
+        phone_value = _phone_search_value(customer_phone)
+        if phone_value and normalized_phone_sources:
+            params["customer_phone"] = f"%{phone_value}%"
+            conditions.append(
+                "("
+                + " OR ".join(
+                    f"{source} LIKE %(customer_phone)s" for source in normalized_phone_sources
+                )
+                + ")"
+            )
+
+    if search:
+        raw_search = cstr(search).strip()
+        params["search"] = f"%{raw_search}%"
+        general_search = [
+            "si.name LIKE %(search)s",
+            "si.customer LIKE %(search)s",
+            "si.customer_name LIKE %(search)s",
+        ]
+        phone_value = _phone_search_value(raw_search)
+        if len(phone_value) >= 5 and normalized_phone_sources:
+            params["search_phone"] = f"%{phone_value}%"
+            general_search.extend(
+                f"{source} LIKE %(search_phone)s" for source in normalized_phone_sources
+            )
+        conditions.append("(" + " OR ".join(general_search) + ")")
+
+    if product:
+        params["product"] = f"%{cstr(product).strip()}%"
+        conditions.append(
+            """EXISTS (
+                SELECT 1
+                FROM `tabSales Invoice Item` sii
+                WHERE sii.parent = si.name
+                  AND (sii.item_code LIKE %(product)s OR sii.item_name LIKE %(product)s)
+            )"""
+        )
+
+    where_clause = " AND ".join(conditions)
+
+    # Count is intentionally separate from the data query; both remain bounded
+    # and avoid the previous N+1 item query for every invoice.
+    total = frappe.db.sql(
+        f"""
+        SELECT COUNT(*)
+        FROM `tabSales Invoice` si
+        LEFT JOIN `tabCustomer` c ON c.name = si.customer
+        WHERE {where_clause}
+        """,
+        params,
+    )[0][0]
+
+    invoices = frappe.db.sql(
+        f"""
+        SELECT
+            si.name,
+            si.customer,
+            si.customer_name,
+            {phone_expression} AS custom_phone,
+            si.posting_date,
+            si.posting_time,
+            si.grand_total,
+            si.paid_amount,
+            si.outstanding_amount,
+            si.status,
+            {pos_status_expression} AS pos_status,
+            si.docstatus,
+            si.is_return,
+            si.return_against,
+            si.pos_profile,
+            si.posa_pos_opening_shift
+        FROM `tabSales Invoice` si
+        LEFT JOIN `tabCustomer` c ON c.name = si.customer
+        WHERE {where_clause}
+        ORDER BY si.posting_date DESC, si.posting_time DESC, si.creation DESC
+        LIMIT %(limit)s OFFSET %(offset)s
+        """,
+        params,
+        as_dict=True,
+    )
+
+    return {
+        "data": invoices,
+        "total": cint(total),
+        "page": page,
+        "page_length": page_length,
+        "has_more": offset + len(invoices) < cint(total),
+    }
+
+
 @frappe.whitelist()
 def get_invoices(pos_profile, limit=100, posa_pos_opening_shift=None):
-	"""
-	Get list of invoices for a POS Profile.
+    """Backward-compatible lightweight invoice list.
 
-	Args:
-		pos_profile: POS Profile name
-		limit: Maximum number of invoices to return (default 100)
-		posa_pos_opening_shift: Optional shift ID to filter by
-
-	Returns:
-		List of invoices with details
-	"""
-	if not pos_profile:
-		frappe.throw(_("POS Profile is required"))
-
-	# Check if user has access to this POS Profile
-	has_access = frappe.db.exists(
-		"POS Profile User",
-		{"parent": pos_profile, "user": frappe.session.user}
-	)
-
-	if not has_access and not frappe.has_permission("Sales Invoice", "read"):
-		frappe.throw(_("You don't have access to this POS Profile"))
-
-	# Query for invoices
-	cond = ""
-	if posa_pos_opening_shift:
-		cond = "AND posa_pos_opening_shift = %(posa_pos_opening_shift)s"
-
-	invoices = frappe.db.sql(f"""
-		SELECT
-			name,
-			customer,
-			customer_name,
-			custom_phone,
-			posting_date,
-			posting_time,
-			grand_total,
-			paid_amount,
-			outstanding_amount,
-			status,
-			pos_status,
-			docstatus,
-			is_return,
-			return_against,
-			posa_pos_opening_shift
-		FROM
-			`tabSales Invoice`
-		WHERE
-			pos_profile = %(pos_profile)s
-			AND docstatus = 1
-			AND is_pos = 1
-			{cond}
-		ORDER BY
-			posting_date DESC,
-			posting_time DESC
-		LIMIT %(limit)s
-	""", {
-		"pos_profile": pos_profile,
-		"limit": limit,
-		"posa_pos_opening_shift": posa_pos_opening_shift
-	}, as_dict=True)
-
-	# Load items for each invoice for filtering purposes
-	for invoice in invoices:
-		items = frappe.db.sql("""
-			SELECT
-				item_code,
-				item_name,
-				qty,
-				rate,
-				amount
-			FROM
-				`tabSales Invoice Item`
-			WHERE
-				parent = %(invoice_name)s
-			ORDER BY
-				idx
-		""", {
-			"invoice_name": invoice.name
-		}, as_dict=True)
-		invoice.items = items
-
-	return invoices
-
-
-# ==========================================
-# Draft Invoice Management
-# ==========================================
+    The old implementation executed one extra item query per invoice. Keep the
+    public API for callers, but delegate to the paginated search path so legacy
+    callers no longer trigger N+1 database queries.
+    """
+    result = search_invoices(
+        pos_profile=pos_profile,
+        page=1,
+        page_length=min(max(cint(limit), 1), 100),
+        posa_pos_opening_shift=posa_pos_opening_shift,
+    )
+    return result.get("data", [])
 
 
 @frappe.whitelist()

@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.17.0] - 2026-10-04
+
+### Changed
+- Invoice History is strictly scoped to the current POS opening shift.
+- Invoice Management searches all submitted POS invoices for the current company across sessions and POS profiles.
+- Added server-side pagination with 20 invoices per page and on-demand Load More.
+- Added server-side search by invoice number, customer name/code, customer phone, date, payment status, POS status, and product.
+- Saudi phone search tolerates local and international formats by matching normalized phone digits.
+- Removed the 1000-invoice preload and the N+1 item-query pattern from invoice history.
+- Full invoice items/details are loaded only when the invoice is opened, paid, or printed.
+- Invoice Management opens on History and no longer preloads unrelated datasets.
+- Unpaid management list uses 30 lightweight rows; payment history is loaded on demand.
+- Startup invoice pre-cache uses 50 lightweight invoice rows and 30 unpaid rows.
+
+### Performance
+- Enabled a search index for the POS Opening Shift field on Sales Invoice.
+
+
+## [1.16.1] - 2026-10-03
+
+### Added
+- **Default Customer Group for POS customer creation**
+  - New `Default Customer Group` setting in POS Settings.
+  - The setting is available both in Desk POS Settings and the POS in-app Sales Management settings.
+  - New customers automatically preselect the configured group while allowing the cashier to change it before saving.
+  - Backend customer creation uses the same setting when no group is supplied, with `Individual` retained as the compatibility fallback.
+  - Only leaf Customer Groups can be selected as the default.
+
+### Fixed
+- Customer creation API now accepts the Tax ID already sent by the POS customer dialog, preventing an unexpected-argument failure during customer creation.
+
 ## [1.16.0] - 2026-04-01
 
 ### Added

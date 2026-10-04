@@ -14,6 +14,13 @@ class POSSettings(Document):
 		if max_discount < 0 or max_discount > 100:
 			frappe.throw("Max Discount Allowed must be between 0 and 100")
 
+		# Default customer group must be a selectable leaf group.
+		default_customer_group = self.get("default_customer_group")
+		if default_customer_group:
+			is_group = frappe.db.get_value("Customer Group", default_customer_group, "is_group")
+			if cint(is_group):
+				frappe.throw("Default Customer Group must be a non-group (leaf) Customer Group")
+
 		# Guard against None values and validate search limit
 		if self.use_limit_search:
 			search_limit = cint(self.search_limit)

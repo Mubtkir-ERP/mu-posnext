@@ -8,6 +8,7 @@ from pos_next.api.customers import (
     _get_customer_assignment_context,
     create_customer,
     get_customers,
+    get_default_customer_group,
     get_default_loyalty_program_from_settings,
 )
 
@@ -65,6 +66,26 @@ class TestCustomersAPI(unittest.TestCase):
 
         self.assertIsNone(result)
 
+
+    @patch("pos_next.api.customers.frappe.db")
+    def test_get_default_customer_group_uses_pos_settings(self, mock_db):
+        mock_db.get_value.return_value = "Retail Customers"
+
+        result = get_default_customer_group("POS-A")
+
+        self.assertEqual(result, "Retail Customers")
+        mock_db.get_value.assert_called_once_with(
+            "POS Settings",
+            {"enabled": 1, "pos_profile": "POS-A"},
+            "default_customer_group",
+        )
+
+    @patch("pos_next.api.customers.frappe.db")
+    def test_get_default_customer_group_keeps_individual_fallback(self, mock_db):
+        mock_db.get_value.return_value = None
+
+        self.assertEqual(get_default_customer_group("POS-A"), "Individual")
+
     @patch("pos_next.api.customers.frappe.local", new=Mock(form_dict={"company": "Company A", "pos_profile": "POS-A"}))
     @patch("pos_next.api.customers.frappe.flags", new=Mock(pos_next_customer_company=None, pos_next_customer_pos_profile=None))
     def test_get_customer_assignment_context_uses_request_context(self):
@@ -100,3 +121,30 @@ class TestCustomersAPI(unittest.TestCase):
         mock_get_loyalty.assert_called_once_with(company=None, pos_profile="POS-A")
         customer_doc.insert.assert_called_once_with()
         self.assertEqual(result["loyalty_program"], "LOYALTY-A")
+
+    @patch("pos_next.api.customers.frappe.flags", new=Mock(pos_next_customer_company=None, pos_next_customer_pos_profile=None))
+    @patch("pos_next.api.customers.frappe.get_doc")
+    @patch("pos_next.api.customers.get_default_customer_group")
+    @patch("pos_next.api.customers.get_default_loyalty_program_from_settings")
+    @patch("pos_next.api.customers.frappe.has_permission")
+    def test_create_customer_uses_configured_default_customer_group_when_omitted(
+        self,
+        mock_has_permission,
+        mock_get_loyalty,
+        mock_get_default_group,
+        mock_get_doc,
+    ):
+        mock_has_permission.return_value = True
+        mock_get_loyalty.return_value = None
+        mock_get_default_group.return_value = "Retail Customers"
+
+        customer_doc = Mock()
+        customer_doc.as_dict.return_value = {"name": "CUST-0002"}
+        mock_get_doc.return_value = customer_doc
+
+        create_customer(customer_name="Jane Doe", pos_profile="POS-A")
+
+        mock_get_default_group.assert_called_once_with("POS-A")
+        payload = mock_get_doc.call_args.args[0]
+        self.assertEqual(payload["customer_group"], "Retail Customers")
+

@@ -11,7 +11,7 @@
 						<Input
 							v-model="searchTerm"
 							type="text"
-							:placeholder="__('Search by invoice number or customer...')"
+							:placeholder="__('Search by invoice number, customer, or phone...')"
 							@input="searchInvoices"
 						>
 							<template #prefix>
@@ -190,51 +190,32 @@ const isLoadingMore = ref(false)
 
 // Create resource for loading invoices
 const invoicesResource = createResource({
-	url: "frappe.client.get_list",
+	url: "pos_next.api.invoices.search_invoices",
 	makeParams() {
 		return {
-			doctype: "Sales Invoice",
-			filters: {
-				is_pos: 1,
-				...(props.posProfile && { pos_profile: props.posProfile }),
-				...(props.posOpeningShift && { posa_pos_opening_shift: props.posOpeningShift }),
-			},
-			fields: [
-				"name",
-				"customer",
-				"customer_name",
-				"posting_date",
-				"posting_time",
-				"grand_total",
-				"status",
-				"docstatus",
-				"is_return",
-			],
-			order_by: "modified desc",
-			limit_start: page.value * pageSize,
-			limit_page_length: pageSize,
+			pos_profile: props.posProfile,
+			posa_pos_opening_shift: props.posOpeningShift,
+			page: page.value + 1,
+			page_length: pageSize,
+			search: searchTerm.value.trim() || null,
 		}
 	},
 	auto: false,
-	onSuccess(data) {
-		if (data && Array.isArray(data)) {
-			const newInvoices = data.map((inv) => ({
-				...inv,
-				items_count: 0,
-			}))
+	onSuccess(result) {
+		const data = result?.data || []
+		const newInvoices = data.map((inv) => ({
+			...inv,
+			items_count: 0,
+		}))
 
-			if (isLoadingMore.value) {
-				// Append to existing list
-				invoices.value = [...invoices.value, ...newInvoices]
-			} else {
-				// Replace the list
-				invoices.value = newInvoices
-			}
-
-			// Check if there are more results
-			hasMore.value = data.length === pageSize
-			isLoadingMore.value = false
+		if (isLoadingMore.value) {
+			invoices.value = [...invoices.value, ...newInvoices]
+		} else {
+			invoices.value = newInvoices
 		}
+
+		hasMore.value = Boolean(result?.has_more)
+		isLoadingMore.value = false
 	},
 	onError(error) {
 		console.error("Error loading invoices:", error)
@@ -247,8 +228,11 @@ watch(
 	() => props.modelValue,
 	(val) => {
 		show.value = val
-		if (val && props.posProfile) {
-			invoicesResource.reload()
+		if (val && props.posProfile && props.posOpeningShift) {
+			loadInvoices()
+		} else if (val) {
+			invoices.value = []
+			hasMore.value = false
 		}
 	},
 )
@@ -264,19 +248,10 @@ watch(showReturnDialog, (val) => {
 	}
 })
 
-const filteredInvoices = computed(() => {
-	if (!searchTerm.value) return invoices.value
-
-	const term = searchTerm.value.toLowerCase()
-	return invoices.value.filter(
-		(inv) =>
-			inv.name.toLowerCase().includes(term) ||
-			inv.customer_name?.toLowerCase().includes(term),
-	)
-})
+const filteredInvoices = computed(() => invoices.value)
 
 function loadInvoices() {
-	if (props.posProfile) {
+	if (props.posProfile && props.posOpeningShift) {
 		// Reset to first page for fresh load
 		page.value = 0
 		isLoadingMore.value = false
@@ -285,13 +260,21 @@ function loadInvoices() {
 }
 
 function loadMore() {
+	if (!props.posOpeningShift) return
 	page.value++
 	isLoadingMore.value = true
 	invoicesResource.reload()
 }
 
+let searchTimer = null
 function searchInvoices() {
-	// Debounced search - already filtered by computed property
+	if (searchTimer) clearTimeout(searchTimer)
+	searchTimer = setTimeout(() => {
+		if (!props.posOpeningShift) return
+		page.value = 0
+		isLoadingMore.value = false
+		invoicesResource.reload()
+	}, 350)
 }
 
 function viewInvoice(invoice) {
@@ -316,8 +299,8 @@ function openReturnModal(invoice) {
 }
 
 function handleReturnCreated(returnInvoice) {
-	// Refresh the invoice list to show updated statuses
-	invoicesResource.reload()
+	// Refresh the current-session list from the first page.
+	loadInvoices()
 	// Emit the event to parent
 	emit("return-created", returnInvoice)
 }

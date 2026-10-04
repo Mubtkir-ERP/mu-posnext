@@ -50,6 +50,7 @@
   "decimal_precision",
   "tax_inclusive",
   "section_break_customer",
+  "default_customer_group",
   "allow_customer_purchase_order",
   "allow_duplicate_customer_names",
   "fetch_coupon",
@@ -393,6 +394,13 @@
    "fieldname": "section_break_customer",
    "fieldtype": "Section Break",
    "label": "Customer Settings"
+  },
+  {
+   "description": "Default customer group preselected when creating a new customer from POS. The cashier can still change it before saving.",
+   "fieldname": "default_customer_group",
+   "fieldtype": "Link",
+   "label": "Default Customer Group",
+   "options": "Customer Group"
   },
   {
    "default": "0",

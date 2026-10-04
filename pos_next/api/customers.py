@@ -73,13 +73,32 @@ def get_customers(search_term="", pos_profile=None, limit=20, modified_since=Non
         frappe.throw(_("Error fetching customers: {0}").format(str(e)))
 
 
+def get_default_customer_group(pos_profile=None):
+    """Return the configured default customer group for a POS profile.
+
+    Falls back to ``Individual`` to preserve the existing POSNext behavior when
+    no profile-specific default has been configured.
+    """
+    if pos_profile:
+        customer_group = frappe.db.get_value(
+            "POS Settings",
+            {"enabled": 1, "pos_profile": pos_profile},
+            "default_customer_group",
+        )
+        if customer_group:
+            return customer_group
+
+    return "Individual"
+
+
 @frappe.whitelist()
 def create_customer(
     customer_name,
     mobile_no=None,
     email_id=None,
-    customer_group="Individual",
+    customer_group=None,
     territory="All Territories",
+    tax_id=None,
     company=None,
     pos_profile=None,
 ):
@@ -90,8 +109,9 @@ def create_customer(
         customer_name (str): Customer name (required)
         mobile_no (str): Mobile number (optional)
         email_id (str): Email address (optional)
-        customer_group (str): Customer group (default: Individual)
+        customer_group (str): Customer group. If omitted, uses POS Settings default, then Individual.
         territory (str): Territory (default: All Territories)
+        tax_id (str): Tax ID (optional)
         company (str): Company (optional, used to auto-assign loyalty program)
         pos_profile (str): POS Profile (optional, preferred for context-aware loyalty assignment)
 
@@ -109,16 +129,18 @@ def create_customer(
         company=company,
         pos_profile=pos_profile,
     )
+    resolved_customer_group = customer_group or get_default_customer_group(pos_profile)
 
     customer = frappe.get_doc(
         {
             "doctype": "Customer",
             "customer_name": customer_name,
             "customer_type": "Individual",
-            "customer_group": customer_group or "Individual",
+            "customer_group": resolved_customer_group,
             "territory": territory or "All Territories",
             "mobile_no": mobile_no or "",
             "email_id": email_id or "",
+            "tax_id": tax_id or "",
             "loyalty_program": loyalty_program,
         }
     )

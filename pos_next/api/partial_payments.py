@@ -571,7 +571,7 @@ def get_partial_paid_invoices(pos_profile: str, limit: int = DEFAULT_INVOICE_LIM
 
 
 @frappe.whitelist()
-def get_unpaid_invoices(pos_profile: str, limit: int = DEFAULT_INVOICE_LIMIT) -> List[Dict]:
+def get_unpaid_invoices(pos_profile: str, limit: int = DEFAULT_INVOICE_LIMIT, include_payment_history: int = 0) -> List[Dict]:
     """
     Get all unpaid invoices (partial + fully unpaid) for a POS Profile.
 
@@ -585,7 +585,8 @@ def get_unpaid_invoices(pos_profile: str, limit: int = DEFAULT_INVOICE_LIMIT) ->
         limit: Maximum invoices to return (default 50, max 500)
 
     Returns:
-        List[dict]: Unpaid invoices with payment history
+        List[dict]: Lightweight unpaid invoice rows. Payment history is loaded
+        only when explicitly requested; full details are fetched when opening an invoice.
 
     Raises:
         frappe.ValidationError: If validation fails
@@ -637,9 +638,12 @@ def get_unpaid_invoices(pos_profile: str, limit: int = DEFAULT_INVOICE_LIMIT) ->
         limit=limit,
     )
 
-    # Enrich with payment history
-    for invoice in invoices:
-        enrich_invoice_with_payment_history(invoice, include_metadata=True)
+    # Payment history used to be fetched for every row, causing an N+1 query
+    # pattern on low-spec POS terminals. Load it only for callers that truly need
+    # it; the management UI fetches full details on demand.
+    if cint(include_payment_history):
+        for invoice in invoices:
+            enrich_invoice_with_payment_history(invoice, include_metadata=True)
 
     return invoices
 

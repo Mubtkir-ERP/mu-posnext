@@ -684,13 +684,11 @@
 				v-model="showInvoiceManagement"
 				:pos-profile="shiftStore.profileName"
 				:currency="shiftStore.profileCurrency"
-				:history-invoices="invoiceHistoryData"
 				:draft-invoices="draftsStore.drafts"
 				@view-invoice="handleViewInvoice"
 				@print-invoice="handlePrintInvoice"
 				@load-draft="handleLoadDraftFromManagement"
 				@delete-draft="handleDeleteDraft"
-				@refresh-history="loadInvoiceHistoryData"
 			/>
 
 			<!-- Invoice Detail Dialog -->
@@ -1060,7 +1058,6 @@ import { useUserData } from "@/data/user";
 import { parseError } from "@/utils/errorHandler";
 import { cleanupUserSession } from "@/utils/sessionCleanup";
 import { offlineWorker } from "@/utils/offline/workerClient";
-import { cacheInvoiceHistory, getCachedInvoiceHistory } from "@/utils/offline/sync";
 import { printInvoice, printInvoiceByName, printWithSilentFallback } from "@/utils/printInvoice";
 import { printKitchenTickets } from "@/utils/printKitchen";
 import { qzConnected, connect as qzConnect, disconnect as qzDisconnect } from "@/utils/qzTray";
@@ -1175,7 +1172,6 @@ const showInvoiceDetail = ref(false);
 const selectedInvoiceForView = ref(null);
 
 // Invoice history data (used by InvoiceManagement component)
-const invoiceHistoryData = ref([]);
 
 // Stock sync status
 const isStockSyncActive = ref(false);
@@ -2763,73 +2759,13 @@ function handleManagementMenuClick(menuItem) {
 	} else if (menuItem === "settings") {
 		showPOSSettings.value = true;
 	} else if (menuItem === "invoices") {
-		// Load invoice history data before showing
-		loadInvoiceHistoryData();
-		// Load drafts data
+		// Invoice Management loads paginated data on demand. Avoid preloading
+		// hundreds of invoices before opening the screen.
 		draftsStore.loadDrafts();
 		showInvoiceManagement.value = true;
 	} else if (menuItem === "products") {
 		// Open Stock Lookup dialog in search mode
 		showStockLookup.value = true;
-	}
-}
-
-// Load invoice history data
-async function loadInvoiceHistoryData() {
-	log.info("Loading invoice history data for profile:", shiftStore.profileName);
-
-	// Also reload drafts
-	await draftsStore.loadDrafts();
-
-	// Check if offline - use cached data
-	if (offlineStore.isOffline) {
-		log.info("Offline mode - loading invoice history from cache");
-		try {
-			const cachedInvoices = await getCachedInvoiceHistory(shiftStore.profileName, {
-				limit: 100,
-			});
-			invoiceHistoryData.value = cachedInvoices || [];
-			log.info("Loaded", invoiceHistoryData.value.length, "invoices from offline cache");
-		} catch (error) {
-			log.error("Error loading cached invoice history:", error);
-			invoiceHistoryData.value = [];
-		}
-		return;
-	}
-
-	try {
-		// Use custom API from pos_next.api.invoices
-		const result = await call("pos_next.api.invoices.get_invoices", {
-			pos_profile: shiftStore.profileName,
-			limit: 1000,
-			posa_pos_opening_shift: shiftStore.shiftId,
-		});
-
-		invoiceHistoryData.value = result || [];
-		log.info("Loaded invoice history:", invoiceHistoryData.value.length, "invoices");
-
-		// Cache invoices for offline use
-		if (result && result.length > 0) {
-			cacheInvoiceHistory(result, shiftStore.profileName);
-		}
-	} catch (error) {
-		log.error("Error loading invoice history:", error);
-
-		// Fallback to cached data on error
-		try {
-			const cachedInvoices = await getCachedInvoiceHistory(shiftStore.profileName, {
-				limit: 100,
-			});
-			if (cachedInvoices && cachedInvoices.length > 0) {
-				invoiceHistoryData.value = cachedInvoices;
-				log.info("Loaded", cachedInvoices.length, "invoices from cache (fallback)");
-				return;
-			}
-		} catch (cacheError) {
-			log.error("Error loading fallback cache:", cacheError);
-		}
-
-		invoiceHistoryData.value = [];
 	}
 }
 

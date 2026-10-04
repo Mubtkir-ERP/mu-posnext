@@ -10,7 +10,7 @@
 					v-model="store.searchTerm"
 					type="text"
 					class="search-input"
-					:placeholder="__('Search invoices...')"
+					:placeholder="props.serverMode ? __('Search invoice, customer, or phone...') : __('Search invoices...')"
 				/>
 				<button
 					v-if="store.searchTerm"
@@ -115,7 +115,15 @@
 							</svg>
 							{{ __('Customer') }}
 						</label>
+						<input
+							v-if="props.serverMode"
+							v-model="store.customer"
+							type="text"
+							class="field-input"
+							:placeholder="__('Search customer name...')"
+						/>
 						<AutocompleteSelect
+							v-else
 							v-model="store.customer"
 							:options="props.uniqueCustomers"
 							:placeholder="__('Search customers...')"
@@ -148,7 +156,15 @@
 							</svg>
 							{{ __('Product') }}
 						</label>
+						<input
+							v-if="props.serverMode"
+							v-model="store.product"
+							type="text"
+							class="field-input"
+							:placeholder="__('Search product code or name...')"
+						/>
 						<AutocompleteSelect
+							v-else
 							v-model="store.product"
 							:options="props.uniqueProducts"
 							:placeholder="__('Search products...')"
@@ -275,6 +291,10 @@ const props = defineProps({
 	filterStats: {
 		type: Object,
 		default: null,
+	},
+	serverMode: {
+		type: Boolean,
+		default: false,
 	},
 })
 

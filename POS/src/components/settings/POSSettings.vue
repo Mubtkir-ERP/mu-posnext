@@ -541,6 +541,23 @@
 											</div>
 										</div>
 									</div>
+
+
+									<!-- Customer Settings -->
+									<div :class="customerSubsectionClasses.container">
+										<div class="flex items-center gap-2 mb-4">
+											<svg :class="customerSubsectionClasses.icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+												<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" :d="icons.checkCircle"/>
+											</svg>
+											<h4 class="text-sm font-semibold text-gray-900">{{ __('Customer Settings') }}</h4>
+										</div>
+										<SelectField
+											v-model="settings.default_customer_group"
+											:label="__('Default Customer Group')"
+											:options="customerGroupOptions"
+											:description="__('Default group for new customers. You can change it while creating the customer.')"
+										/>
+									</div>
 								</div>
 							</div>
 
@@ -599,6 +616,7 @@ const activeTab = ref('stock')
 const loading = ref(true)
 const saving = ref(false)
 const warehousesList = ref([])
+const customerGroupsList = ref([])
 const selectedWarehouse = ref(props.currentWarehouse || "")
 const settings = ref({
 	pos_profile: props.posProfile || "",
@@ -617,6 +635,7 @@ const settings = ref({
 	silent_print: 0,
 	allow_negative_stock: 0,
 	tax_inclusive: 0,
+	default_customer_group: "",
 })
 
 // Stock Sync Settings (localStorage persisted)
@@ -657,6 +676,10 @@ const warehouseOptions = computed(() => {
 	}))
 })
 
+const customerGroupOptions = computed(() =>
+	customerGroupsList.value.map((name) => ({ label: name, value: name })),
+)
+
 // Dynamic classes using configuration helpers (DRY principle)
 const stockSectionClasses = computed(() => getSectionHeaderClasses("purple"))
 const salesSectionClasses = computed(() => getSectionHeaderClasses("green"))
@@ -667,6 +690,7 @@ const stockPolicySubsectionClasses = computed(() =>
 const stockSyncSubsectionClasses = computed(() => getSubsectionClasses("indigo"))
 const pricingSubsectionClasses = computed(() => getSubsectionClasses("emerald"))
 const operationsSubsectionClasses = computed(() => getSubsectionClasses("teal"))
+const customerSubsectionClasses = computed(() => getSubsectionClasses("blue"))
 
 // Resources
 const warehousesResource = createResource({
@@ -683,6 +707,27 @@ const warehousesResource = createResource({
 	},
 	onError(error) {
 		warehousesList.value = []
+	},
+})
+
+const customerGroupsResource = createResource({
+	url: "frappe.client.get_list",
+	makeParams() {
+		return {
+			doctype: "Customer Group",
+			fields: ["name"],
+			filters: { is_group: 0 },
+			order_by: "name asc",
+			limit_page_length: 500,
+		}
+	},
+	auto: false,
+	onSuccess(data) {
+		const groups = data?.message || data || []
+		customerGroupsList.value = groups.map((group) => group.name)
+	},
+	onError() {
+		customerGroupsList.value = []
 	},
 })
 
@@ -771,6 +816,9 @@ async function loadSettings() {
 	selectedWarehouse.value = props.currentWarehouse || ""
 
 	try {
+		// Load selectable customer groups for the default customer group setting.
+		customerGroupsResource.reload()
+
 		// Load warehouses first using call API directly
 		const warehousesData = await call(
 			"pos_next.api.pos_profile.get_warehouses",

@@ -3,6 +3,11 @@
 
 frappe.ui.form.on("POS Settings", {
 	refresh(frm) {
+		// Only allow selectable (leaf) customer groups as the default for new customers.
+		frm.set_query("default_customer_group", function () {
+			return { filters: { is_group: 0 } };
+		});
+
 		// Set query for loyalty program filtered by POS Profile company
 		frm.set_query("default_loyalty_program", function () {
 			if (!frm.doc.__company) {
