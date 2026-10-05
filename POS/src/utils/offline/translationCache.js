@@ -22,6 +22,9 @@ const log = logger.create("TranslationCache")
 /** @constant {number} Cache time-to-live in milliseconds (24 hours) */
 const CACHE_TTL = 24 * 60 * 60 * 1000
 
+/** Bump whenever bundled translations change so stale IndexedDB dictionaries are discarded. */
+const CACHE_SCHEMA_VERSION = 3
+
 /** @type {Map<string, TranslationEntry>} In-memory cache for fast lookups */
 const memoryCache = new Map()
 
@@ -52,7 +55,7 @@ const normalizeLocale = (locale) => (locale || "en").toLowerCase()
  */
 async function persist(locale, messages, timestamp) {
 	try {
-		const entry = { locale, messages, timestamp }
+		const entry = { locale, messages, timestamp, cacheVersion: CACHE_SCHEMA_VERSION }
 		memoryCache.set(locale, entry)
 		await db.translations.put(entry)
 		return entry
@@ -76,6 +79,13 @@ async function read(locale) {
 
 	try {
 		const stored = await db.translations.get(locale)
+		if (stored && stored.cacheVersion !== CACHE_SCHEMA_VERSION) {
+			// The application shipped a newer translation bundle. Do not keep
+			// serving the previous dictionary for the remainder of the 24h TTL.
+			await db.translations.delete(locale)
+			memoryCache.delete(locale)
+			return null
+		}
 		if (stored) {
 			memoryCache.set(locale, stored)
 		}

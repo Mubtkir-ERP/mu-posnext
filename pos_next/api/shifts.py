@@ -8,6 +8,7 @@ import frappe
 from frappe import _
 from frappe.utils import nowdate, nowtime, get_datetime
 from pos_next.api.utilities import get_wallet_payment_modes
+from pos_next.api.security import require_pos_profile_access, require_shift_access
 
 
 @frappe.whitelist()
@@ -68,9 +69,14 @@ def get_opening_dialog_data():
 
 @frappe.whitelist()
 def check_opening_shift(user=None):
-	"""Check if user has an open shift"""
-	if not user:
-		user = frappe.session.user
+	"""Check if the current user has an open shift.
+
+	A caller cannot inspect another cashier's shift through this endpoint.
+	"""
+	requested_user = user or frappe.session.user
+	if requested_user != frappe.session.user and frappe.session.user != "Administrator" and "System Manager" not in frappe.get_roles(frappe.session.user):
+		frappe.throw(_("You cannot inspect another user's POS shift."), frappe.PermissionError)
+	user = requested_user
 
 	open_shifts = frappe.db.get_all(
 		"POS Opening Shift",
@@ -105,6 +111,10 @@ def create_opening_shift(pos_profile, company, balance_details):
 	"""Create a new POS Opening Shift"""
 	balance_details = json.loads(balance_details) if isinstance(balance_details, str) else balance_details
 
+	# Authorize the cashier against the profile and never trust company from the client.
+	profile = require_pos_profile_access(pos_profile, company=company)
+	company = profile.company
+
 	# Check if user already has an open shift
 	existing_shift = check_opening_shift(frappe.session.user)
 	if existing_shift:
@@ -123,17 +133,35 @@ def create_opening_shift(pos_profile, company, balance_details):
 		}
 	)
 
-	# Add balance details - map opening_amount to amount
+	# Add balance details only for payment modes configured on this profile.
+	allowed_modes = set(
+		frappe.get_all(
+			"POS Payment Method",
+			filters={"parent": pos_profile, "parenttype": "POS Profile"},
+			pluck="mode_of_payment",
+		)
+	)
 	formatted_balance_details = []
-	for detail in balance_details:
+	for detail in balance_details or []:
+		mode = detail.get("mode_of_payment")
+		if not mode or mode not in allowed_modes:
+			frappe.throw(
+				_("Mode of Payment {0} is not configured for POS Profile {1}.").format(mode or "", pos_profile),
+				frappe.PermissionError,
+			)
 		formatted_balance_details.append({
-			"mode_of_payment": detail.get("mode_of_payment"),
+			"mode_of_payment": mode,
 			"amount": detail.get("opening_amount", 0)
 		})
 
 	new_pos_opening.set("balance_details", formatted_balance_details)
-	new_pos_opening.insert(ignore_permissions=True)
-	new_pos_opening.submit()
+	# Bounded permission bypass after profile/user/company authorization above.
+	new_pos_opening.flags.ignore_permissions = True
+	try:
+		new_pos_opening.insert(ignore_permissions=True)
+		new_pos_opening.submit()
+	finally:
+		new_pos_opening.flags.ignore_permissions = False
 
 	data = {}
 	data["pos_opening_shift"] = new_pos_opening.as_dict()
@@ -145,11 +173,12 @@ def create_opening_shift(pos_profile, company, balance_details):
 
 @frappe.whitelist()
 def get_closing_shift_data(opening_shift):
-	"""Get data for closing shift"""
+	"""Get data for closing shift for the current cashier only."""
 	from pos_next.pos_next.doctype.pos_closing_shift.pos_closing_shift import make_closing_shift_from_opening
 
 	try:
-		# Get the opening shift document
+		require_shift_access(opening_shift, require_open=True)
+		# Get the trusted opening shift document
 		opening_shift_doc = frappe.get_doc("POS Opening Shift", opening_shift)
 
 		# Convert to dict with proper datetime serialization
@@ -168,16 +197,21 @@ def get_closing_shift_data(opening_shift):
 
 @frappe.whitelist()
 def submit_closing_shift(closing_shift):
-	"""Submit closing shift"""
+	"""Submit a POS Closing Shift after validating the session context."""
 	from pos_next.pos_next.doctype.pos_closing_shift.pos_closing_shift import submit_closing_shift as submit_shift
 
 	try:
-		# closing_shift is already a JSON string from frontend
-		# If it's a dict, convert to JSON string
-		if isinstance(closing_shift, dict):
-			closing_shift = json.dumps(closing_shift)
-
-		result = submit_shift(closing_shift)
+		payload = json.loads(closing_shift) if isinstance(closing_shift, str) else dict(closing_shift or {})
+		if payload.get("doctype") not in (None, "", "POS Closing Shift"):
+			frappe.throw(_("Invalid document type for POS closing."), frappe.PermissionError)
+		opening_shift = payload.get("pos_opening_shift")
+		require_shift_access(
+			opening_shift,
+			pos_profile=payload.get("pos_profile"),
+			company=payload.get("company"),
+			require_open=True,
+		)
+		result = submit_shift(json.dumps(payload))
 		return {"name": result, "status": "success"}
 	except Exception as e:
 		frappe.log_error(frappe.get_traceback(), "Submit Closing Shift Error")

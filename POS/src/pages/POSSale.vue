@@ -2075,9 +2075,9 @@ async function handlePaymentCompleted(paymentData) {
 				write_off_amount: paymentData.write_off_amount || 0,
 			};
 
-			await offlineStore.saveInvoiceOffline(invoiceData);
+			const offlineSaveResult = await offlineStore.saveInvoiceOffline(invoiceData);
 			uiStore.showSuccess(
-				`OFFLINE-${Date.now()}`,
+				offlineSaveResult?.offline_id || "OFFLINE-PENDING",
 				cartStore.grandTotal,
 				paymentData.paid_amount
 			);
@@ -2131,10 +2131,6 @@ async function handlePaymentCompleted(paymentData) {
 					(err) => log.debug("Kitchen print failed:", err)
 				);
 
-				// Refresh invoice history cache in background (non-blocking)
-				loadInvoiceHistoryData().catch((err) =>
-					log.debug("Background invoice cache refresh failed:", err)
-				);
 
 				if (shiftStore.autoPrintEnabled || posSettingsStore.silentPrint) {
 					try {

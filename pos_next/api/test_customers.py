@@ -14,10 +14,11 @@ from pos_next.api.customers import (
 
 
 class TestCustomersAPI(unittest.TestCase):
+    @patch("pos_next.api.customers.frappe.has_permission", return_value=True)
     @patch("pos_next.api.customers.frappe.logger")
     @patch("pos_next.api.customers.frappe.get_all")
     @patch("pos_next.api.customers.frappe.db")
-    def test_get_customers_applies_search_term_filters(self, mock_db, mock_get_all, mock_logger):
+    def test_get_customers_applies_search_term_filters(self, mock_db, mock_get_all, mock_logger, _mock_permission):
         mock_logger.return_value = Mock()
         mock_get_all.return_value = []
 
@@ -97,14 +98,17 @@ class TestCustomersAPI(unittest.TestCase):
     @patch("pos_next.api.customers.frappe.flags", new=Mock(pos_next_customer_company=None, pos_next_customer_pos_profile=None))
     @patch("pos_next.api.customers.frappe.get_doc")
     @patch("pos_next.api.customers.get_default_loyalty_program_from_settings")
+    @patch("pos_next.api.customers.require_pos_profile_access")
     @patch("pos_next.api.customers.frappe.has_permission")
     def test_create_customer_uses_pos_profile_for_loyalty_assignment(
         self,
         mock_has_permission,
+        mock_profile_access,
         mock_get_loyalty,
         mock_get_doc,
     ):
         mock_has_permission.return_value = True
+        mock_profile_access.return_value = Mock(company="Company A")
         mock_get_loyalty.return_value = "LOYALTY-A"
 
         customer_doc = Mock()
@@ -118,7 +122,7 @@ class TestCustomersAPI(unittest.TestCase):
             pos_profile="POS-A",
         )
 
-        mock_get_loyalty.assert_called_once_with(company=None, pos_profile="POS-A")
+        mock_get_loyalty.assert_called_once_with(company="Company A", pos_profile="POS-A")
         customer_doc.insert.assert_called_once_with()
         self.assertEqual(result["loyalty_program"], "LOYALTY-A")
 
@@ -126,15 +130,18 @@ class TestCustomersAPI(unittest.TestCase):
     @patch("pos_next.api.customers.frappe.get_doc")
     @patch("pos_next.api.customers.get_default_customer_group")
     @patch("pos_next.api.customers.get_default_loyalty_program_from_settings")
+    @patch("pos_next.api.customers.require_pos_profile_access")
     @patch("pos_next.api.customers.frappe.has_permission")
     def test_create_customer_uses_configured_default_customer_group_when_omitted(
         self,
         mock_has_permission,
+        mock_profile_access,
         mock_get_loyalty,
         mock_get_default_group,
         mock_get_doc,
     ):
         mock_has_permission.return_value = True
+        mock_profile_access.return_value = Mock(company="Company A")
         mock_get_loyalty.return_value = None
         mock_get_default_group.return_value = "Retail Customers"
 

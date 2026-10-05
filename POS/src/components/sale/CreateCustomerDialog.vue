@@ -397,6 +397,7 @@ const updateCustomerResource = createResource({
 		mobile_no: customerData.value.mobile_no || "",
 		email_id: customerData.value.email_id || "",
 		tax_id: customerData.value.tax_id || "",
+		pos_profile: props.posProfile,
 	}),
 	onSuccess: (data) => {
 		showSuccess(__("Customer {0} updated successfully", [data.customer_name]))
@@ -549,7 +550,8 @@ watch(
 			// Fetch full customer details to prevent overwriting missing data
 			try {
 				const response = await call("pos_next.api.customers.get_customer_details", {
-					customer: customer.name
+					customer: customer.name,
+					pos_profile: props.posProfile,
 				});
 				const details = response?.message || response;
 				if (details) {

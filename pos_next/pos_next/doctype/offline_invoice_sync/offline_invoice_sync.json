@@ -33,7 +33,7 @@
    "options": "Sales Invoice"
   },
   {
-   "default": "Synced",
+   "default": "Pending",
    "fieldname": "status",
    "fieldtype": "Select",
    "in_list_view": 1,
@@ -65,7 +65,6 @@
    "fieldtype": "Section Break"
   },
   {
-   "default": "Now",
    "fieldname": "synced_at",
    "fieldtype": "Datetime",
    "in_list_view": 1,
@@ -75,7 +74,7 @@
  ],
  "index_web_pages_for_search": 0,
  "links": [],
- "modified": "2025-12-30 12:00:00.000000",
+ "modified": "2026-10-05 10:30:00.000000",
  "modified_by": "Administrator",
  "module": "POS Next",
  "name": "Offline Invoice Sync",

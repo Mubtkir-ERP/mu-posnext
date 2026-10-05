@@ -1,6 +1,7 @@
 import { call } from "@/utils/apiWrapper"
 import { db, getSetting, setSetting } from "./db"
 import { offlineState } from "./offlineState"
+import { ensureOfflineInvoiceId } from "./offlineInvoiceId"
 
 // Ping server to check connectivity
 export const pingServer = async () => {
@@ -47,9 +48,11 @@ export const saveOfflineInvoice = async (invoiceData) => {
 
 		// Clean data (remove reactive properties)
 		const cleanData = JSON.parse(JSON.stringify(invoiceData))
+		const offlineId = ensureOfflineInvoiceId(cleanData)
 
-		// Add to queue
-		await db.invoice_queue.add({
+		// Add to queue with the same stable idempotency key used by the worker path.
+		const id = await db.invoice_queue.add({
+			offline_id: offlineId,
 			data: cleanData,
 			timestamp: Date.now(),
 			synced: false,
@@ -59,8 +62,8 @@ export const saveOfflineInvoice = async (invoiceData) => {
 		// Update local stock
 		await updateLocalStock(cleanData.items)
 
-		console.log("Invoice saved to offline queue")
-		return true
+		console.log("Invoice saved to offline queue", offlineId)
+		return { success: true, id, offline_id: offlineId }
 	} catch (error) {
 		console.error("Error saving offline invoice:", error)
 		throw error
@@ -114,8 +117,20 @@ export const syncOfflineInvoices = async () => {
 	for (const invoice of pendingInvoices) {
 		try {
 			// Transform items: map 'quantity' to 'qty' for ERPNext compatibility
-			// Offline storage uses 'quantity' (cart format) but server expects 'qty'
+			// Offline storage uses 'quantity' (cart format) but server expects 'qty'.
 			const invoiceData = { ...invoice.data }
+
+			// Backfill a stable ID for invoices queued by older app versions. Persist
+			// it BEFORE the request so a lost response still retries with the same ID.
+			const offlineId = invoice.offline_id || ensureOfflineInvoiceId(invoiceData)
+			invoiceData.offline_id = offlineId
+			if (invoice.offline_id !== offlineId || invoice.data?.offline_id !== offlineId) {
+				await db.invoice_queue.update(invoice.id, {
+					offline_id: offlineId,
+					data: invoiceData,
+				})
+			}
+
 			if (invoiceData.items && Array.isArray(invoiceData.items)) {
 				invoiceData.items = invoiceData.items.map((item) => ({
 					...item,
@@ -132,13 +147,28 @@ export const syncOfflineInvoices = async () => {
 				}),
 			})
 
-			if (response.message || response.name) {
-				// Mark as synced
-				await db.invoice_queue.update(invoice.id, { synced: true })
+			const serverResult = response?.message || response
+			const serverInvoice =
+				typeof serverResult === "string"
+					? serverResult
+					: serverResult?.name || response?.name
+
+			if (serverInvoice) {
+				// Mark as synced and retain the server-side invoice mapping for support
+				// and diagnostics. Duplicate retries intentionally land here too.
+				await db.invoice_queue.update(invoice.id, {
+					synced: true,
+					server_invoice: serverInvoice,
+					synced_at: Date.now(),
+					offline_id: invoiceData.offline_id,
+					already_synced: Boolean(serverResult?.already_synced),
+				})
 				successCount++
 				console.log(
-					`Invoice ${invoice.id} synced successfully as ${response.name || response.message}`,
+					`Invoice ${invoice.id} (${invoiceData.offline_id}) synced successfully as ${serverInvoice}`,
 				)
+			} else {
+				throw new Error("Server did not return a Sales Invoice name")
 			}
 		} catch (error) {
 			console.error(`Error syncing invoice ${invoice.id}:`, error)

@@ -5,7 +5,48 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.19.1] - 2026-10-05
+
+### Fixed
+- Removed a stale `loadInvoiceHistoryData()` call left behind after the Phase 3A invoice-history refactor.
+- Saving a Sales Invoice no longer shows `loadInvoiceHistoryData is not defined` after the invoice has already been created.
+- Kept Invoice History scoped to the current POS opening shift and Invoice Management on-demand pagination unchanged.
+
+## [1.19.0] - 2026-10-05
+
+### Phase 3A - POS authorization and security
+
+- Added centralized POS Profile / company / opening-shift authorization helpers.
+- Secured Sales Invoice and Sales Order draft/update/submit paths against cross-profile, cross-company, and cross-shift writes.
+- Preserved offline invoice idempotency, including safe retries after a shift has already closed.
+- Secured draft invoice listing, deletion, cleanup, invoice search, and return preparation.
+- Rebuilt closing-shift financial data on the server; the client can only supply counted closing amounts.
+- Secured opening-shift creation and validated opening payment modes against the selected POS Profile.
+- Secured cash disbursement create/list/cancel/total APIs against the authenticated cashier shift and company.
+- Secured customer list/details/create/update APIs in POS Profile context and removed the broad Customer save bypass.
+- Added focused authorization tests.
+
 ## [Unreleased]
+
+## [1.18.2] - 2026-10-05
+
+### Fixed
+- Added Arabic translations for all POS Status values shown in Invoice Management and invoice filters.
+- Added Arabic translations for POS Status, Select Status, and All statuses labels.
+- Versioned the IndexedDB translation cache so deployments with updated translation bundles no longer keep serving stale translations for up to 24 hours.
+- Kept the stored POS Status values in English; only the displayed labels are translated, preserving filters, API validation, and existing invoices.
+
+## [1.18.1] - 2026-10-05
+
+### Fixed
+- Added a stable UUID-based `offline_id` to every invoice created while offline.
+- Wired the existing `Offline Invoice Sync` DocType into the real submission path for server-side idempotency.
+- Retrying the same offline sale now returns the already-created Sales Invoice instead of creating a duplicate when the original HTTP response was lost.
+- Pending retries reuse an existing draft invoice when one was already created by a previous attempt.
+- Older queued invoices without an identifier receive and persist one before their first sync attempt.
+- Offline queue entries retain the mapped server invoice number and synchronization timestamp for diagnostics.
+- The pending offline invoices dialog now shows the stable offline identifier.
+- `Offline Invoice Sync` now starts in Pending state and only stamps `synced_at` after a successful sync.
 
 ## [1.18.0] - 2026-10-04
 

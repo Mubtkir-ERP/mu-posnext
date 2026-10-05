@@ -18,6 +18,7 @@
  */
 
 import { logger } from '../utils/logger'
+import { ensureOfflineInvoiceId } from '../utils/offline/offlineInvoiceId'
 const log = logger.create('OfflineWorker')
 
 // ============================================================================
@@ -426,7 +427,12 @@ async function saveOfflineInvoice(invoiceData) {
 			throw new Error("Cannot save empty invoice")
 		}
 
+		// Assign the idempotency key once, before the invoice enters IndexedDB.
+		// This exact value is reused for every future sync retry.
+		const offlineId = ensureOfflineInvoiceId(invoiceData)
+
 		const id = await db.table("invoice_queue").add({
+			offline_id: offlineId,
 			data: invoiceData,
 			timestamp: Date.now(),
 			synced: false,
@@ -438,7 +444,7 @@ async function saveOfflineInvoice(invoiceData) {
 		// 2. When we sync, the server will handle stock reduction
 		// 3. Updating stock locally causes NegativeStockError on sync
 
-		return { success: true, id }
+		return { success: true, id, offline_id: offlineId }
 	} catch (error) {
 		log.error("Error saving offline invoice", error)
 		throw error

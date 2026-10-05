@@ -15,8 +15,8 @@ class OfflineInvoiceSync(Document):
     """
 
     def before_insert(self):
-        """Set synced_at timestamp before insert."""
-        if not self.synced_at:
+        """Only stamp synced_at after an invoice has actually been synced."""
+        if self.status == "Synced" and not self.synced_at:
             self.synced_at = frappe.utils.now_datetime()
 
     @staticmethod
@@ -37,24 +37,41 @@ class OfflineInvoiceSync(Document):
         if not offline_id:
             return None
 
-        # Check if record already exists
+        # Check if record already exists. offline_id is unique at the database
+        # level, so every retry converges on the same tracking document.
         existing = frappe.db.get_value(
             "Offline Invoice Sync",
             {"offline_id": offline_id},
-            ["name", "status"],
+            ["name", "sales_invoice", "status", "pos_profile", "customer"],
             as_dict=True
         )
 
         if existing:
-            # If existing record is Pending and we're setting to Synced, update it
-            if existing.status == "Pending" and status == "Synced" and sales_invoice:
-                sync_doc = frappe.get_doc("Offline Invoice Sync", existing.name)
+            sync_doc = frappe.get_doc("Offline Invoice Sync", existing.name)
+            changed = False
+
+            if sales_invoice and sync_doc.sales_invoice != sales_invoice:
                 sync_doc.sales_invoice = sales_invoice
-                sync_doc.status = "Synced"
+                changed = True
+            if pos_profile and sync_doc.pos_profile != pos_profile:
+                sync_doc.pos_profile = pos_profile
+                changed = True
+            if customer and sync_doc.customer != customer:
+                sync_doc.customer = customer
+                changed = True
+            if status and sync_doc.status != status:
+                sync_doc.status = status
+                changed = True
+
+            if status == "Synced":
                 sync_doc.synced_at = frappe.utils.now_datetime()
+                changed = True
+
+            if changed:
                 sync_doc.flags.ignore_permissions = True
                 sync_doc.save()
-            return frappe.get_doc("Offline Invoice Sync", existing.name)
+
+            return sync_doc
 
         doc = frappe.get_doc({
             "doctype": "Offline Invoice Sync",
@@ -69,33 +86,48 @@ class OfflineInvoiceSync(Document):
         return doc
 
     @staticmethod
-    def is_synced(offline_id):
-        """
-        Check if an offline_id has already been synced.
-
-        Args:
-            offline_id: The offline ID to check
-
-        Returns:
-            dict with 'synced' (bool), 'sales_invoice' (str or None), and 'status' (str or None)
-        """
+    def get_state(offline_id):
+        """Return the complete server-side state for an offline identifier."""
         if not offline_id:
-            return {"synced": False, "sales_invoice": None, "status": None}
+            return {
+                "exists": False,
+                "synced": False,
+                "sales_invoice": None,
+                "status": None,
+            }
 
         existing = frappe.db.get_value(
             "Offline Invoice Sync",
             {"offline_id": offline_id},
-            ["name", "sales_invoice", "status"],
-            as_dict=True
+            ["name", "sales_invoice", "status", "pos_profile", "customer"],
+            as_dict=True,
         )
 
-        if existing:
-            # Only consider it synced if status is "Synced" and has a sales_invoice
-            is_synced = existing.status == "Synced" and existing.sales_invoice
+        if not existing:
             return {
-                "synced": is_synced,
-                "sales_invoice": existing.sales_invoice if is_synced else None,
-                "status": existing.status
+                "exists": False,
+                "synced": False,
+                "sales_invoice": None,
+                "status": None,
             }
 
-        return {"synced": False, "sales_invoice": None, "status": None}
+        is_synced = bool(existing.status == "Synced" and existing.sales_invoice)
+        return {
+            "exists": True,
+            "synced": is_synced,
+            "sales_invoice": existing.sales_invoice or None,
+            "status": existing.status,
+            "name": existing.name,
+            "pos_profile": existing.pos_profile,
+            "customer": existing.customer,
+        }
+
+    @staticmethod
+    def is_synced(offline_id):
+        """Backward-compatible helper used by older callers."""
+        state = OfflineInvoiceSync.get_state(offline_id)
+        return {
+            "synced": state.get("synced", False),
+            "sales_invoice": state.get("sales_invoice"),
+            "status": state.get("status"),
+        }

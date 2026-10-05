@@ -9,6 +9,7 @@ from frappe import _
 from frappe.utils import flt, cint, nowdate, nowtime, get_datetime, cstr
 from erpnext.stock.doctype.batch.batch import get_batch_qty, get_batch_no
 from erpnext.accounts.doctype.sales_invoice.sales_invoice import get_bank_cash_account
+from pos_next.api.security import require_pos_profile_access, require_shift_access
 
 try:
     from erpnext.accounts.doctype.pricing_rule.pricing_rule import (
@@ -25,6 +26,64 @@ except Exception:  # pragma: no cover - ERPNext not installed in some environmen
 # ==========================================
 # Helper Functions
 # ==========================================
+
+
+_ALLOWED_POS_TRANSACTION_DOCTYPES = {"Sales Invoice", "Sales Order"}
+
+
+def _authorize_pos_transaction(data, existing_doc=None, require_open_shift=True, allow_submitted_existing=False):
+    """Authorize a POS invoice/order against profile, company and cashier shift.
+
+    POS cashiers may intentionally have narrower Desk permissions. This function
+    is the application-level boundary that must run before any bounded
+    ``ignore_permissions`` write in this module.
+    """
+    data = data or {}
+    doctype = data.get("doctype") or (existing_doc.doctype if existing_doc else "Sales Invoice")
+    if doctype not in _ALLOWED_POS_TRANSACTION_DOCTYPES:
+        frappe.throw(_("Document type {0} is not allowed from POS.").format(doctype), frappe.PermissionError)
+
+    pos_profile = data.get("pos_profile") or (existing_doc.get("pos_profile") if existing_doc else None)
+    company = data.get("company") or (existing_doc.get("company") if existing_doc else None)
+    profile = require_pos_profile_access(pos_profile, company=company)
+
+    if existing_doc:
+        if existing_doc.doctype != doctype:
+            frappe.throw(_("Document type cannot be changed."), frappe.PermissionError)
+        if existing_doc.docstatus != 0 and not allow_submitted_existing:
+            frappe.throw(_("Only draft documents can be updated from POS."), frappe.PermissionError)
+        if existing_doc.get("pos_profile") and existing_doc.pos_profile != profile.name:
+            frappe.throw(_("This document belongs to another POS Profile."), frappe.PermissionError)
+        if existing_doc.get("company") and existing_doc.company != profile.company:
+            frappe.throw(_("This document belongs to another company."), frappe.PermissionError)
+
+    shift_name = (
+        data.get("posa_pos_opening_shift")
+        or (existing_doc.get("posa_pos_opening_shift") if existing_doc else None)
+    )
+    shift = require_shift_access(
+        shift_name,
+        pos_profile=profile.name,
+        company=profile.company,
+        require_open=require_open_shift,
+    )
+
+    if existing_doc and existing_doc.get("posa_pos_opening_shift") and existing_doc.posa_pos_opening_shift != shift.name:
+        frappe.throw(_("This document belongs to another POS Opening Shift."), frappe.PermissionError)
+
+    return doctype, profile, shift
+
+
+def _save_authorized_pos_doc(doc):
+    """Save after POS authorization while containing the permission bypass."""
+    previous_ignore = getattr(frappe.flags, "ignore_account_permission", False)
+    frappe.flags.ignore_account_permission = True
+    doc.flags.ignore_permissions = True
+    try:
+        return doc.save(ignore_permissions=True)
+    finally:
+        frappe.flags.ignore_account_permission = previous_ignore
+        doc.flags.ignore_permissions = False
 
 
 def get_payment_account(mode_of_payment, company):
@@ -309,39 +368,40 @@ def update_invoice(data):
     try:
         data = json.loads(data) if isinstance(data, str) else data
 
-        pos_profile = data.get("pos_profile")
-        doctype = data.get("doctype", "Sales Invoice")
-
-        # Ensure the document type is set
-        data.setdefault("doctype", doctype)
-
-        # Create or update invoice
+        requested_doctype = data.get("doctype", "Sales Invoice")
+        existing_doc = None
         if data.get("name"):
-            invoice_doc = frappe.get_doc(doctype, data.get("name"))
+            if not frappe.db.exists(requested_doctype, data.get("name")):
+                frappe.throw(_("Document {0} does not exist.").format(data.get("name")))
+            existing_doc = frappe.get_doc(requested_doctype, data.get("name"))
+
+        doctype, profile, shift = _authorize_pos_transaction(data, existing_doc=existing_doc)
+        pos_profile = profile.name
+
+        # Trust server-side profile/shift context, not client-provided company/user context.
+        data["doctype"] = doctype
+        data["pos_profile"] = profile.name
+        data["company"] = profile.company
+        data["posa_pos_opening_shift"] = shift.name
+
+        if existing_doc:
+            invoice_doc = existing_doc
             invoice_doc.update(data)
         else:
             invoice_doc = frappe.get_doc(data)
 
-        pos_profile_doc = None
-        if pos_profile:
-            try:
-                pos_profile_doc = frappe.get_cached_doc("POS Profile", pos_profile)
-            except Exception as profile_err:
-                frappe.throw(_("Unable to load POS Profile {0}").format(pos_profile))
+        pos_profile_doc = frappe.get_cached_doc("POS Profile", pos_profile)
+        invoice_doc.pos_profile = pos_profile
+        invoice_doc.company = profile.company
+        invoice_doc.posa_pos_opening_shift = shift.name
+        if pos_profile_doc.currency and not invoice_doc.get("currency"):
+            invoice_doc.currency = pos_profile_doc.currency
 
-            invoice_doc.pos_profile = pos_profile
-
-            if pos_profile_doc.company and not invoice_doc.get("company"):
-                invoice_doc.company = pos_profile_doc.company
-            if pos_profile_doc.currency and not invoice_doc.get("currency"):
-                invoice_doc.currency = pos_profile_doc.currency
-
-            # Copy accounting dimensions from POS Profile
-            if hasattr(pos_profile_doc, "branch") and pos_profile_doc.branch:
-                invoice_doc.branch = pos_profile_doc.branch
-                # Also set branch on all items for GL entries
-                for item in invoice_doc.get("items", []):
-                    item.branch = pos_profile_doc.branch
+        # Copy accounting dimensions from POS Profile
+        if hasattr(pos_profile_doc, "branch") and pos_profile_doc.branch:
+            invoice_doc.branch = pos_profile_doc.branch
+            for item in invoice_doc.get("items", []):
+                item.branch = pos_profile_doc.branch
 
         company = invoice_doc.get("company") or (
             pos_profile_doc.company if pos_profile_doc else None
@@ -371,25 +431,11 @@ def update_invoice(data):
             if not validation.get("valid"):
                 frappe.throw(validation.get("message"))
 
-        # Ensure customer exists
+        # A POS transaction must reference an existing customer. Customer creation
+        # is handled by the dedicated customer API with its own permission checks.
         customer_name = invoice_doc.get("customer")
         if customer_name and not frappe.db.exists("Customer", customer_name):
-            try:
-                cust = frappe.get_doc(
-                    {
-                        "doctype": "Customer",
-                        "customer_name": customer_name,
-                        "customer_group": "All Customer Groups",
-                        "territory": "All Territories",
-                        "customer_type": "Individual",
-                    }
-                )
-                cust.flags.ignore_permissions = True
-                cust.insert()
-                invoice_doc.customer = cust.name
-                invoice_doc.customer_name = cust.customer_name
-            except Exception as e:
-                frappe.log_error(f"Failed to create customer {customer_name}: {e}")
+            frappe.throw(_("Customer {0} does not exist. Please create the customer first.").format(customer_name))
 
         # Disable automatic pricing rules (we handle discounts manually from POS)
         invoice_doc.ignore_pricing_rule = 1
@@ -520,11 +566,9 @@ def update_invoice(data):
                 # Store coupon code on invoice for tracking
                 invoice_doc.coupon_code = coupon_code
 
-        # Save as draft
-        invoice_doc.flags.ignore_permissions = True
-        frappe.flags.ignore_account_permission = True
+        # Save as draft. Permission bypass is bounded by _authorize_pos_transaction.
         invoice_doc.docstatus = 0
-        invoice_doc.save()
+        _save_authorized_pos_doc(invoice_doc)
 
         # FIX: Ensure payments from frontend aren't wiped out by custom scripts or ERPNext's set_pos_data
         if data.get("payments"):
@@ -552,6 +596,24 @@ def update_invoice(data):
     except Exception as e:
         frappe.log_error(frappe.get_traceback(), "Update Invoice Error")
         raise
+
+
+def _submit_invoice_response(invoice_doc, offline_id=None, already_synced=False):
+    """Return a stable response shape for normal and idempotent submissions."""
+    response = {
+        "name": invoice_doc.name,
+        "status": invoice_doc.docstatus,
+        "grand_total": invoice_doc.grand_total,
+        "total": invoice_doc.total,
+        "net_total": invoice_doc.net_total,
+        "outstanding_amount": getattr(invoice_doc, "outstanding_amount", 0),
+        "paid_amount": getattr(invoice_doc, "paid_amount", 0),
+        "change_amount": getattr(invoice_doc, "change_amount", 0),
+    }
+    if offline_id:
+        response["offline_id"] = offline_id
+        response["already_synced"] = bool(already_synced)
+    return response
 
 
 @frappe.whitelist()
@@ -591,8 +653,102 @@ def submit_invoice(invoice=None, data=None):
         if isinstance(invoice, str):
             invoice = json.loads(invoice)
 
-        pos_profile = invoice.get("pos_profile")
-        doctype = invoice.get("doctype", "Sales Invoice")
+        requested_doctype = invoice.get("doctype", "Sales Invoice")
+
+        # Fast idempotent path: if an offline retry arrives after the shift was
+        # already closed, we must still be able to return the *already submitted*
+        # invoice instead of rejecting the retry or creating another document.
+        preflight_offline_id = cstr(
+            invoice.get("offline_id") or data.get("offline_id") or ""
+        ).strip()
+        if preflight_offline_id and requested_doctype == "Sales Invoice":
+            from pos_next.pos_next.doctype.offline_invoice_sync.offline_invoice_sync import (
+                OfflineInvoiceSync as _OfflineSyncPreflight,
+            )
+
+            _state = _OfflineSyncPreflight.get_state(preflight_offline_id)
+            _mapped = _state.get("sales_invoice")
+            if _mapped and frappe.db.exists("Sales Invoice", _mapped):
+                _mapped_doc = frappe.get_doc("Sales Invoice", _mapped)
+                if _mapped_doc.docstatus == 1:
+                    _authorize_pos_transaction(
+                        invoice,
+                        existing_doc=_mapped_doc,
+                        require_open_shift=False,
+                        allow_submitted_existing=True,
+                    )
+                    _OfflineSyncPreflight.create_sync_record(
+                        preflight_offline_id,
+                        _mapped_doc.name,
+                        pos_profile=_mapped_doc.pos_profile,
+                        customer=_mapped_doc.customer,
+                        status="Synced",
+                    )
+                    return _submit_invoice_response(
+                        _mapped_doc,
+                        offline_id=preflight_offline_id,
+                        already_synced=True,
+                    )
+
+        existing_for_auth = None
+        if invoice.get("name") and frappe.db.exists(requested_doctype, invoice.get("name")):
+            existing_for_auth = frappe.get_doc(requested_doctype, invoice.get("name"))
+
+        doctype, profile, shift = _authorize_pos_transaction(invoice, existing_doc=existing_for_auth)
+        pos_profile = profile.name
+        invoice["doctype"] = doctype
+        invoice["pos_profile"] = profile.name
+        invoice["company"] = profile.company
+        invoice["posa_pos_opening_shift"] = shift.name
+
+        offline_id = cstr(invoice.get("offline_id") or data.get("offline_id") or "").strip()
+        offline_sync = None
+
+        # Offline invoice idempotency guard. This path is intentionally limited
+        # to Sales Invoice so normal Sales Order / online flows are untouched.
+        if offline_id and doctype == "Sales Invoice":
+            from pos_next.pos_next.doctype.offline_invoice_sync.offline_invoice_sync import (
+                OfflineInvoiceSync,
+            )
+
+            offline_sync = OfflineInvoiceSync
+            sync_state = OfflineInvoiceSync.get_state(offline_id)
+            mapped_invoice = sync_state.get("sales_invoice")
+
+            if mapped_invoice and frappe.db.exists("Sales Invoice", mapped_invoice):
+                mapped_doc = frappe.get_doc("Sales Invoice", mapped_invoice)
+                _authorize_pos_transaction(invoice, existing_doc=mapped_doc, require_open_shift=False, allow_submitted_existing=True)
+
+                # If the first request reached submit but its HTTP response was
+                # lost, return that exact invoice instead of creating another.
+                if mapped_doc.docstatus == 1:
+                    OfflineInvoiceSync.create_sync_record(
+                        offline_id,
+                        mapped_doc.name,
+                        pos_profile=pos_profile,
+                        customer=invoice.get("customer"),
+                        status="Synced",
+                    )
+                    return _submit_invoice_response(
+                        mapped_doc, offline_id=offline_id, already_synced=True
+                    )
+
+                # A previous attempt may have created a draft before failing.
+                # Reuse that same draft on retry rather than opening a new one.
+                if mapped_doc.docstatus == 0:
+                    invoice["name"] = mapped_doc.name
+
+            OfflineInvoiceSync.create_sync_record(
+                offline_id,
+                invoice.get("name") or "",
+                pos_profile=pos_profile,
+                customer=invoice.get("customer"),
+                status="Pending",
+            )
+
+            # offline_id is transport metadata, not a Sales Invoice field.
+            invoice = dict(invoice)
+            invoice.pop("offline_id", None)
 
         invoice_name = invoice.get("name")
 
@@ -603,7 +759,17 @@ def submit_invoice(invoice=None, data=None):
             invoice_doc = frappe.get_doc(doctype, invoice_name)
         else:
             invoice_doc = frappe.get_doc(doctype, invoice_name)
+            _authorize_pos_transaction(invoice, existing_doc=invoice_doc)
             invoice_doc.update(invoice)
+
+        if offline_id and offline_sync and doctype == "Sales Invoice":
+            offline_sync.create_sync_record(
+                offline_id,
+                invoice_doc.name,
+                pos_profile=pos_profile,
+                customer=invoice_doc.customer,
+                status="Pending",
+            )
 
         # Ensure update_stock is set for Sales Invoice
         if doctype == "Sales Invoice":
@@ -677,21 +843,38 @@ def submit_invoice(invoice=None, data=None):
         if not pos_settings_allow_negative:
             _validate_stock_on_invoice(invoice_doc)
 
-        # Save before submit
-        invoice_doc.flags.ignore_permissions = True
-        frappe.flags.ignore_account_permission = True
-        invoice_doc.save()
+        # Save before submit. The bounded bypass follows POS profile/shift authorization.
+        _save_authorized_pos_doc(invoice_doc)
 
         # Submit invoice with error handling
         # Note: Negative stock handling is now done through the CustomSalesInvoice override
         # which checks POS Settings in the update_stock_ledger method
         try:
-            invoice_doc.submit()
+            previous_ignore = getattr(frappe.flags, "ignore_account_permission", False)
+            frappe.flags.ignore_account_permission = True
+            invoice_doc.flags.ignore_permissions = True
+            try:
+                invoice_doc.submit()
+            finally:
+                frappe.flags.ignore_account_permission = previous_ignore
+                invoice_doc.flags.ignore_permissions = False
+
+            # Record the definitive mapping immediately after successful submit
+            # and before building the HTTP response. If the response is lost,
+            # the next retry returns this same invoice.
+            if offline_id and offline_sync and doctype == "Sales Invoice":
+                offline_sync.create_sync_record(
+                    offline_id,
+                    invoice_doc.name,
+                    pos_profile=pos_profile,
+                    customer=invoice_doc.customer,
+                    status="Synced",
+                )
         except Exception as submit_error:
             # If submission fails, cleanup the invoice to prevent stock reservation issues
             try:
                 # Reload to get current state
-                current_doc = frappe.get_doc("Sales Invoice", invoice_doc.name)
+                current_doc = frappe.get_doc(doctype, invoice_doc.name)
 
                 # If already submitted, must cancel before deleting
                 if current_doc.docstatus == 1:
@@ -700,12 +883,11 @@ def submit_invoice(invoice=None, data=None):
 
                 # Now delete the cancelled/draft invoice
                 frappe.delete_doc(
-                    "Sales Invoice",
+                    doctype,
                     invoice_doc.name,
                     force=True,
                     ignore_permissions=True,
                 )
-                frappe.db.commit()
             except Exception:
                 # Silent fail on cleanup - don't hide original error
                 pass
@@ -734,17 +916,23 @@ def submit_invoice(invoice=None, data=None):
                 )
 
         # Return complete invoice details
-        return {
-            "name": invoice_doc.name,
-            "status": invoice_doc.docstatus,
-            "grand_total": invoice_doc.grand_total,
-            "total": invoice_doc.total,
-            "net_total": invoice_doc.net_total,
-            "outstanding_amount": getattr(invoice_doc, "outstanding_amount", 0),
-            "paid_amount": getattr(invoice_doc, "paid_amount", 0),
-            "change_amount": getattr(invoice_doc, "change_amount", 0),
-        }
+        return _submit_invoice_response(invoice_doc, offline_id=offline_id)
     except Exception as e:
+        # Preserve the identifier for a safe future retry. Failed attempts are
+        # allowed to reuse the same offline_id and, when possible, the same draft.
+        try:
+            if offline_id and offline_sync:
+                state = offline_sync.get_state(offline_id)
+                if not state.get("synced"):
+                    offline_sync.create_sync_record(
+                        offline_id,
+                        state.get("sales_invoice") or "",
+                        pos_profile=(invoice or {}).get("pos_profile") if isinstance(invoice, dict) else None,
+                        customer=(invoice or {}).get("customer") if isinstance(invoice, dict) else None,
+                        status="Failed",
+                    )
+        except Exception:
+            pass
         frappe.log_error(frappe.get_traceback(), "Submit Invoice Error")
         raise
 
@@ -852,11 +1040,9 @@ def search_invoices(
     if not profile:
         frappe.throw(_("POS Profile {0} does not exist").format(pos_profile))
 
-    has_access = frappe.db.exists(
-        "POS Profile User", {"parent": pos_profile, "user": frappe.session.user}
-    )
-    if not has_access and not frappe.has_permission("Sales Invoice", "read"):
-        frappe.throw(_("You don't have access to this POS Profile"))
+    # Invoice Management may search all POS invoices for the profile company,
+    # but the caller must still be an authorized user of the selected profile.
+    require_pos_profile_access(pos_profile, company=profile.company)
 
     sales_invoice_meta = frappe.get_meta("Sales Invoice")
 
@@ -1013,92 +1199,101 @@ def get_invoices(pos_profile, limit=100, posa_pos_opening_shift=None):
 
 @frappe.whitelist()
 def get_draft_invoices(pos_opening_shift, doctype="Sales Invoice"):
-    """Get all draft invoices for a POS opening shift."""
-    filters = {
-        "docstatus": 0,
-    }
+    """Get draft POS documents only for an authorized opening shift."""
+    if doctype not in _ALLOWED_POS_TRANSACTION_DOCTYPES:
+        frappe.throw(_("Document type {0} is not allowed from POS.").format(doctype), frappe.PermissionError)
+    require_shift_access(pos_opening_shift, require_open=False)
 
-    # Add pos_opening_shift filter if the field exists
-    if frappe.db.has_column(doctype, "pos_opening_shift"):
-        filters["pos_opening_shift"] = pos_opening_shift
+    filters = {"docstatus": 0}
+    if frappe.db.has_column(doctype, "posa_pos_opening_shift"):
+        filters["posa_pos_opening_shift"] = pos_opening_shift
+    else:
+        # Without a shift link we cannot safely expose arbitrary drafts.
+        return []
 
-    # Performance: Get all invoice names first
-    invoices_list = frappe.get_list(
+    invoices_list = frappe.get_all(
         doctype,
         filters=filters,
         fields=["name"],
         limit_page_length=0,
         order_by="modified desc",
     )
-
-    # Performance: Batch load all documents at once using get_cached_doc
-    # This leverages Frappe's internal caching and is faster than individual queries
-    data = []
-    for invoice in invoices_list:
-        data.append(frappe.get_cached_doc(doctype, invoice["name"]))
-
-    return data
+    return [frappe.get_cached_doc(doctype, row["name"]) for row in invoices_list]
 
 
 @frappe.whitelist()
 def delete_invoice(invoice):
-    """Delete draft invoice."""
+    """Delete an authorized draft Sales Invoice from the cashier's shift."""
     doctype = "Sales Invoice"
-
-    if not frappe.db.exists(doctype, invoice):
+    row = frappe.db.get_value(
+        doctype,
+        invoice,
+        ["name", "docstatus", "pos_profile", "company", "posa_pos_opening_shift"],
+        as_dict=True,
+    )
+    if not row:
         frappe.throw(_("Invoice {0} does not exist").format(invoice))
-
-    # Check if it's a draft
-    if frappe.db.get_value(doctype, invoice, "docstatus") != 0:
+    if row.docstatus != 0:
         frappe.throw(_("Cannot delete submitted invoice {0}").format(invoice))
 
-    frappe.delete_doc(doctype, invoice, force=1)
+    require_pos_profile_access(row.pos_profile, company=row.company)
+    require_shift_access(
+        row.posa_pos_opening_shift,
+        pos_profile=row.pos_profile,
+        company=row.company,
+        require_open=True,
+    )
+    frappe.delete_doc(doctype, invoice, force=1, ignore_permissions=True)
     return _("Invoice {0} Deleted").format(invoice)
 
 
 @frappe.whitelist()
 def cleanup_old_drafts(pos_profile=None, max_age_hours=24):
-    """
-    Clean up old draft invoices to prevent stock reservation issues.
-    Deletes drafts older than max_age_hours (default 24 hours).
-    """
+    """Clean old draft invoices owned by the current cashier for one POS Profile."""
     from datetime import datetime, timedelta
 
-    doctype = "Sales Invoice"
-    cutoff_time = datetime.now() - timedelta(hours=int(max_age_hours))
+    profile = require_pos_profile_access(pos_profile)
+    cutoff_time = datetime.now() - timedelta(hours=max(int(max_age_hours), 1))
 
-    filters = {
-        "docstatus": 0,  # Draft only
-        "modified": ["<", cutoff_time.strftime("%Y-%m-%d %H:%M:%S")],
-    }
+    # Never let one cashier's background cleanup delete another cashier's drafts.
+    shift_names = frappe.get_all(
+        "POS Opening Shift",
+        filters={
+            "user": frappe.session.user,
+            "pos_profile": profile.name,
+            "company": profile.company,
+        },
+        pluck="name",
+        limit_page_length=0,
+    )
+    if not shift_names:
+        return {"deleted": 0, "message": "Cleaned up 0 old draft invoices"}
 
-    # Optionally filter by POS profile
-    if pos_profile:
-        filters["pos_profile"] = pos_profile
-
-    # Get old drafts
     old_drafts = frappe.get_all(
-        doctype,
-        filters=filters,
-        fields=["name", "modified"],
-        limit_page_length=100,  # Safety limit
+        "Sales Invoice",
+        filters={
+            "docstatus": 0,
+            "pos_profile": profile.name,
+            "company": profile.company,
+            "posa_pos_opening_shift": ["in", shift_names],
+            "modified": ["<", cutoff_time.strftime("%Y-%m-%d %H:%M:%S")],
+        },
+        fields=["name"],
+        limit_page_length=100,
     )
 
     deleted_count = 0
     for draft in old_drafts:
         try:
             frappe.delete_doc(
-                doctype, draft["name"], force=True, ignore_permissions=True
+                "Sales Invoice", draft["name"], force=True, ignore_permissions=True
             )
             deleted_count += 1
-        except Exception as e:
+        except Exception:
             frappe.log_error(
-                f"Failed to delete draft {draft['name']}: {str(e)}",
+                frappe.get_traceback(),
                 "Draft Cleanup Error",
             )
-
-    if deleted_count > 0:
-        frappe.db.commit()
 
     return {
         "deleted": deleted_count,
@@ -1112,10 +1307,11 @@ def cleanup_old_drafts(pos_profile=None, max_age_hours=24):
 
 
 @frappe.whitelist()
-def get_returnable_invoices(limit=50):
+def get_returnable_invoices(limit=50, pos_profile=None):
     """Get list of invoices that have items available for return."""
-    # Performance: Use SQL aggregation to calculate returned quantities in one query
-    # This eliminates N+1 queries by joining return invoices and aggregating in the database
+    # Performance: Use SQL aggregation to calculate returned quantities in one query.
+    profile = require_pos_profile_access(pos_profile)
+    limit = max(1, min(cint(limit or 50), 100))
 
     query = """
         SELECT
@@ -1137,25 +1333,32 @@ def get_returnable_invoices(limit=50):
         WHERE si.docstatus = 1
             AND si.is_return = 0
             AND si.is_pos = 1
+            AND si.company = %s
         GROUP BY si.name
         HAVING total_original_qty > total_returned_qty
         ORDER BY si.posting_date DESC, si.creation DESC
         LIMIT %s
     """
 
-    returnable_invoices = frappe.db.sql(query, [cint(limit)], as_dict=1)
+    returnable_invoices = frappe.db.sql(query, [profile.company, limit], as_dict=1)
 
     return returnable_invoices
 
 
 @frappe.whitelist()
-def get_invoice_for_return(invoice_name):
+def get_invoice_for_return(invoice_name, pos_profile=None):
     """Get invoice with return tracking - calculates remaining qty for each item."""
     if not frappe.db.exists("Sales Invoice", invoice_name):
         frappe.throw(_("Invoice {0} does not exist").format(invoice_name))
 
-    # Get the original invoice
+    # Get the original invoice and authorize it against the current POS company.
     invoice = frappe.get_doc("Sales Invoice", invoice_name)
+    if pos_profile:
+        profile = require_pos_profile_access(pos_profile)
+        if invoice.company != profile.company:
+            frappe.throw(_("This invoice belongs to another company."), frappe.PermissionError)
+    elif not frappe.has_permission("Sales Invoice", "read", invoice_name):
+        frappe.throw(_("You don't have permission to view this invoice."), frappe.PermissionError)
 
     # Performance: Use SQL aggregation to calculate returned quantities in one query
     # This eliminates N+1 queries by aggregating all return items at once
@@ -1231,6 +1434,7 @@ def prepare_return_invoice(invoice_name, pos_opening_shift=None):
             si.docstatus,
             si.is_return,
             si.pos_profile,
+            si.company,
             si.posting_date,
             si.is_pos,
             si.grand_total,
@@ -1244,6 +1448,12 @@ def prepare_return_invoice(invoice_name, pos_opening_shift=None):
         frappe.throw(_("Invoice {0} does not exist").format(invoice_name))
 
     invoice_info = invoice_check[0]
+
+    if not pos_opening_shift:
+        frappe.throw(_("An open POS shift is required to create a return."), frappe.PermissionError)
+    current_shift = require_shift_access(pos_opening_shift, require_open=True)
+    if invoice_info.company != current_shift.company:
+        frappe.throw(_("This invoice belongs to another company."), frappe.PermissionError)
 
     # Validate docstatus
     if invoice_info.docstatus != 1:
@@ -1278,13 +1488,11 @@ def prepare_return_invoice(invoice_name, pos_opening_shift=None):
     # This automatically copies sales_team, taxes, and other child tables
     return_doc = make_sales_return(invoice_name)
 
-    # Set POS-specific fields
-    if pos_opening_shift:
-        return_doc.posa_pos_opening_shift = pos_opening_shift
-
-    # Ensure POS flags are set
+    # Set POS-specific fields from the authenticated current shift.
+    return_doc.posa_pos_opening_shift = current_shift.name
     return_doc.is_pos = invoice_info.is_pos
-    return_doc.pos_profile = invoice_info.pos_profile
+    return_doc.pos_profile = current_shift.pos_profile
+    return_doc.company = current_shift.company
 
     # Aggregate quantities already returned from previous return invoices
     ret_si = frappe.qb.DocType("Sales Invoice")
@@ -1366,6 +1574,7 @@ def prepare_return_invoice(invoice_name, pos_opening_shift=None):
 def search_invoices_for_return(
     invoice_name=None,
     company=None,
+    pos_profile=None,
     customer_name=None,
     customer_id=None,
     mobile_no=None,
@@ -1376,7 +1585,20 @@ def search_invoices_for_return(
     page=1,
     doctype="Sales Invoice",
 ):
-    """Search for invoices that can be returned with pagination."""
+    """Search for returnable invoices within an authorized POS company."""
+    if doctype != "Sales Invoice":
+        frappe.throw(_("Only Sales Invoice can be searched for returns."), frappe.PermissionError)
+
+    if pos_profile:
+        profile = require_pos_profile_access(pos_profile, company=company)
+        company = profile.company
+    elif company:
+        # Non-POS callers must rely on normal Sales Invoice read permissions.
+        if not frappe.has_permission("Sales Invoice", "read"):
+            frappe.throw(_("You don't have permission to view sales invoices."), frappe.PermissionError)
+    else:
+        frappe.throw(_("POS Profile or company is required."), frappe.PermissionError)
+
     # Start with base filters
     filters = {
         "docstatus": 1,

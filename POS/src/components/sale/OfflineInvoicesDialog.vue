@@ -62,6 +62,9 @@
 										{{ __('{0} failed', [invoice.retry_count]) }}
 									</span>
 								</div>
+								<div class="mt-1 text-[10px] sm:text-xs text-gray-500 font-mono break-all">
+									{{ invoice.offline_id || invoice.data.offline_id || `OFFLINE-${invoice.id}` }}
+								</div>
 								<div class="mt-2 flex flex-col gap-1 text-xs sm:text-sm text-gray-600">
 									<div class="flex flex-wrap items-center gap-x-3 gap-y-1">
 										<span>{{ __('{0} items', [invoice.data.items?.length || 0]) }}</span>

@@ -11,6 +11,7 @@ from erpnext.accounts.doctype.pos_invoice_merge_log.pos_invoice_merge_log import
 from frappe import _
 from frappe.model.document import Document
 from frappe.utils import flt
+from pos_next.api.security import require_shift_access
 
 
 def get_base_value(doc, fieldname, base_fieldname=None, conversion_rate=None):
@@ -362,6 +363,7 @@ def get_cashiers(doctype, txt, searchfield, start, page_len, filters):
 
 @frappe.whitelist()
 def get_pos_invoices(pos_opening_shift, doctype=None):
+    require_shift_access(pos_opening_shift, require_open=False)
     if not doctype:
         pos_profile = frappe.db.get_value("POS Opening Shift", pos_opening_shift, "pos_profile")
         use_pos_invoice = False
@@ -388,6 +390,7 @@ def get_pos_invoices(pos_opening_shift, doctype=None):
 
 @frappe.whitelist()
 def get_payments_entries(pos_opening_shift):
+    require_shift_access(pos_opening_shift, require_open=False)
     return frappe.get_all(
         "Payment Entry",
         filters={
@@ -523,7 +526,17 @@ def _process_invoice(invoice, invoice_field, company_currency, cash_mode, paymen
 
 @frappe.whitelist()
 def make_closing_shift_from_opening(opening_shift):
-    opening_shift = json.loads(opening_shift)
+    payload = json.loads(opening_shift) if isinstance(opening_shift, str) else dict(opening_shift or {})
+    opening_shift_name = payload.get("name")
+    require_shift_access(
+        opening_shift_name,
+        pos_profile=payload.get("pos_profile"),
+        company=payload.get("company"),
+        require_open=True,
+    )
+    # Never build the closing summary from client-provided opening-shift data.
+    # Reload the authoritative document after authorization.
+    opening_shift = frappe.get_doc("POS Opening Shift", opening_shift_name).as_dict()
     doctype = "Sales Invoice"
     invoice_field = "sales_invoice"
 
@@ -632,11 +645,59 @@ def make_closing_shift_from_opening(opening_shift):
 
 @frappe.whitelist()
 def submit_closing_shift(closing_shift):
-    closing_shift = json.loads(closing_shift)
-    closing_shift_doc = frappe.get_doc(closing_shift)
+    payload = json.loads(closing_shift) if isinstance(closing_shift, str) else dict(closing_shift or {})
+    if payload.get("doctype") not in (None, "", "POS Closing Shift"):
+        frappe.throw(_("Invalid document type for POS closing."), frappe.PermissionError)
+
+    opening_shift_name = payload.get("pos_opening_shift")
+    shift = require_shift_access(
+        opening_shift_name,
+        pos_profile=payload.get("pos_profile"),
+        company=payload.get("company"),
+        require_open=True,
+    )
+
+    # Rebuild all financial/transaction data on the server. The client is only
+    # allowed to supply physically counted closing amounts. This prevents a
+    # cashier from injecting or removing invoices/taxes/payments in the payload.
+    trusted = make_closing_shift_from_opening(
+        json.dumps(frappe.get_doc("POS Opening Shift", opening_shift_name).as_dict(), default=str)
+    )
+    trusted["doctype"] = "POS Closing Shift"
+
+    closing_amounts = {}
+    for row in payload.get("payment_reconciliation") or []:
+        mop = row.get("mode_of_payment")
+        if mop:
+            closing_amounts[mop] = flt(row.get("closing_amount"))
+
+    for row in trusted.get("payment_reconciliation") or []:
+        mop = row.get("mode_of_payment")
+        if mop in closing_amounts:
+            row["closing_amount"] = closing_amounts[mop]
+
+    # Keep only real POS Closing Shift fields from the generated summary.
+    closing_meta = frappe.get_meta("POS Closing Shift")
+    valid_fields = {df.fieldname for df in closing_meta.fields if df.fieldname}
+    doc_data = {"doctype": "POS Closing Shift"}
+    for key, value in trusted.items():
+        if key in valid_fields:
+            doc_data[key] = value
+
+    closing_shift_doc = frappe.get_doc(doc_data)
+    closing_shift_doc.pos_opening_shift = shift.name
+    closing_shift_doc.pos_profile = shift.pos_profile
+    closing_shift_doc.company = shift.company
+    closing_shift_doc.user = shift.user
+
+    # POS cashiers may not have broad Desk create/submit rights. The bypass is
+    # bounded by the shift/profile/user authorization above.
     closing_shift_doc.flags.ignore_permissions = True
-    closing_shift_doc.save()
-    closing_shift_doc.submit()
+    try:
+        closing_shift_doc.insert(ignore_permissions=True)
+        closing_shift_doc.submit()
+    finally:
+        closing_shift_doc.flags.ignore_permissions = False
     return closing_shift_doc.name
 
 

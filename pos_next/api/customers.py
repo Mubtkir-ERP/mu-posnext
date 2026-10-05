@@ -5,6 +5,7 @@ Handles customer search, creation, and management for POS operations
 
 import frappe
 from frappe import _
+from pos_next.api.security import require_pos_profile_access, require_customer_read
 
 
 @frappe.whitelist()
@@ -22,6 +23,11 @@ def get_customers(search_term="", pos_profile=None, limit=20, modified_since=Non
     Returns:
         list: List of customer dictionaries with name, customer_name, mobile_no, email_id, disabled
     """
+    if pos_profile:
+        require_pos_profile_access(pos_profile)
+    elif not frappe.has_permission("Customer", "read"):
+        frappe.throw(_("You don't have permission to view customers"), frappe.PermissionError)
+
     try:
         frappe.logger().debug(
             f"get_customers called with search_term={search_term}, pos_profile={pos_profile}, limit={limit}, modified_since={modified_since}"
@@ -124,6 +130,10 @@ def create_customer(
 
     if not customer_name:
         frappe.throw(_("Customer name is required"))
+
+    if pos_profile:
+        profile = require_pos_profile_access(pos_profile, company=company)
+        company = profile.company
 
     loyalty_program = get_default_loyalty_program_from_settings(
         company=company,
@@ -271,7 +281,7 @@ def get_default_loyalty_program_from_settings(company=None, pos_profile=None):
 
 
 @frappe.whitelist()
-def get_customer_details(customer):
+def get_customer_details(customer, pos_profile=None):
     """
     Get detailed customer information.
 
@@ -284,6 +294,7 @@ def get_customer_details(customer):
     if not customer:
         frappe.throw(_("Customer is required"))
 
+    require_customer_read(customer, pos_profile=pos_profile)
     return frappe.get_cached_doc("Customer", customer).as_dict()
 
 
@@ -296,6 +307,7 @@ def update_customer(
     customer_group=None,
     territory=None,
     tax_id=None,
+    pos_profile=None,
 ):
     """
     Update an existing customer from POS.
@@ -314,6 +326,9 @@ def update_customer(
     """
     if not customer:
         frappe.throw(_("Customer is required"))
+
+    if pos_profile:
+        require_customer_read(customer, pos_profile=pos_profile)
 
     if not frappe.has_permission("Customer", "write", customer):
         frappe.throw(_("You don't have permission to update customers"), frappe.PermissionError)
@@ -386,8 +401,17 @@ def update_customer(
                 contact_updated = True
 
         if contact_updated:
-            contact.flags.ignore_permissions = True
-            contact.save(ignore_permissions=True)
+            # Customer write permission was checked above. If the cashier does not
+            # also have Contact write permission, allow this narrowly-scoped save
+            # only for the customer's already-linked primary contact.
+            if frappe.has_permission("Contact", "write", contact.name):
+                contact.save()
+            else:
+                contact.flags.ignore_permissions = True
+                try:
+                    contact.save(ignore_permissions=True)
+                finally:
+                    contact.flags.ignore_permissions = False
     else:
         # No linked Contact – set directly (works when fields are not fetched)
         if mobile_no is not None:
@@ -395,7 +419,5 @@ def update_customer(
         if email_id is not None:
             doc.email_id = email_id
 
-    doc.save(ignore_permissions=True)
-    frappe.db.commit()
-
+    doc.save()
     return doc.as_dict()

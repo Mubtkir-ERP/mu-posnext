@@ -17,6 +17,7 @@ be subtracted from the expected cash balance in the closing shift report.
 import frappe
 from frappe import _
 from frappe.utils import flt, nowdate, get_datetime
+from pos_next.api.security import require_shift_access, require_company_access
 
 # Marker prefix used in user_remark to identify POS disbursement entries
 _MARKER = "pos_cash_disbursement"
@@ -109,9 +110,29 @@ def create_cash_disbursement(shift_name, amount, reason, pos_profile, company, d
     if not shift_name:
         frappe.throw(_("No active POS shift found."))
 
-    # Resolve accounts
+    # Authorize against the authoritative opening shift. Client-supplied profile
+    # and company are treated only as consistency checks.
+    shift = require_shift_access(
+        shift_name,
+        pos_profile=pos_profile,
+        company=company,
+        require_open=True,
+    )
+    pos_profile = shift.pos_profile
+    company = shift.company
+
+    # Resolve accounts from trusted configuration. A caller cannot override the
+    # configured debit account to create an arbitrary Journal Entry.
     cash_account = _get_cash_account(pos_profile, company)
-    debit_account = disbursement_account or _get_disbursement_account(pos_profile, company)
+    configured_debit_account = _get_disbursement_account(pos_profile, company)
+    if disbursement_account and disbursement_account != configured_debit_account:
+        frappe.throw(_("Cash disbursement account cannot be overridden from POS."), frappe.PermissionError)
+    debit_account = configured_debit_account
+    account_info = frappe.db.get_value(
+        "Account", debit_account, ["company", "is_group", "disabled"], as_dict=True
+    )
+    if not account_info or account_info.company != company or account_info.is_group or account_info.disabled:
+        frappe.throw(_("Invalid cash disbursement account for this company."), frappe.PermissionError)
 
     # Resolve cost center
     cost_center = frappe.get_cached_value("Company", company, "cost_center")
@@ -141,8 +162,14 @@ def create_cash_disbursement(shift_name, amount, reason, pos_profile, company, d
     })
 
     try:
-        je.insert(ignore_permissions=True)
-        je.submit()
+        # Cashiers may not have broad Journal Entry Desk rights. The bypass is
+        # bounded by the authenticated open-shift/profile/company checks above.
+        je.flags.ignore_permissions = True
+        try:
+            je.insert(ignore_permissions=True)
+            je.submit()
+        finally:
+            je.flags.ignore_permissions = False
     except frappe.exceptions.ValidationError as e:
         # If it's a party error (due to using Receivable/Payable account without party)
         err_msg = str(e).lower()
@@ -177,6 +204,7 @@ def get_shift_disbursements(shift_name):
     Returns:
         list[dict]: [{name, amount, reason, posting_date}, ...]
     """
+    require_shift_access(shift_name, require_open=False)
     marker_prefix = f"{_MARKER}|{shift_name}|%"
 
     rows = frappe.db.sql(
@@ -187,7 +215,7 @@ def get_shift_disbursements(shift_name):
           AND docstatus = 1
         ORDER BY creation ASC
         """,
-        marker_prefix,
+        (marker_prefix,),
         as_dict=True,
     )
 
@@ -219,17 +247,20 @@ def cancel_disbursement(journal_entry_name):
     if je.docstatus != 1:
         frappe.throw(_("This disbursement entry is not submitted and cannot be cancelled."))
 
-    # Verify shift is still open
+    # Verify this is actually a POSNext disbursement and belongs to the current
+    # cashier's still-open shift.
     shift_name, _ = _parse_remark(je.user_remark or "")
-    if shift_name:
-        shift_status = frappe.db.get_value("POS Opening Shift", shift_name, "status")
-        if shift_status and shift_status != "Open":
-            frappe.throw(
-                _("Cannot cancel a disbursement after the POS shift has been closed."),
-                title=_("Shift Closed"),
-            )
+    if not shift_name:
+        frappe.throw(_("This Journal Entry is not a POS cash disbursement."), frappe.PermissionError)
+    shift = require_shift_access(shift_name, require_open=True)
+    if je.company != shift.company or je.cheque_no != shift.name or je.voucher_type != "Cash Entry":
+        frappe.throw(_("This Journal Entry is not a valid disbursement for the current POS shift."), frappe.PermissionError)
 
-    je.cancel()
+    je.flags.ignore_permissions = True
+    try:
+        je.cancel()
+    finally:
+        je.flags.ignore_permissions = False
     return {"status": "cancelled", "name": journal_entry_name}
 
 
@@ -245,6 +276,7 @@ def get_disbursement_accounts(company):
     Returns:
         list[dict]: [{name, account_name, account_type}, ...]
     """
+    require_company_access(company)
     accounts = frappe.db.get_all(
         "Account",
         filters={
@@ -278,6 +310,7 @@ def get_total_disbursements(shift_name):
     Returns:
         float: Total disbursed amount
     """
+    require_shift_access(shift_name, require_open=False)
     marker_prefix = f"{_MARKER}|{shift_name}|%"
     result = frappe.db.sql(
         """
@@ -286,7 +319,7 @@ def get_total_disbursements(shift_name):
         WHERE user_remark LIKE %s
           AND docstatus = 1
         """,
-        marker_prefix,
+        (marker_prefix,),
         as_dict=True,
     )
     return flt(result[0].total) if result else 0.0
