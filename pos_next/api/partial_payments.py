@@ -28,6 +28,10 @@ from frappe.utils import flt, nowdate, get_datetime, cint, get_time
 from datetime import datetime
 from enum import Enum
 from pos_next.api.security import user_has_pos_profile_access, require_pos_document_access
+from pos_next.api.payment_security import (
+    resolve_pos_payment_account,
+    validate_requested_payment_account,
+)
 
 
 # ==========================================
@@ -424,27 +428,25 @@ def create_payment_entry(
             )
         )
 
-    # Validate mode of payment exists
-    if not frappe.db.exists("Mode of Payment", mode_of_payment):
-        frappe.throw(_("Mode of Payment {0} does not exist").format(mode_of_payment))
+    # Phase 3 / Point 4: resolve both Mode of Payment and its GL account from
+    # the invoice's trusted POS Profile. A client may never choose another
+    # account or use a payment method that is not configured for this profile.
+    if not invoice.pos_profile:
+        frappe.throw(_("Invoice is not linked to a POS Profile."), frappe.ValidationError)
+
+    payment_context = resolve_pos_payment_account(
+        invoice.pos_profile,
+        mode_of_payment,
+        company=invoice.company,
+        allow_wallet=False,
+    )
+    payment_account = validate_requested_payment_account(
+        payment_context.account, payment_account
+    )
 
     # Save and submit with proper error handling
     try:
         from erpnext.accounts.doctype.payment_entry.payment_entry import get_payment_entry
-        from erpnext.accounts.doctype.sales_invoice.sales_invoice import get_bank_cash_account
-
-        if payment_account:
-            if not frappe.db.exists("Account", payment_account):
-                frappe.throw(_("Payment account {0} does not exist").format(payment_account))
-        else:
-            account_info = get_bank_cash_account(mode_of_payment, invoice.company)
-            if not account_info or not account_info.get("account"):
-                frappe.throw(
-                    _("Could not determine payment account for {0}. Please specify payment_account parameter.").format(
-                        mode_of_payment
-                    )
-                )
-            payment_account = account_info.get("account")
 
         pe = get_payment_entry(
             "Sales Invoice",
@@ -777,6 +779,21 @@ def add_payment_to_partial_invoice(invoice_name: str, payments) -> Dict:
         invoice = frappe.get_doc("Sales Invoice", invoice_name)
     except frappe.DoesNotExistError:
         frappe.throw(_("Invoice {0} does not exist").format(invoice_name))
+
+    # Direct API calls must not bypass the POS setting that enables partial
+    # payments. Use the invoice's stored profile rather than a client value.
+    if not invoice.pos_profile:
+        frappe.throw(_("Invoice is not linked to a POS Profile."), frappe.ValidationError)
+    partial_payment_enabled = frappe.db.get_value(
+        "POS Settings",
+        {"pos_profile": invoice.pos_profile, "enabled": 1},
+        "allow_partial_payment",
+    )
+    if not cint(partial_payment_enabled):
+        frappe.throw(
+            _("Partial payments are disabled for this POS Profile."),
+            frappe.PermissionError,
+        )
 
     total_payment_amount = sum(flt(p.get("amount", 0)) for p in payments)
     if total_payment_amount > flt(invoice.outstanding_amount) + AMOUNT_TOLERANCE:

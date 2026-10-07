@@ -8,11 +8,14 @@ import frappe
 from frappe import _
 from frappe.utils import flt, cint, nowdate, nowtime, get_datetime, cstr
 from erpnext.stock.doctype.batch.batch import get_batch_qty, get_batch_no
-from erpnext.accounts.doctype.sales_invoice.sales_invoice import get_bank_cash_account
 from pos_next.api.security import (
     require_pos_profile_access,
     require_shift_access,
     require_pos_document_access,
+)
+from pos_next.api.payment_security import (
+    resolve_pos_payment_account,
+    validate_and_pin_invoice_payments,
 )
 
 try:
@@ -90,12 +93,24 @@ def _save_authorized_pos_doc(doc):
         doc.flags.ignore_permissions = False
 
 
-def get_payment_account(mode_of_payment, company):
+def get_payment_account(mode_of_payment, company, pos_profile=None):
+    """Return the server-authoritative payment account.
+
+    In POS context a profile is required to enforce that the payment method is
+    configured for that profile and that its company account is valid. The old
+    company-only fallback is kept only for internal compatibility outside POS.
     """
-    Get account for mode of payment.
-    Tries multiple fallback methods to find a suitable account.
-    """
-    # Try 1: Mode of Payment Account table
+    if pos_profile:
+        details = resolve_pos_payment_account(
+            pos_profile,
+            mode_of_payment,
+            company=company,
+            allow_wallet=False,
+        )
+        return {"account": details.account}
+
+    # Non-POS compatibility path: use only the explicit company mapping. Do not
+    # guess another company account because that can silently post to the wrong GL.
     account = frappe.db.get_value(
         "Mode of Payment Account",
         {"parent": mode_of_payment, "company": company},
@@ -104,48 +119,9 @@ def get_payment_account(mode_of_payment, company):
     if account:
         return {"account": account}
 
-    # Try 2: POS Payment Method from POS Profile
-    account = frappe.db.sql(
-        """
-		SELECT ppm.default_account
-		FROM `tabPOS Payment Method` ppm
-		INNER JOIN `tabPOS Profile` pp ON ppm.parent = pp.name
-		WHERE ppm.mode_of_payment = %s
-		AND pp.company = %s
-		AND ppm.default_account IS NOT NULL
-		LIMIT 1
-	""",
-        (mode_of_payment, company),
-        as_dict=1,
-    )
-
-    if account and account[0].default_account:
-        return {"account": account[0].default_account}
-
-    # Try 3: Company default cash account (for cash payments)
-    if "cash" in mode_of_payment.lower():
-        account = frappe.get_value("Company", company, "default_cash_account")
-        if account:
-            return {"account": account}
-
-    # Try 4: Company default bank account
-    account = frappe.get_value("Company", company, "default_bank_account")
-    if account:
-        return {"account": account}
-
-    # Try 5: Any Cash/Bank account for the company
-    account = frappe.db.get_value(
-        "Account",
-        {"company": company, "account_type": ["in", ["Cash", "Bank"]], "is_group": 0},
-        "name",
-    )
-    if account:
-        return {"account": account}
-
-    # No account found - throw error
     frappe.throw(
         _(
-            "Please set default Cash or Bank account in Mode of Payment {0} or set default accounts in Company {1}"
+            "Please configure a default account for Mode of Payment {0} in company {1}."
         ).format(mode_of_payment, company),
         title=_("Missing Account"),
     )
@@ -816,21 +792,9 @@ def update_invoice(data):
             for item in invoice_doc.get("items", []):
                 item.branch = pos_profile_doc.branch
 
-        company = invoice_doc.get("company") or (
-            pos_profile_doc.company if pos_profile_doc else None
-        )
-
-        if company and invoice_doc.get("payments") and doctype == "Sales Invoice":
-            for payment in invoice_doc.payments:
-                mode_of_payment = payment.get("mode_of_payment")
-                if mode_of_payment and not payment.get("account"):
-                    try:
-                        account_info = get_payment_account(
-                            mode_of_payment, company
-                        )
-                        payment["account"] = account_info.get("account")
-                    except Exception:
-                        pass  # Will be handled during save
+        # Do not resolve payment accounts from caller data at this stage. ERPNext
+        # fills normal POS defaults below, then Point 4 revalidates every payment
+        # method and pins its account from the authorized POS Profile/company.
 
         # Validate return items if this is a return invoice
         if (data.get("is_return") or invoice_doc.get("is_return")) and invoice_doc.get(
@@ -934,17 +898,10 @@ def update_invoice(data):
         if invoice_doc.base_grand_total is None:
             invoice_doc.base_grand_total = 0.0
 
-        # Set accounts for payment methods before saving
-        for payment in invoice_doc.payments:
-            mode_of_payment = payment.get("mode_of_payment")
-            if mode_of_payment and not payment.get("account"):
-                try:
-                    account_info = get_payment_account(
-                        mode_of_payment, invoice_doc.company
-                    )
-                    payment.account = account_info["account"]
-                except Exception:
-                    pass  # Will be handled during save
+        # Phase 3 / Point 4: the browser may choose only a payment method
+        # configured on this POS Profile. The GL account always comes from the
+        # server-side Mode of Payment Account mapping.
+        validate_and_pin_invoice_payments(invoice_doc)
 
         # For return invoices, ensure payments are negative
         if invoice_doc.get("is_return"):
@@ -1209,14 +1166,11 @@ def submit_invoice(invoice=None, data=None):
             except Exception:
                 pass  # Branch is optional, continue without it
 
-        # Set accounts for all payment methods before saving
+        # Phase 3 / Point 4: re-validate and pin payment accounts immediately
+        # before submission so a crafted submit payload cannot swap payment
+        # method/account after the draft was created.
         if doctype == "Sales Invoice" and hasattr(invoice_doc, "payments"):
-            for payment in invoice_doc.payments:
-                if payment.mode_of_payment:
-                    account_info = get_payment_account(
-                        payment.mode_of_payment, invoice_doc.company
-                    )
-                    payment.account = account_info["account"]
+            validate_and_pin_invoice_payments(invoice_doc)
 
         # Handle sales team (multiple sales persons)
         sales_team_data = invoice.get("sales_team") or data.get("sales_team")

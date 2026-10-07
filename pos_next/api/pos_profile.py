@@ -118,7 +118,7 @@ def get_payment_methods(pos_profile):
 		# Single query with JOINs to get payment methods with type and account info
 		query = (
 			frappe.qb.from_(POSPaymentMethod)
-			.left_join(ModeOfPayment)
+			.inner_join(ModeOfPayment)
 			.on(POSPaymentMethod.mode_of_payment == ModeOfPayment.name)
 			.left_join(ModeOfPaymentAccount)
 			.on(
@@ -134,7 +134,10 @@ def get_payment_methods(pos_profile):
 				Coalesce(ModeOfPayment.type, "Cash").as_("type"),
 				Coalesce(Account.account_type, "").as_("account_type")
 			)
-			.where(POSPaymentMethod.parent == pos_profile)
+			.where(
+				(POSPaymentMethod.parent == pos_profile)
+				& (ModeOfPayment.enabled == 1)
+			)
 			.orderby(POSPaymentMethod.idx)
 		)
 

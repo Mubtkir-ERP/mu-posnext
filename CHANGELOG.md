@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.19.5] - 2026-10-07
+
+### Phase 3 - Cash disbursement and payment-account hardening (Point 4 only)
+
+- Added a central server-side payment security layer for POS payment methods and GL accounts.
+- Standard POS payments must use enabled payment methods configured on the authorized POS Profile.
+- Payment GL accounts are now resolved exclusively from the Mode of Payment company mapping and client-supplied accounts are overwritten or rejected.
+- Invoice draft and submit paths revalidate and pin payment accounts so a crafted submit payload cannot switch accounts.
+- Partial-payment Payment Entries reject unconfigured/disabled/wallet payment methods, reject account overrides, and honor the POS Profile partial-payment setting.
+- Opening-shift balances now reject wallet/unconfigured/disabled payment methods, invalid account mappings, duplicate methods, and negative opening amounts.
+- Cash disbursement now requires an enabled POS setting, a real Cash mode configured on the POS Profile, and a valid company Cash account.
+- Cash-disbursement debit accounts are server-configured only, must be active leaf Asset/Expense accounts, and cannot be Receivable, Payable, Cash, or Bank accounts.
+- The cash-disbursement account selector is filtered by company and safe account classes; changing POS Profile clears the company-bound disbursement account.
+- Cash-disbursement enable/account fields require native POS Profile write permission even when edited through generic POS Settings APIs.
+- Disabled payment methods are excluded from the POS payment-method API and wallet payment method listing.
+- POS Sales Invoice validation also pins payment accounts when documents are saved outside the custom checkout API, and the POSNext Cashier role no longer has direct Payment Entry create/write/submit permission.
+- Added focused security tests for payment-account pinning and cash-disbursement account validation.
+- No Negative Stock, transaction idempotency/locking, settings-cache redesign, or Phase 3 Point 5+ changes are included.
+
 ## [1.19.4] - 2026-10-07
 
 ### Phase 3 - Coupon/discount hardening (Point 3 only)

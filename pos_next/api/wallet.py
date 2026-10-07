@@ -17,6 +17,7 @@ from pos_next.api.security import (
 	require_customer_read,
 	require_pos_profile_access,
 )
+from pos_next.api.payment_security import resolve_pos_payment_account
 
 
 def _authorize_wallet_context(customer, company, pos_profile=None):
@@ -172,38 +173,32 @@ def _validate_wallet_payment_configuration(doc, wallet_rows, pos_settings, walle
 			frappe.ValidationError,
 		)
 
-	allowed_modes = set(
-		frappe.get_all(
-			"POS Payment Method",
-			filters={"parent": doc.pos_profile, "parenttype": "POS Profile"},
-			pluck="mode_of_payment",
-		)
-	)
-
 	for payment in wallet_rows:
 		mode = payment.get("mode_of_payment")
-		if mode not in allowed_modes:
-			frappe.throw(
-				_("Wallet payment method {0} is not allowed for this POS Profile.").format(mode),
-				frappe.PermissionError,
-			)
 
-		expected_mode_account = _get_mode_account(mode, doc.company, doc.pos_profile)
-		if not expected_mode_account:
+		# Phase 3 / Point 4: central payment security now also verifies that the
+		# wallet mode is enabled, present on the POS Profile, and mapped to an
+		# active leaf account in the same company. Wallet's own Point 2 rules
+		# still decide which Receivable account is valid.
+		payment_context = resolve_pos_payment_account(
+			doc.pos_profile,
+			mode,
+			company=doc.company,
+			allow_wallet=True,
+			required_account_types=None,
+		)
+		if not payment_context.is_wallet_payment:
 			frappe.throw(
-				_("Wallet payment method {0} has no account configured for company {1}.").format(
-					mode, doc.company
-				),
+				_("Mode of Payment {0} is not configured as a wallet payment method.").format(mode),
 				frappe.ValidationError,
 			)
-		if expected_mode_account != wallet_account:
+		if payment_context.account != wallet_account:
 			frappe.throw(
 				_("Wallet payment method {0} is configured with a different account.").format(mode),
 				frappe.ValidationError,
 			)
 
-		# The browser is never authoritative for the payment account.  Always pin
-		# a wallet payment to the server-configured wallet account.
+		# The browser is never authoritative for the payment account.
 		payment.account = wallet_account
 
 
@@ -619,7 +614,13 @@ def get_wallet_payment_methods(pos_profile):
 	)
 	wallet_methods = []
 	for method in payment_methods:
-		if cint(frappe.db.get_value("Mode of Payment", method.mode_of_payment, "is_wallet_payment") or 0):
+		mode = frappe.db.get_value(
+			"Mode of Payment",
+			method.mode_of_payment,
+			["enabled", "is_wallet_payment"],
+			as_dict=True,
+		)
+		if mode and cint(mode.enabled) and cint(mode.is_wallet_payment):
 			wallet_methods.append(
 				{
 					"mode_of_payment": method.mode_of_payment,

@@ -6,9 +6,10 @@ from __future__ import unicode_literals
 import json
 import frappe
 from frappe import _
-from frappe.utils import nowdate, nowtime, get_datetime
+from frappe.utils import nowdate, nowtime, get_datetime, flt
 from pos_next.api.utilities import get_wallet_payment_modes
 from pos_next.api.security import require_pos_profile_access, require_shift_access
+from pos_next.api.payment_security import resolve_pos_payment_account
 
 
 @frappe.whitelist()
@@ -57,6 +58,22 @@ def get_opening_dialog_data():
 			order_by="parent",
 			ignore_permissions=True,
 		)
+
+		# Do not offer disabled payment methods in the opening dialog. Creation
+		# revalidates profile membership and account mapping server-side below.
+		mode_names = [m.get("mode_of_payment") for m in data["payments_method"] if m.get("mode_of_payment")]
+		enabled_modes = set()
+		if mode_names:
+			enabled_modes = set(
+				frappe.get_all(
+					"Mode of Payment",
+					filters={"name": ["in", mode_names], "enabled": 1},
+					pluck="name",
+				)
+			)
+		data["payments_method"] = [
+			m for m in data["payments_method"] if m.get("mode_of_payment") in enabled_modes
+		]
 
 		# Set currency from pos profile
 		for mode in data["payments_method"]:
@@ -142,6 +159,7 @@ def create_opening_shift(pos_profile, company, balance_details):
 		)
 	)
 	formatted_balance_details = []
+	seen_modes = set()
 	for detail in balance_details or []:
 		mode = detail.get("mode_of_payment")
 		if not mode or mode not in allowed_modes:
@@ -149,9 +167,27 @@ def create_opening_shift(pos_profile, company, balance_details):
 				_("Mode of Payment {0} is not configured for POS Profile {1}.").format(mode or "", pos_profile),
 				frappe.PermissionError,
 			)
+
+		# Phase 3 / Point 4: an opening balance can only reference an enabled,
+		# non-wallet payment method with a valid Cash/Bank account for this company.
+		resolve_pos_payment_account(
+			pos_profile,
+			mode,
+			company=company,
+			allow_wallet=False,
+		)
+
+		if mode in seen_modes:
+			frappe.throw(_("Mode of Payment {0} is duplicated in opening balances.").format(mode))
+		seen_modes.add(mode)
+
+		opening_amount = flt(detail.get("opening_amount", 0))
+		if opening_amount < 0:
+			frappe.throw(_("Opening balance for {0} cannot be negative.").format(mode))
+
 		formatted_balance_details.append({
 			"mode_of_payment": mode,
-			"amount": detail.get("opening_amount", 0)
+			"amount": opening_amount
 		})
 
 	new_pos_opening.set("balance_details", formatted_balance_details)

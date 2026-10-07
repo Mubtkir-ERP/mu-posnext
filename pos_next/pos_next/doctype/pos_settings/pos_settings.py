@@ -2,9 +2,10 @@
 # For license information, please see license.txt
 
 import frappe
+from frappe import _
 from frappe.model.document import Document
 from frappe.utils import cint, flt
-from pos_next.api.security import require_pos_profile_access
+from pos_next.api.security import require_pos_profile_access, require_pos_profile_config_access
 
 
 class POSSettings(Document):
@@ -42,6 +43,67 @@ class POSSettings(Document):
 				)
 
 		self.validate_wallet_loyalty_settings()
+		self.validate_cash_disbursement_write_access()
+		self.validate_cash_disbursement_settings()
+
+	def validate_cash_disbursement_write_access(self):
+		"""Prevent a cashier from changing the financial disbursement wiring.
+
+		POSNext Cashier can edit some POS Settings for operational reasons, so the
+		DocType permission alone is not a sufficient boundary for these two
+		financial fields. Only a user who can write the POS Profile may change
+		them, including through generic Frappe document APIs.
+		"""
+		old = None
+		if not self.is_new():
+			old = frappe.db.get_value(
+				"POS Settings",
+				self.name,
+				["pos_profile", "allow_cash_disbursement", "cash_disbursement_account"],
+				as_dict=True,
+			)
+
+		new_enabled = cint(self.get("allow_cash_disbursement"))
+		new_account = self.get("cash_disbursement_account") or ""
+		changed = False
+
+		if not old:
+			changed = bool(new_enabled or new_account)
+		else:
+			changed = (
+				cint(old.allow_cash_disbursement) != new_enabled
+				or (old.cash_disbursement_account or "") != new_account
+				or (old.pos_profile != self.pos_profile and (new_enabled or new_account or cint(old.allow_cash_disbursement) or old.cash_disbursement_account))
+			)
+
+		if changed:
+			require_pos_profile_config_access(self.pos_profile, ptype="write")
+
+	def validate_cash_disbursement_settings(self):
+		"""Validate cash-disbursement accounts against trusted POS configuration."""
+		if not cint(self.get("allow_cash_disbursement")):
+			return
+
+		if not self.pos_profile:
+			frappe.throw(_("POS Profile is required when Cash Disbursement is enabled"))
+
+		company = frappe.db.get_value("POS Profile", self.pos_profile, "company")
+		if not company:
+			frappe.throw(_("A valid POS Profile is required when Cash Disbursement is enabled"))
+
+		account_name = self.get("cash_disbursement_account")
+		if not account_name:
+			frappe.throw(_("Cash Disbursement Account is required when Cash Disbursement is enabled"))
+
+		# Reuse the runtime security rules so invalid settings are rejected at
+		# configuration time instead of failing only when a cashier disburses.
+		from pos_next.api.cash_disbursement import (
+			_get_cash_account,
+			_validate_disbursement_account,
+		)
+
+		cash_account, _cash_mode = _get_cash_account(self.pos_profile, company)
+		_validate_disbursement_account(account_name, company, cash_account=cash_account)
 
 	def validate_wallet_loyalty_settings(self):
 		"""Validate wallet/loyalty configuration against the POS Profile company."""
@@ -196,6 +258,8 @@ def update_pos_settings(pos_profile, settings):
 
 	require_pos_profile_access(pos_profile)
 
+	# Sensitive cash-disbursement fields are separately protected in
+	# validate_cash_disbursement_write_access(), including generic DocType saves.
 	# Check if settings exist
 	existing = frappe.db.exists("POS Settings", {"pos_profile": pos_profile})
 
