@@ -4,6 +4,7 @@
 import frappe
 from frappe.model.document import Document
 from frappe.utils import cint, flt
+from pos_next.api.security import require_pos_profile_access
 
 
 class POSSettings(Document):
@@ -39,6 +40,47 @@ class POSSettings(Document):
 					"'Use Exact Amount for Non-Cash' cannot be enabled together with 'Allow Partial Payment'. "
 					"Please disable Partial Payment first."
 				)
+
+		self.validate_wallet_loyalty_settings()
+
+	def validate_wallet_loyalty_settings(self):
+		"""Validate wallet/loyalty configuration against the POS Profile company."""
+		if not cint(self.get("enable_loyalty_program")):
+			return
+
+		if not self.pos_profile:
+			frappe.throw("POS Profile is required when Wallet/Loyalty is enabled")
+
+		company = frappe.db.get_value("POS Profile", self.pos_profile, "company")
+		if not company:
+			frappe.throw("A valid POS Profile is required when Wallet/Loyalty is enabled")
+
+		wallet_account = self.get("wallet_account")
+		if not wallet_account:
+			frappe.throw("Wallet Account is required when Wallet/Loyalty is enabled")
+
+		account = frappe.db.get_value(
+			"Account",
+			wallet_account,
+			["company", "account_type", "is_group", "disabled"],
+			as_dict=True,
+		)
+		if (
+			not account
+			or account.company != company
+			or account.account_type != "Receivable"
+			or cint(account.is_group)
+			or cint(account.disabled)
+		):
+			frappe.throw(
+				"Wallet Account must be an active leaf Receivable account for the POS Profile company"
+			)
+
+		loyalty_program = self.get("default_loyalty_program")
+		if loyalty_program:
+			program_company = frappe.db.get_value("Loyalty Program", loyalty_program, "company")
+			if not program_company or program_company != company:
+				frappe.throw("Default Loyalty Program must belong to the POS Profile company")
 
 	def on_update(self):
 		"""Sync allow_negative_stock with Stock Settings"""
@@ -104,14 +146,7 @@ def get_pos_settings(pos_profile):
 	if not pos_profile:
 		return None
 
-	# Check if user has access to this POS Profile
-	has_access = frappe.db.exists(
-		"POS Profile User",
-		{"parent": pos_profile, "user": frappe.session.user}
-	)
-
-	if not has_access and not frappe.has_permission("POS Settings", "read"):
-		frappe.throw(_("You don't have access to this POS Profile"))
+	require_pos_profile_access(pos_profile)
 
 	settings = frappe.db.get_value(
 		"POS Settings",
@@ -159,14 +194,7 @@ def update_pos_settings(pos_profile, settings):
 	if isinstance(settings, str):
 		settings = json.loads(settings)
 
-	# Check if user has access to this POS Profile
-	has_access = frappe.db.exists(
-		"POS Profile User",
-		{"parent": pos_profile, "user": frappe.session.user}
-	)
-
-	if not has_access and not frappe.has_permission("POS Settings", "write"):
-		frappe.throw(_("You don't have permission to update this POS Profile"))
+	require_pos_profile_access(pos_profile)
 
 	# Check if settings exist
 	existing = frappe.db.exists("POS Settings", {"pos_profile": pos_profile})

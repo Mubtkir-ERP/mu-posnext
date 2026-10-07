@@ -13,10 +13,12 @@ import json
 import frappe
 from frappe import _
 from frappe.utils import cint, format_datetime, now_datetime
+from pos_next.api.security import require_pos_profile_access
 
 
 @frappe.whitelist()
 def get_kitchen_tickets(pos_profile, items, invoice_name=None, order_note=None):
+	require_pos_profile_access(pos_profile)
 	"""Return a list of {station, printer_name, html} tickets to print.
 
 	Args:

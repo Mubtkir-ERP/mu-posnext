@@ -27,6 +27,7 @@ from typing import Dict, List, Optional, Tuple, Any
 from frappe.utils import flt, nowdate, get_datetime, cint, get_time
 from datetime import datetime
 from enum import Enum
+from pos_next.api.security import user_has_pos_profile_access, require_pos_document_access
 
 
 # ==========================================
@@ -670,9 +671,7 @@ def get_partial_payment_details(invoice_name: str) -> Dict:
     if not invoice_name:
         frappe.throw(_("Invoice name is required"))
 
-    # Permission check
-    if not frappe.has_permission("Sales Invoice", "read", invoice_name):
-        frappe.throw(_("You don't have permission to view this invoice"))
+    require_pos_document_access("Sales Invoice", invoice_name, ptype="read")
 
     # Get invoice using ORM
     try:
@@ -771,9 +770,7 @@ def add_payment_to_partial_invoice(invoice_name: str, payments) -> Dict:
     if not payments:
         frappe.throw(_("At least one payment is required"))
 
-    # Permission check
-    if not frappe.has_permission("Sales Invoice", "write", invoice_name):
-        frappe.throw(_("You don't have permission to add payments to this invoice"))
+    require_pos_document_access("Sales Invoice", invoice_name, ptype="write")
 
     # Validate total payment amount doesn't exceed outstanding
     try:
@@ -971,32 +968,8 @@ def get_unpaid_summary(pos_profile: str) -> Dict:
 
 
 def _has_pos_profile_access(pos_profile: str) -> bool:
-    """
-    Check if current user has access to POS Profile.
-
-    Access is granted if:
-    - User is in POS Profile User child table, OR
-    - User has Sales Invoice read permission
-
-    Args:
-        pos_profile: POS Profile name
-
-    Returns:
-        bool: True if user has access
-    """
-    # Check if user is explicitly assigned to this POS Profile
-    has_direct_access = frappe.db.exists(
-        "POS Profile User",
-        {
-            "parent": pos_profile,
-            "user": frappe.session.user
-        }
-    )
-
-    # Check if user has general Sales Invoice permission
-    has_general_access = frappe.has_permission("Sales Invoice", "read")
-
-    return bool(has_direct_access or has_general_access)
+    """Use the same POS Profile authorization boundary as the rest of POSNext."""
+    return user_has_pos_profile_access(pos_profile)
 
 
 
@@ -1017,6 +990,8 @@ def update_pos_status(invoice_id, new_status):
         # Check if invoice exists
         if not frappe.db.exists("Sales Invoice", invoice_id):
             frappe.throw(_("Sales Invoice not found"))
+
+        require_pos_document_access("Sales Invoice", invoice_id, ptype="write")
 
         # Update status
         doc = frappe.get_doc("Sales Invoice", invoice_id)

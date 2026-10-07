@@ -8,6 +8,7 @@ from frappe import _
 from frappe.utils import cint
 from pos_next.api.utilities import check_user_company
 from pos_next.api.utilities import _parse_list_parameter
+from pos_next.api.security import require_pos_profile_access, require_pos_profile_config_access
 
 
 @frappe.whitelist()
@@ -35,15 +36,7 @@ def get_pos_profile_data(pos_profile):
 	if not pos_profile:
 		frappe.throw(_("POS Profile is required"))
 
-	# Check if user has access to this POS Profile
-	has_access = frappe.db.exists(
-		"POS Profile User",
-		{"parent": pos_profile, "user": frappe.session.user}
-	)
-
-	if not has_access:
-		frappe.throw(_("You don't have access to this POS Profile"))
-
+	require_pos_profile_access(pos_profile)
 	profile_doc = frappe.get_doc("POS Profile", pos_profile)
 	company_doc = frappe.get_doc("Company", profile_doc.company)
 
@@ -71,6 +64,7 @@ def get_pos_profile_data(pos_profile):
 @frappe.whitelist()
 def get_pos_settings(pos_profile):
 	"""Get POS Settings for a given POS Profile"""
+	require_pos_profile_access(pos_profile)
 	from pos_next.api.constants import POS_SETTINGS_FIELDS, DEFAULT_POS_SETTINGS
 
 	if not pos_profile:
@@ -104,6 +98,7 @@ def get_pos_settings(pos_profile):
 @frappe.whitelist()
 def get_payment_methods(pos_profile):
 	"""Get available payment methods from POS Profile with optimized queries"""
+	require_pos_profile_access(pos_profile)
 	try:
 		# Validate pos_profile parameter
 		if not pos_profile:
@@ -153,6 +148,7 @@ def get_payment_methods(pos_profile):
 @frappe.whitelist()
 def get_taxes(pos_profile):
 	"""Get tax configuration from POS Profile"""
+	require_pos_profile_access(pos_profile)
 	try:
 		if not pos_profile:
 			return []
@@ -189,6 +185,7 @@ def get_taxes(pos_profile):
 @frappe.whitelist()
 def get_warehouses(pos_profile):
 	"""Get all warehouses for the company in POS Profile"""
+	require_pos_profile_access(pos_profile)
 	try:
 		if not pos_profile:
 			return []
@@ -222,6 +219,7 @@ def get_warehouses(pos_profile):
 @frappe.whitelist()
 def get_default_customer(pos_profile):
 	"""Get the default customer configured in POS Profile"""
+	require_pos_profile_access(pos_profile)
 	try:
 		if not pos_profile:
 			return {"customer": None}
@@ -254,14 +252,7 @@ def update_warehouse(pos_profile, warehouse):
 		if not warehouse:
 			frappe.throw(_("Warehouse is required"))
 
-		# Check if user has access to this POS Profile
-		has_access = frappe.db.exists(
-			"POS Profile User",
-			{"parent": pos_profile, "user": frappe.session.user}
-		)
-
-		if not has_access and not frappe.has_permission("POS Profile", "write"):
-			frappe.throw(_("You don't have permission to update this POS Profile"))
+		require_pos_profile_access(pos_profile)
 
 		# Get POS Profile to check company
 		profile_doc = frappe.get_doc("POS Profile", pos_profile)
@@ -339,6 +330,8 @@ def get_wallet_payment_flags(methods):
 @frappe.whitelist()
 def get_sales_persons(pos_profile=None):
 	"""Get all active individual sales persons (not groups) for POS"""
+	if pos_profile:
+		require_pos_profile_access(pos_profile)
 	try:
 		filters = {
 			"enabled": 1,
@@ -511,6 +504,8 @@ def create_pos_profile(*arg ,**parameters):
 	customer_groups = _parse_list_parameter(customer_groups, "customer_groups")
 	brands = _parse_list_parameter(brands, "brands")
 	
+	frappe.has_permission("POS Profile", "create", throw=True)
+
 	# Get user's company
 	user_company_data = check_user_company()
 	user_company = user_company_data.get("company")
@@ -589,6 +584,7 @@ def update_pos_profile(*args, **parameters):
 	customer_groups = _parse_list_parameter(customer_groups, "customer_groups")
 	brands = _parse_list_parameter(brands, "brands")
 	
+	require_pos_profile_config_access(pos_profile_name, "write")
 	pos_profile = frappe.get_doc("POS Profile", pos_profile_name)
 	
 	# Update main fields
@@ -668,5 +664,6 @@ def delete_pos_profile(pos_profile):
 		Args:
 			pos_profile: POS Profile name
 	"""
+	require_pos_profile_config_access(pos_profile, "delete")
 	pos_profile = frappe.get_doc("POS Profile", pos_profile)
 	pos_profile.delete()

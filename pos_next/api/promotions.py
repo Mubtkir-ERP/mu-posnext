@@ -6,6 +6,7 @@ import frappe
 from frappe import _
 from frappe.utils import flt, nowdate, getdate, cstr, cint
 import re
+from pos_next.api.security import require_pos_profile_access
 
 
 def check_promotion_permissions(action="read"):
@@ -40,6 +41,7 @@ def get_promotions(pos_profile=None, company=None, include_disabled=False):
 	if company:
 		filters["company"] = company
 	elif pos_profile:
+		require_pos_profile_access(pos_profile)
 		profile = frappe.get_doc("POS Profile", pos_profile)
 		filters["company"] = profile.company
 
@@ -506,6 +508,8 @@ def get_brands():
 
 @frappe.whitelist()
 def search_items(search_term, pos_profile=None, limit=20):
+	if pos_profile:
+		require_pos_profile_access(pos_profile)
 	"""Search for items."""
 	# Rate limiting: Track API calls per user
 	cache_key = f"search_items_rate_limit:{frappe.session.user}"

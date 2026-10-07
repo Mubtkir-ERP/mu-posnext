@@ -185,3 +185,73 @@ def require_customer_read(customer, pos_profile=None):
     if not frappe.has_permission("Customer", "read", customer):
         frappe.throw(_("You don't have permission to view this customer."), frappe.PermissionError)
     return True
+
+
+def require_warehouse_access(warehouse, user=None):
+    """Require that ``warehouse`` belongs to a company accessible from POS.
+
+    This protects stock/batch lookup endpoints that receive a warehouse directly
+    instead of a POS Profile. Privileged POS administrators retain access.
+    """
+    user = user or _require_authenticated()
+    if not warehouse:
+        frappe.throw(_("Warehouse is required."), frappe.ValidationError)
+
+    row = frappe.db.get_value(
+        "Warehouse",
+        warehouse,
+        ["name", "company", "disabled"],
+        as_dict=True,
+    )
+    if not row:
+        frappe.throw(_("Warehouse {0} does not exist.").format(warehouse))
+    if cint(row.disabled):
+        frappe.throw(_("Warehouse {0} is disabled.").format(warehouse))
+
+    if not _is_privileged_pos_admin(user):
+        require_company_access(row.company, user=user)
+
+    return row
+
+
+def require_pos_document_access(doctype, name, ptype="read", pos_profile=None, user=None):
+    """Authorize a POS-linked Sales Invoice / Sales Order document.
+
+    POS-linked documents are bounded by their database POS Profile and company,
+    not by caller supplied values. Non-POS documents fall back to Frappe's
+    native document permission engine.
+    """
+    user = user or _require_authenticated()
+    if doctype not in {"Sales Invoice", "Sales Order"}:
+        frappe.throw(_("Document type {0} is not allowed from POS.").format(doctype), frappe.PermissionError)
+    if not name:
+        frappe.throw(_("Document name is required."), frappe.ValidationError)
+
+    fields = ["name", "company", "pos_profile", "docstatus"]
+    if frappe.db.has_column(doctype, "posa_pos_opening_shift"):
+        fields.append("posa_pos_opening_shift")
+
+    row = frappe.db.get_value(doctype, name, fields, as_dict=True)
+    if not row:
+        frappe.throw(_("{0} {1} does not exist.").format(doctype, name))
+
+    if row.pos_profile:
+        require_pos_profile_access(row.pos_profile, company=row.company, user=user)
+        if pos_profile and row.pos_profile != pos_profile:
+            frappe.throw(_("This document belongs to another POS Profile."), frappe.PermissionError)
+        return row
+
+    if not frappe.has_permission(doctype, ptype, name):
+        frappe.throw(_("You don't have permission to access this document."), frappe.PermissionError)
+    return row
+
+
+def require_pos_profile_config_access(pos_profile, ptype="write", user=None):
+    """Require POS assignment plus native DocType permission for configuration writes."""
+    user = user or _require_authenticated()
+    profile = require_pos_profile_access(pos_profile, user=user)
+    if _is_privileged_pos_admin(user):
+        return profile
+    if not frappe.has_permission("POS Profile", ptype, pos_profile):
+        frappe.throw(_("You don't have permission to modify this POS Profile."), frappe.PermissionError)
+    return profile

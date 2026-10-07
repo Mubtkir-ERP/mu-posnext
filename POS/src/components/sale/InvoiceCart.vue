@@ -1441,7 +1441,7 @@ const giftCardsResource = createResource({
 	makeParams() {
 		return {
 			customer: props.customer?.name || props.customer,
-			company: props.posProfile, // Will get company from profile
+			pos_profile: props.posProfile,
 		};
 	},
 	auto: false,

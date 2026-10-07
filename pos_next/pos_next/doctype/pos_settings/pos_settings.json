@@ -197,7 +197,7 @@
   },
   {
    "default": "0",
-   "description": "Maximum discount percentage (enforced in UI)",
+   "description": "Maximum discount percentage (enforced in UI and server)",
    "fieldname": "max_discount_allowed",
    "fieldtype": "Float",
    "label": "Max Discount Percentage Allowed",

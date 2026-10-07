@@ -9,7 +9,11 @@ from frappe import _
 from frappe.utils import flt, cint, nowdate, nowtime, get_datetime, cstr
 from erpnext.stock.doctype.batch.batch import get_batch_qty, get_batch_no
 from erpnext.accounts.doctype.sales_invoice.sales_invoice import get_bank_cash_account
-from pos_next.api.security import require_pos_profile_access, require_shift_access
+from pos_next.api.security import (
+    require_pos_profile_access,
+    require_shift_access,
+    require_pos_document_access,
+)
 
 try:
     from erpnext.accounts.doctype.pricing_rule.pricing_rule import (
@@ -146,6 +150,406 @@ def get_payment_account(mode_of_payment, company):
         title=_("Missing Account"),
     )
 
+
+
+# ==========================================
+# Discount / Coupon Security Helpers
+# ==========================================
+
+
+def _get_pos_discount_settings(pos_profile):
+    """Return server-side discount policy for a POS Profile."""
+    defaults = frappe._dict(
+        {
+            "enabled": 1,
+            "allow_user_to_edit_additional_discount": 0,
+            "allow_user_to_edit_item_discount": 1,
+            "allow_user_to_edit_rate": 0,
+            "max_discount_allowed": 0,
+        }
+    )
+
+    if not pos_profile:
+        return defaults
+
+    row = frappe.db.get_value(
+        "POS Settings",
+        {"pos_profile": pos_profile},
+        [
+            "enabled",
+            "allow_user_to_edit_additional_discount",
+            "allow_user_to_edit_item_discount",
+            "allow_user_to_edit_rate",
+            "max_discount_allowed",
+        ],
+        as_dict=True,
+    )
+    if row:
+        defaults.update(row)
+        # Match the frontend contract: when POS Settings is disabled, its
+        # discount controls do not restrict checkout.
+        if not cint(row.get("enabled")):
+            defaults.allow_user_to_edit_additional_discount = 1
+            defaults.allow_user_to_edit_item_discount = 1
+            defaults.allow_user_to_edit_rate = 1
+            defaults.max_discount_allowed = 0
+    return defaults
+
+
+def _normalize_pricing_rules(value):
+    """Normalize item pricing_rules into a stable list of names."""
+    if not value:
+        return []
+    if isinstance(value, str):
+        raw = value.strip()
+        if not raw:
+            return []
+        if raw.startswith("["):
+            try:
+                parsed = json.loads(raw)
+                if isinstance(parsed, list):
+                    return [cstr(v).strip() for v in parsed if cstr(v).strip()]
+            except Exception:
+                pass
+        return [part.strip() for part in raw.split(",") if part.strip()]
+    if isinstance(value, (list, tuple, set)):
+        return [cstr(v).strip() for v in value if cstr(v).strip()]
+    return [cstr(value).strip()] if cstr(value).strip() else []
+
+
+def _get_authoritative_item_price(item, profile):
+    """Fetch the same price-list rate POSNext exposes to the cashier.
+
+    This is intentionally used only for discounted lines so checkout does not
+    add a per-item pricing query to every normal sale.
+    """
+    try:
+        from pos_next.api.items import get_item_detail
+
+        item_code = item.get("item_code")
+        if not item_code:
+            return frappe._dict({"price_list_rate": 0, "max_discount": 0})
+
+        item_master = frappe.get_cached_value(
+            "Item",
+            item_code,
+            ["has_batch_no", "has_serial_no", "is_stock_item"],
+            as_dict=True,
+        ) or {}
+
+        details = get_item_detail(
+            {
+                "item_code": item_code,
+                "has_batch_no": item_master.get("has_batch_no", 0),
+                "has_serial_no": item_master.get("has_serial_no", 0),
+                "is_stock_item": item_master.get("is_stock_item", 0),
+                "qty": flt(item.get("qty") or item.get("quantity") or 1),
+                "uom": item.get("uom"),
+            },
+            warehouse=None,
+            price_list=profile.get("selling_price_list"),
+            company=profile.company,
+        )
+        return frappe._dict(
+            {
+                "price_list_rate": flt(
+                    details.get("price_list_rate") or details.get("rate") or 0
+                ),
+                "max_discount": flt(details.get("max_discount") or 0),
+            }
+        )
+    except Exception:
+        frappe.log_error(
+            frappe.get_traceback(),
+            "POS Discount Price Validation Error",
+        )
+        return frappe._dict({"price_list_rate": 0, "max_discount": 0})
+
+
+def _validate_and_normalize_requested_discounts(data, profile):
+    """Enforce item/additional-discount policy on the server.
+
+    - UI flags are never trusted as authorization.
+    - Claimed Pricing Rules must be applicable according to ERPNext.
+    - Discounted lines are rebuilt from the server price-list rate where
+      available, preventing a forged price_list_rate from amplifying a discount.
+    - Coupon invoice-level amounts are ignored here and recalculated later from
+      ERPNext totals.
+    """
+    settings = _get_pos_discount_settings(profile.name)
+    items = data.get("items") or []
+    coupon_code = cstr(data.get("coupon_code") or "").strip().upper()
+
+    requested_additional = flt(data.get("discount_amount") or 0)
+    if requested_additional < 0:
+        frappe.throw(_("Additional discount cannot be negative."))
+
+    # A coupon amount is always server-calculated later. Ignore anything the
+    # browser supplied for discount_amount / additional_discount_percentage.
+    if coupon_code:
+        data["coupon_code"] = coupon_code
+        data["discount_amount"] = 0
+        data["additional_discount_percentage"] = 0
+    elif requested_additional > 0 and not cint(
+        settings.allow_user_to_edit_additional_discount
+    ):
+        frappe.throw(
+            _("Additional discount is not allowed for this POS Profile."),
+            frappe.PermissionError,
+        )
+
+    # Evaluate any claimed pricing rules using ERPNext's engine. A crafted rule
+    # name must not turn a manual discount into a trusted promotion.
+    claimed_rules = set()
+    for row in items:
+        claimed_rules.update(_normalize_pricing_rules(row.get("pricing_rules")))
+
+    offer_result = {"items": [], "free_items": [], "applied_pricing_rules": []}
+    if claimed_rules:
+        offer_result = apply_offers(
+            {
+                "doctype": data.get("doctype") or "Sales Invoice",
+                "pos_profile": profile.name,
+                "company": profile.company,
+                "customer": data.get("customer"),
+                "currency": data.get("currency") or profile.get("currency"),
+                "items": items,
+            },
+            selected_offers=sorted(claimed_rules),
+        ) or offer_result
+
+    server_items = offer_result.get("items") or []
+    applied_rules = set(offer_result.get("applied_pricing_rules") or [])
+    free_items = offer_result.get("free_items") or []
+
+    for index, item in enumerate(items):
+        qty = flt(item.get("qty") or item.get("quantity") or 0)
+        discount_pct = flt(item.get("discount_percentage") or 0)
+        discount_amt = flt(item.get("discount_amount") or 0)
+        is_free_item = cint(item.get("is_free_item") or 0)
+        client_rules = set(_normalize_pricing_rules(item.get("pricing_rules")))
+
+        if discount_pct < 0 or discount_pct > 100:
+            frappe.throw(
+                _("Discount percentage for item {0} must be between 0 and 100.").format(
+                    item.get("item_code")
+                )
+            )
+        if discount_amt < 0:
+            frappe.throw(
+                _("Discount amount for item {0} cannot be negative.").format(
+                    item.get("item_code")
+                )
+            )
+
+        server_item = server_items[index] if index < len(server_items) else {}
+
+        # Free products are returned separately by ERPNext's pricing engine, so
+        # validate them against free_item_data rather than the same item index.
+        if is_free_item:
+            verified_rules = client_rules & applied_rules
+            valid_free = False
+            for free in free_items:
+                free_rules = set(_normalize_pricing_rules(free.get("pricing_rules")))
+                if (
+                    free.get("item_code") == item.get("item_code")
+                    and bool(verified_rules & free_rules)
+                ):
+                    valid_free = True
+                    break
+
+            if not client_rules or verified_rules != client_rules or not valid_free:
+                frappe.throw(
+                    _("Free item {0} is not authorized by an active offer.").format(
+                        item.get("item_code")
+                    )
+                )
+            item["rate"] = 0
+            item["price_list_rate"] = 0
+            item["discount_percentage"] = 0
+            item["discount_amount"] = 0
+            item["pricing_rules"] = ",".join(sorted(verified_rules))
+            continue
+
+        server_rules = set(_normalize_pricing_rules(server_item.get("pricing_rules")))
+        verified_rules = client_rules & server_rules & applied_rules
+
+        if client_rules and verified_rules != client_rules:
+            frappe.throw(
+                _("Pricing rule for item {0} is no longer valid. Refresh the cart and try again.").format(
+                    item.get("item_code")
+                )
+            )
+
+        if verified_rules:
+            # Replace browser discount values with ERPNext-calculated values.
+            discount_pct = flt(server_item.get("discount_percentage") or 0)
+            discount_amt = flt(server_item.get("discount_amount") or 0)
+            item["discount_percentage"] = discount_pct
+            item["discount_amount"] = discount_amt
+            item["pricing_rules"] = ",".join(sorted(verified_rules))
+
+            # Fixed-rate Pricing Rules do not expose a discount percentage. The
+            # pricing engine returns the authoritative rule rate as the line's
+            # price_list_rate in this path; do not trust a browser-supplied rate.
+            if discount_pct <= 0 and discount_amt <= 0:
+                rule_rate = flt(server_item.get("price_list_rate") or 0)
+                if rule_rate > 0:
+                    item["price_list_rate"] = rule_rate
+                    item["rate"] = rule_rate
+        else:
+            item["pricing_rules"] = ""
+            has_manual_discount = discount_pct > 0 or discount_amt > 0
+            if has_manual_discount and not cint(settings.allow_user_to_edit_item_discount):
+                frappe.throw(
+                    _("Item discount is not allowed for this POS Profile."),
+                    frappe.PermissionError,
+                )
+
+        has_discount = flt(item.get("discount_percentage") or 0) > 0 or flt(
+            item.get("discount_amount") or 0
+        ) > 0
+        if not has_discount:
+            continue
+
+        price_info = _get_authoritative_item_price(item, profile)
+        server_price = flt(price_info.price_list_rate)
+        base_amount = max(server_price * abs(qty), 0) if server_price > 0 else max(
+            flt(item.get("price_list_rate") or item.get("rate") or 0) * abs(qty), 0
+        )
+
+        # Normalize amount/percentage from one server-side base.
+        normalized_pct = flt(item.get("discount_percentage") or 0)
+        normalized_amt = flt(item.get("discount_amount") or 0)
+        if normalized_pct > 0 and base_amount > 0:
+            normalized_amt = base_amount * normalized_pct / 100
+        elif normalized_amt > 0 and base_amount > 0:
+            normalized_pct = normalized_amt / base_amount * 100
+
+        if normalized_pct > 100.0001 or normalized_amt > base_amount + 0.01:
+            frappe.throw(
+                _("Discount for item {0} exceeds the item value.").format(
+                    item.get("item_code")
+                )
+            )
+
+        # Promotional rules are allowed to exceed manual POS limits. Manual
+        # discounts must respect both POS Settings and Item.max_discount.
+        if not verified_rules:
+            limits = []
+            pos_limit = flt(settings.max_discount_allowed or 0)
+            item_limit = flt(price_info.max_discount or 0)
+            if pos_limit > 0:
+                limits.append(pos_limit)
+            if item_limit > 0:
+                limits.append(item_limit)
+            if limits and normalized_pct > min(limits) + 0.0001:
+                frappe.throw(
+                    _("Discount for item {0} exceeds the maximum allowed discount of {1}%.").format(
+                        item.get("item_code"), min(limits)
+                    )
+                )
+
+        item["discount_percentage"] = normalized_pct
+        item["discount_amount"] = normalized_amt
+
+        # For a discounted line, use the authoritative list rate when available
+        # and derive the effective unit rate instead of trusting the browser.
+        if server_price > 0 and abs(qty) > 0:
+            item["price_list_rate"] = server_price
+            item["rate"] = max((base_amount - normalized_amt) / abs(qty), 0)
+
+    return settings
+
+
+def _validate_manual_additional_discount(invoice_doc, settings):
+    """Validate invoice-level manual discount against ERPNext-calculated subtotal."""
+    amount = flt(invoice_doc.get("discount_amount") or 0)
+    if amount < 0:
+        frappe.throw(_("Additional discount cannot be negative."))
+    if amount <= 0:
+        return
+
+    if not cint(settings.allow_user_to_edit_additional_discount):
+        frappe.throw(
+            _("Additional discount is not allowed for this POS Profile."),
+            frappe.PermissionError,
+        )
+
+    remaining_base = max(flt(invoice_doc.get("net_total") or 0), 0)
+    if amount > remaining_base + 0.01:
+        frappe.throw(_("Additional discount cannot exceed the invoice net total."))
+
+    # The frontend expresses Max Discount against the cart subtotal before item
+    # discounts. Rebuild the same base from server-normalized item rows so a
+    # mixed item + invoice discount is evaluated consistently on both sides.
+    policy_base = 0.0
+    for row in invoice_doc.get("items", []):
+        if cint(row.get("is_free_item") or 0):
+            continue
+        qty = abs(flt(row.get("qty") or 0))
+        price = flt(row.get("price_list_rate") or row.get("rate") or 0)
+        policy_base += qty * price
+    if policy_base <= 0:
+        policy_base = remaining_base
+
+    max_discount = flt(settings.max_discount_allowed or 0)
+    if max_discount > 0 and policy_base > 0:
+        pct = amount / policy_base * 100
+        if pct > max_discount + 0.0001:
+            frappe.throw(
+                _("Additional discount exceeds the maximum allowed discount of {0}%.").format(
+                    max_discount
+                )
+            )
+
+
+def _apply_coupon_authoritatively(invoice_doc, coupon_code, lock=False):
+    """Recalculate a POS Coupon from ERPNext totals and apply it to the document."""
+    code = cstr(coupon_code or "").strip().upper()
+    if not code:
+        return None
+    if invoice_doc.get("is_return"):
+        frappe.throw(_("Coupons cannot be applied to return invoices."))
+
+    from pos_next.pos_next.doctype.pos_coupon.pos_coupon import (
+        apply_coupon_discount,
+        check_coupon_code,
+    )
+
+    # Remove any browser-provided invoice-level discount before calculating the
+    # base on which this coupon is actually allowed to operate.
+    invoice_doc.discount_amount = 0
+    if invoice_doc.meta.has_field("additional_discount_percentage"):
+        invoice_doc.additional_discount_percentage = 0
+    invoice_doc.calculate_taxes_and_totals()
+
+    validation = check_coupon_code(
+        code,
+        customer=invoice_doc.customer,
+        company=invoice_doc.company,
+        lock=lock,
+    )
+    if not validation.get("valid"):
+        frappe.throw(validation.get("msg") or _("Invalid coupon code"))
+
+    coupon = validation["coupon"]
+    result = apply_coupon_discount(
+        coupon,
+        cart_total=invoice_doc.grand_total,
+        net_total=invoice_doc.net_total,
+    )
+    if not result.get("valid"):
+        frappe.throw(result.get("message") or _("Coupon requirements are not met"))
+
+    invoice_doc.coupon_code = coupon.coupon_code
+    if invoice_doc.meta.has_field("apply_discount_on"):
+        invoice_doc.apply_discount_on = coupon.apply_on or "Grand Total"
+    invoice_doc.discount_amount = flt(result.get("discount") or 0)
+    if invoice_doc.meta.has_field("additional_discount_percentage"):
+        invoice_doc.additional_discount_percentage = 0
+    invoice_doc.calculate_taxes_and_totals()
+    return coupon
 
 # ==========================================
 # Stock Validation Functions
@@ -301,8 +705,9 @@ def validate_cart_items(items, pos_profile=None):
     if isinstance(items, str):
         items = json.loads(items)
 
-    if pos_profile and not frappe.db.exists("POS Profile", pos_profile):
-        pos_profile = None
+    if not pos_profile:
+        frappe.throw(_("POS Profile is required."), frappe.PermissionError)
+    require_pos_profile_access(pos_profile)
 
     if not _should_block(pos_profile):
         return []
@@ -317,6 +722,9 @@ def validate_cart_items(items, pos_profile=None):
 @frappe.whitelist()
 def validate_return_items(original_invoice_name, return_items, doctype="Sales Invoice"):
     """Ensure that return items do not exceed the quantity from the original invoice."""
+    if doctype not in _ALLOWED_POS_TRANSACTION_DOCTYPES:
+        frappe.throw(_("Document type {0} is not allowed from POS.").format(doctype), frappe.PermissionError)
+    require_pos_document_access(doctype, original_invoice_name, ptype="read")
     original_invoice = frappe.get_doc(doctype, original_invoice_name)
     original_item_qty = {}
 
@@ -383,6 +791,11 @@ def update_invoice(data):
         data["pos_profile"] = profile.name
         data["company"] = profile.company
         data["posa_pos_opening_shift"] = shift.name
+
+        # Phase 3 / Point 3: discount and coupon policy is enforced server-side
+        # before any document is created or updated. This also strips forged
+        # pricing-rule metadata and normalizes discounted lines.
+        discount_settings = _validate_and_normalize_requested_discounts(data, profile)
 
         if existing_doc:
             invoice_doc = existing_doc
@@ -547,46 +960,49 @@ def update_invoice(data):
                     sum(p.base_amount or 0 for p in invoice_doc.payments)
                 )
 
-        # Validate and track POS Coupon if coupon_code is provided
+        # Coupon discount is always recalculated from ERPNext totals. Manual
+        # additional discounts are validated against the POS policy instead.
         coupon_code = data.get("coupon_code")
         if coupon_code:
-            # Validate POS Coupon exists and is valid
-            if frappe.db.table_exists("POS Coupon"):
-                from pos_next.pos_next.doctype.pos_coupon.pos_coupon import check_coupon_code
-
-                coupon_result = check_coupon_code(
-                    coupon_code,
-                    customer=invoice_doc.customer,
-                    company=invoice_doc.company
-                )
-
-                if not coupon_result.get("valid"):
-                    frappe.throw(_(coupon_result.get("msg", "Invalid coupon code")))
-
-                # Store coupon code on invoice for tracking
-                invoice_doc.coupon_code = coupon_code
+            if not frappe.db.table_exists("POS Coupon"):
+                frappe.throw(_("Coupons are not enabled"))
+            _apply_coupon_authoritatively(invoice_doc, coupon_code, lock=False)
+        else:
+            _validate_manual_additional_discount(invoice_doc, discount_settings)
 
         # Save as draft. Permission bypass is bounded by _authorize_pos_transaction.
         invoice_doc.docstatus = 0
         _save_authorized_pos_doc(invoice_doc)
 
-        # FIX: Ensure payments from frontend aren't wiped out by custom scripts or ERPNext's set_pos_data
+        # FIX: Ensure payments from frontend aren't wiped out by custom scripts or ERPNext's set_pos_data.
+        # Security: restore in memory first, then re-run wallet validation BEFORE any db_update.
+        # This prevents a crafted wallet amount from being persisted after the normal validate hook.
         if data.get("payments"):
-            payload_payments_map = {p.get("mode_of_payment"): flt(p.get("amount")) for p in data.get("payments") if p.get("mode_of_payment")}
-            needs_update = False
-            
+            payload_payments_map = {
+                p.get("mode_of_payment"): flt(p.get("amount"))
+                for p in data.get("payments")
+                if p.get("mode_of_payment")
+            }
+            changed_payments = []
+
             for p in invoice_doc.payments:
                 if p.mode_of_payment in payload_payments_map:
                     payload_amt = payload_payments_map[p.mode_of_payment]
-                    # If the document has 0, but payload had an amount, the script wiped it!
                     if p.amount != payload_amt:
                         p.amount = payload_amt
                         if not p.base_amount or p.base_amount != payload_amt:
                             p.base_amount = payload_amt
-                        p.db_update()
-                        needs_update = True
-            
-            if needs_update:
+                        changed_payments.append(p)
+
+            if changed_payments:
+                if doctype == "Sales Invoice":
+                    from pos_next.api.wallet import validate_wallet_payment
+
+                    validate_wallet_payment(invoice_doc)
+
+                for p in changed_payments:
+                    p.db_update()
+
                 invoice_doc.paid_amount = sum(flt(p.amount) for p in invoice_doc.payments)
                 invoice_doc.base_paid_amount = invoice_doc.paid_amount
                 invoice_doc.db_update()
@@ -701,6 +1117,10 @@ def submit_invoice(invoice=None, data=None):
         invoice["company"] = profile.company
         invoice["posa_pos_opening_shift"] = shift.name
 
+        # Re-validate discount policy at submit time. The draft may have been
+        # modified after Step 1, and the submit payload itself is untrusted.
+        discount_settings = _validate_and_normalize_requested_discounts(invoice, profile)
+
         offline_id = cstr(invoice.get("offline_id") or data.get("offline_id") or "").strip()
         offline_sync = None
 
@@ -811,19 +1231,18 @@ def submit_invoice(invoice=None, data=None):
                     "allocated_percentage": member.get("allocated_percentage", 0),
                 })
 
-        # Handle POS Coupon if coupon_code is provided
-        coupon_code = invoice.get("coupon_code") or data.get("coupon_code")
+        # Recalculate coupon discount from current ERPNext totals and lock the
+        # coupon row until this transaction completes. This closes the race where
+        # two cashiers could consume the last use simultaneously.
+        coupon_code = cstr(invoice_doc.get("coupon_code") or "").strip().upper()
         if coupon_code:
-            # Increment usage counter for POS Coupon
-            if frappe.db.table_exists("POS Coupon"):
-                try:
-                    from pos_next.pos_next.doctype.pos_coupon.pos_coupon import increment_coupon_usage
-                    increment_coupon_usage(coupon_code)
-                except Exception as e:
-                    frappe.log_error(
-                        title="Failed to increment coupon usage",
-                        message=f"Coupon: {coupon_code}, Error: {str(e)}"
-                    )
+            if not frappe.db.table_exists("POS Coupon"):
+                frappe.throw(_("Coupons are not enabled"))
+            _apply_coupon_authoritatively(invoice_doc, coupon_code, lock=True)
+            coupon_code = invoice_doc.coupon_code
+        else:
+            invoice_doc.calculate_taxes_and_totals()
+            _validate_manual_additional_discount(invoice_doc, discount_settings)
 
         # Auto-set batch numbers for returns
         _auto_set_return_batches(invoice_doc)
@@ -855,6 +1274,16 @@ def submit_invoice(invoice=None, data=None):
             invoice_doc.flags.ignore_permissions = True
             try:
                 invoice_doc.submit()
+
+                # The invoice/order is now submitted while the coupon row lock is
+                # still held. Synchronize the usage counter inside the same DB
+                # transaction; no manual commit is used.
+                if coupon_code:
+                    from pos_next.pos_next.doctype.pos_coupon.pos_coupon import (
+                        increment_coupon_usage,
+                    )
+
+                    increment_coupon_usage(coupon_code, locked=True)
             finally:
                 frappe.flags.ignore_account_permission = previous_ignore
                 invoice_doc.flags.ignore_permissions = False
@@ -959,9 +1388,7 @@ def get_invoice(invoice_name):
 	if not frappe.db.exists("Sales Invoice", invoice_name):
 		frappe.throw(_("Invoice {0} does not exist").format(invoice_name))
 
-	# Check permissions
-	if not frappe.has_permission("Sales Invoice", "read", invoice_name):
-		frappe.throw(_("You don't have permission to view this invoice"))
+	require_pos_document_access("Sales Invoice", invoice_name, ptype="read")
 
 	# Get invoice document
 	invoice = frappe.get_doc("Sales Invoice", invoice_name)
@@ -1806,6 +2233,7 @@ def apply_offers(invoice_data, selected_offers=None):
             # Either no POS profile supplied or ERPNext promotional engine unavailable
             return {"items": items}
 
+        require_pos_profile_access(invoice.get("pos_profile"))
         profile = frappe.get_doc("POS Profile", invoice.get("pos_profile"))
 
         pricing_items = []
@@ -1962,7 +2390,10 @@ def apply_offers(invoice_data, selected_offers=None):
                 ],
             )
             for record in rule_records:
-                if record.promotional_scheme and not record.coupon_code_based:
+                # Any active non-coupon Pricing Rule returned by ERPNext may be
+                # validated here, including standalone rules. Coupon-based rules
+                # are handled separately by the POS Coupon flow.
+                if not record.coupon_code_based:
                     rule_map[record.name] = record
 
         if selected_offer_names:

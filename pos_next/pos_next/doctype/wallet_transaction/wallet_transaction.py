@@ -6,44 +6,98 @@ from frappe import _
 from frappe.utils import flt, today
 from erpnext.accounts.general_ledger import make_gl_entries
 from erpnext.controllers.accounts_controller import AccountsController
-from pos_next.api.wallet import get_or_create_wallet
 
 class WalletTransaction(AccountsController):
 	def validate(self):
+		# Wallet/customer/company are server-authoritative.  Populate them before
+		# validating the amount so a crafted request cannot validate against a
+		# different customer or company.
 		self.validate_wallet()
-		self.validate_amount()
 		self.set_customer_from_wallet()
+		self.validate_source_integrity()
+		self.validate_amount()
 
 	def validate_wallet(self):
-		"""Validate wallet exists and is active"""
+		"""Validate wallet and pin transaction context to its trusted row."""
 		if not self.wallet:
 			frappe.throw(_("Wallet is required"))
 
-		wallet_status = frappe.db.get_value("Wallet", self.wallet, "status")
-		if wallet_status != "Active":
+		wallet = frappe.db.get_value(
+			"Wallet",
+			self.wallet,
+			["customer", "company", "account", "status"],
+			as_dict=True,
+		)
+		if not wallet:
+			frappe.throw(_("Wallet {0} does not exist").format(self.wallet))
+		if wallet.status not in ("Active", "active"):
 			frappe.throw(_("Wallet {0} is not active").format(self.wallet))
 
+		# Never trust company/customer values supplied by a browser or API client.
+		self.customer = wallet.customer
+		self.company = wallet.company
+		self._wallet_account = wallet.account
+
 	def validate_amount(self):
-		"""Validate amount is positive"""
+		"""Validate amount and live balance for debit transactions."""
 		if flt(self.amount) <= 0:
 			frappe.throw(_("Amount must be greater than zero"))
 
-		# For debit transactions, check if sufficient balance
 		if self.transaction_type == "Debit":
-			from pos_next.pos_next.doctype.wallet.wallet import get_customer_wallet_balance
-			balance = get_customer_wallet_balance(self.customer, self.company)
-			if flt(self.amount) > flt(balance):
+			from pos_next.api.wallet import _get_customer_wallet_balance, _lock_wallet
+
+			_lock_wallet(self.wallet)
+			balance = _get_customer_wallet_balance(self.customer, self.company)
+			if flt(self.amount) > flt(balance) + 0.005:
 				frappe.throw(
 					_("Insufficient wallet balance. Available: {0}, Requested: {1}").format(
 						frappe.format_value(balance, {"fieldtype": "Currency"}),
-						frappe.format_value(self.amount, {"fieldtype": "Currency"})
+						frappe.format_value(self.amount, {"fieldtype": "Currency"}),
 					)
 				)
 
 	def set_customer_from_wallet(self):
-		"""Fetch customer from wallet"""
-		if self.wallet and not self.customer:
-			self.customer = frappe.db.get_value("Wallet", self.wallet, "customer")
+		"""Refresh customer/company from wallet even when client sent values."""
+		if not self.wallet:
+			return
+		wallet = frappe.db.get_value(
+			"Wallet", self.wallet, ["customer", "company"], as_dict=True
+		)
+		if wallet:
+			self.customer = wallet.customer
+			self.company = wallet.company
+
+	def validate_source_integrity(self):
+		"""Protect server-generated loyalty credits from client tampering."""
+		valid_sources = {"Mode of Payment", "Loyalty Program", "Manual Adjustment", "Refund"}
+		if self.source_type and self.source_type not in valid_sources:
+			frappe.throw(_("Invalid wallet transaction source type."))
+
+		if self.source_account:
+			account = frappe.db.get_value(
+				"Account", self.source_account, ["company", "is_group", "disabled"], as_dict=True
+			)
+			if not account or account.company != self.company or account.is_group or account.disabled:
+				frappe.throw(_("Source account is not valid for the wallet company."))
+
+		if self.source_type == "Loyalty Program":
+			if self.transaction_type != "Loyalty Credit":
+				frappe.throw(_("Loyalty Program transactions must use Loyalty Credit type."))
+			if self.reference_doctype != "Sales Invoice" or not self.reference_name:
+				frappe.throw(_("Loyalty wallet credit requires a Sales Invoice reference."))
+
+			from pos_next.api.wallet import _get_loyalty_credit_details
+
+			details = _get_loyalty_credit_details(self.reference_name)
+			if not details:
+				frappe.throw(_("No earned loyalty points were found for this invoice."))
+			if details.customer != self.customer or details.company != self.company:
+				frappe.throw(_("The loyalty reference does not belong to this wallet."))
+			if abs(flt(self.amount) - flt(details.credit_amount)) > 0.005:
+				frappe.throw(_("Loyalty wallet amount does not match the server-calculated amount."))
+
+			# Exact source account is also server-authoritative for loyalty credit.
+			self.source_account = details.expense_account
 
 	def on_submit(self):
 		"""Create GL entries on submit"""
@@ -190,47 +244,96 @@ class WalletTransaction(AccountsController):
 		return None
 
 
-@frappe.whitelist()
 def create_wallet_credit(wallet, amount, source_type="Manual Adjustment", remarks=None,
 						 reference_doctype=None, reference_name=None, submit=True):
-	"""
-	Create a wallet credit transaction.
+	"""Internal low-level wallet credit creator.
 
-	Args:
-		wallet: Wallet name
-		amount: Amount to credit
-		source_type: Source of credit (Manual Adjustment, Loyalty Program, Refund)
-		remarks: Transaction remarks
-		reference_doctype: Reference document type
-		reference_name: Reference document name
-		submit: Whether to submit the transaction
-
-	Returns:
-		Wallet Transaction document
+	This function is intentionally not whitelisted.  Public API callers must use
+	the guarded endpoints in ``pos_next.api.wallet``.  Loyalty credit values are
+	recalculated from ERPNext records even for internal callers.
 	"""
 	wallet_doc = frappe.get_doc("Wallet", wallet)
+	if wallet_doc.status not in ("Active", "active"):
+		frappe.throw(_("Wallet {0} is not active").format(wallet))
 
-	# Get source account based on source type
+	amount = flt(amount)
+	if amount <= 0:
+		frappe.throw(_("Amount must be greater than zero"))
+
+	transaction_type = "Loyalty Credit" if source_type == "Loyalty Program" else "Credit"
 	source_account = None
+
 	if source_type == "Loyalty Program":
-		loyalty_program = frappe.db.get_value(
-			"Loyalty Program",
-			{"company": wallet_doc.company},
-			"name"
+		if reference_doctype != "Sales Invoice" or not reference_name:
+			frappe.throw(_("Loyalty wallet credit requires a Sales Invoice reference."))
+
+		from pos_next.api.wallet import _get_loyalty_credit_details
+
+		details = _get_loyalty_credit_details(reference_name)
+		if not details:
+			frappe.throw(_("No earned loyalty points were found for this invoice."))
+		if details.customer != wallet_doc.customer or details.company != wallet_doc.company:
+			frappe.throw(_("The loyalty invoice does not belong to this wallet."))
+
+		# Ignore any caller-provided loyalty amount.  The Loyalty Point Entry and
+		# Loyalty Program conversion factor are the only sources of truth.
+		amount = flt(details.credit_amount)
+		source_account = details.expense_account
+
+	# Reference-backed credits are idempotent.  This is especially important for
+	# invoice submit retries: one invoice can create at most one active loyalty/refund credit.
+	if reference_doctype and reference_name and source_type in ("Loyalty Program", "Refund"):
+		existing_name = frappe.db.get_value(
+			"Wallet Transaction",
+			{
+				"wallet": wallet,
+				"reference_doctype": reference_doctype,
+				"reference_name": reference_name,
+				"source_type": source_type,
+				"transaction_type": transaction_type,
+				"docstatus": ["!=", 2],
+			},
+			"name",
 		)
-		if loyalty_program:
-			source_account = frappe.db.get_value(
-				"Loyalty Program", loyalty_program, "expense_account"
+		if existing_name:
+			existing = frappe.get_doc("Wallet Transaction", existing_name)
+			if submit and existing.docstatus == 0:
+				existing.flags.ignore_permissions = True
+				existing.submit()
+				return existing
+			if existing.docstatus == 1:
+				# If a previous request died after docstatus changed but before GL
+				# creation, recover instead of silently accepting a broken credit.
+				if frappe.db.exists("GL Entry", {"voucher_no": existing.name, "is_cancelled": 0}):
+					return existing
+				try:
+					existing.flags.ignore_permissions = True
+					existing.cancel()
+				except Exception:
+					frappe.log_error(
+						title="Wallet Transaction Recovery Error",
+						message=f"Could not cancel broken WT {existing.name}: {frappe.get_traceback()}",
+					)
+					return existing
+			else:
+				return existing
+
+	if not source_account:
+		if source_type == "Refund":
+			source_account = frappe.get_cached_value(
+				"Company", wallet_doc.company, "default_receivable_account"
+			)
+		else:
+			source_account = frappe.get_cached_value(
+				"Company", wallet_doc.company, "default_expense_account"
 			)
 
 	if not source_account:
-		source_account = frappe.get_cached_value(
-			"Company", wallet_doc.company, "default_expense_account"
-		)
+		frappe.throw(_("Source account is required for wallet transaction"))
 
 	transaction = frappe.get_doc({
 		"doctype": "Wallet Transaction",
-		"transaction_type": "Loyalty Credit" if source_type == "Loyalty Program" else "Credit",
+		"transaction_type": transaction_type,
 		"wallet": wallet,
 		"company": wallet_doc.company,
 		"posting_date": today(),
@@ -239,196 +342,85 @@ def create_wallet_credit(wallet, amount, source_type="Manual Adjustment", remark
 		"source_account": source_account,
 		"remarks": remarks,
 		"reference_doctype": reference_doctype,
-		"reference_name": reference_name
+		"reference_name": reference_name,
 	})
-
+	transaction.flags.ignore_permissions = True
 	transaction.insert(ignore_permissions=True)
-
 	if submit:
 		transaction.submit()
-
 	return transaction
 
 
 @frappe.whitelist()
-def credit_loyalty_points_to_wallet(customer, company, loyalty_points, conversion_factor=None):
+def credit_loyalty_points_to_wallet(customer, company, loyalty_points=None, conversion_factor=None):
+	"""Deprecated direct conversion endpoint.
+
+	The old endpoint trusted a point count and conversion factor from the caller,
+	which allowed wallet value to be forged.  POSNext now creates loyalty wallet
+	credit only from a submitted invoice's server-generated Loyalty Point Entry.
 	"""
-	Convert loyalty points to wallet credit.
-
-	Args:
-		customer: Customer ID
-		company: Company
-		loyalty_points: Number of loyalty points to convert
-		conversion_factor: Points to currency conversion (optional, fetched from program if not provided)
-
-	Returns:
-		Wallet Transaction document or None
-	"""
-	if flt(loyalty_points) <= 0:
-		return None
-
-	# Get conversion factor from loyalty program if not provided
-	if not conversion_factor:
-		loyalty_program = frappe.db.get_value("Customer", customer, "loyalty_program")
-		if loyalty_program:
-			conversion_factor = frappe.db.get_value(
-				"Loyalty Program", loyalty_program, "conversion_factor"
-			)
-
-	if not conversion_factor:
-		conversion_factor = 1.0  # Default: 1 point = 1 currency
-
-	# Calculate wallet credit amount
-	credit_amount = flt(loyalty_points) * flt(conversion_factor)
-
-	if credit_amount <= 0:
-		return None
-
-	# Get or create customer wallet
-	wallet = get_or_create_wallet(customer, company, force_create=True)
-
-	# Create wallet credit transaction
-	transaction = create_wallet_credit(
-		wallet=wallet["name"],
-		amount=credit_amount,
-		source_type="Loyalty Program",
-		remarks=_("Loyalty points conversion: {0} points = {1}").format(
-			loyalty_points,
-			frappe.format_value(credit_amount, {"fieldtype": "Currency"})
-		),
-		submit=True
+	frappe.throw(
+		_("Direct loyalty-to-wallet conversion is disabled. Loyalty credit is created from submitted invoices."),
+		frappe.PermissionError,
 	)
 
-	return transaction
 
 def credit_return_to_wallet(return_invoice, amount=None):
-	"""
-	Create a Credit wallet transaction when "Add to Customer Credit Balance"
-	is enabled on a return invoice.
+	"""Credit a return invoice to the customer's wallet.
 
-	The return amount is credited to the customer's wallet instead of a cash refund.
-	Works for both full and partial returns — the amount is taken from the
-	return invoice's grand_total (absolute value) or can be explicitly passed.
-
-	Args:
-		return_invoice: Return Sales Invoice name (is_return=1)
-		amount: Explicit credit amount (optional). If not provided,
-				uses abs(return_invoice.grand_total).
-
-	Returns:
-		Wallet Transaction document or None
+	The return invoice total is the source of truth.  ``amount`` is retained only
+	for backward-compatible Python callers and is never trusted to increase the
+	wallet credit.
 	"""
 	return_data = frappe.db.get_value(
 		"Sales Invoice",
 		return_invoice,
-		["customer", "company", "grand_total", "is_return", "return_against"],
+		["customer", "company", "grand_total", "is_return", "return_against", "pos_profile", "docstatus"],
 		as_dict=True,
 	)
-
-	if not return_data or not return_data.is_return:
+	if not return_data or not return_data.is_return or return_data.docstatus != 1:
 		frappe.log_error(
 			title="Wallet Credit on Return Error",
-			message=f"Invoice {return_invoice} is not a return invoice"
+			message=f"Invoice {return_invoice} is not a submitted return invoice",
 		)
 		return None
 
-	customer = return_data.customer
-	company = return_data.company
-
-	# Determine credit amount: explicit amount or absolute grand_total
-	credit_amount = flt(amount) if amount else abs(flt(return_data.grand_total))
-
+	credit_amount = abs(flt(return_data.grand_total))
 	if credit_amount <= 0:
 		return None
 
-	# Get or create customer wallet
-	wallet = get_or_create_wallet(customer, company, force_create=True)
+	# ``amount`` is intentionally ignored.  The submitted return invoice total is
+	# the only authority for how much wallet credit may be created.
 
+	from pos_next.api.wallet import _get_or_create_wallet, get_pos_settings
+
+	pos_settings = get_pos_settings(return_data.pos_profile) if return_data.pos_profile else None
+	wallet = _get_or_create_wallet(
+		return_data.customer,
+		return_data.company,
+		pos_settings=pos_settings,
+		force_create=True,
+	)
 	if not wallet:
 		frappe.log_error(
 			title="Wallet Credit on Return Error",
-			message=f"Could not get or create wallet for customer {customer}, company {company}"
+			message=f"Could not get or create wallet for customer {return_data.customer}, company {return_data.company}",
 		)
 		return None
 
-	# Determine source account — use company's default receivable account for refunds
-	source_account = frappe.get_cached_value("Company", company, "default_receivable_account")
-
-	if not source_account:
-		frappe.log_error(
-			title="Wallet Credit on Return Error",
-			message=f"No default receivable account for company {company}"
-		)
-		return None
-
-	# Idempotency guard: if submit_invoice is retried for the same return invoice,
-	# reuse the existing wallet credit transaction instead of creating duplicates.
-	existing_transaction_name = frappe.db.get_value(
-		"Wallet Transaction",
-		{
-			"reference_doctype": "Sales Invoice",
-			"reference_name": return_invoice,
-			"transaction_type": "Credit",
-			"source_type": "Refund",
-			"docstatus": ["!=", 2],
-		},
-		"name",
-	)
-	if existing_transaction_name:
-		existing_transaction = frappe.get_doc("Wallet Transaction", existing_transaction_name)
-		if existing_transaction.docstatus == 0:
-			# Recover stuck draft created by a crashed prior attempt.
-			existing_transaction.flags.ignore_permissions = True
-			existing_transaction.submit()
-			return existing_transaction
-
-		if existing_transaction.docstatus == 1:
-			# Check if GL entries exist — a previous attempt may have set docstatus=1
-			# but failed during make_gl_entries(), leaving a broken transaction.
-			has_gl = frappe.db.exists("GL Entry", {"voucher_no": existing_transaction.name})
-			if has_gl:
-				return existing_transaction
-			# No GL entries → broken submission. Cancel and recreate below.
-			# NOTE: We intentionally do NOT call frappe.db.commit() here so
-			# the cancellation stays within the caller's transaction boundary
-			# and can be rolled back if the subsequent re-creation fails.
-			try:
-				existing_transaction.flags.ignore_permissions = True
-				existing_transaction.cancel()
-			except Exception:
-				frappe.log_error(
-					title="Wallet Transaction Recovery Error",
-					message=f"Could not cancel broken WT {existing_transaction.name}: {frappe.get_traceback()}"
-				)
-				return None
-
-	transaction = frappe.get_doc({
-		"doctype": "Wallet Transaction",
-		"transaction_type": "Credit",
-		"wallet": wallet["name"],
-		"company": company,
-		"posting_date": today(),
-		"amount": credit_amount,
-		"source_type": "Refund",
-		"source_account": source_account,
-		"reference_doctype": "Sales Invoice",
-		"reference_name": return_invoice,
-		"remarks": _("Return credit to wallet for {0} against {1}: {2}").format(
+	wallet_name = wallet.name if hasattr(wallet, "name") else wallet["name"]
+	transaction = create_wallet_credit(
+		wallet=wallet_name,
+		amount=credit_amount,
+		source_type="Refund",
+		reference_doctype="Sales Invoice",
+		reference_name=return_invoice,
+		remarks=_("Return credit to wallet for {0} against {1}: {2}").format(
 			return_invoice,
 			return_data.return_against or "",
-			frappe.format_value(credit_amount, {"fieldtype": "Currency"})
-		)
-	})
-	transaction.flags.ignore_permissions = True
-	transaction.insert(ignore_permissions=True)
-	transaction.submit()
-
-	frappe.msgprint(
-		_("Credited {0} to customer wallet for return {1}").format(
 			frappe.format_value(credit_amount, {"fieldtype": "Currency"}),
-			return_invoice
 		),
-		alert=True, indicator="green"
+		submit=True,
 	)
 	return transaction
 
@@ -445,12 +437,26 @@ def reverse_wallet_transactions_for_return(original_invoice, return_invoice):
 		original_invoice: Original Sales Invoice name
 		return_invoice: Return Sales Invoice name (is_return=1)
 	"""
-	# Get the return invoice to calculate return ratio
+	from pos_next.api.security import require_pos_document_access
+
+	# Authorize both documents before any wallet mutation.  The database-linked
+	# POS Profile/company is authoritative; invoice names from the browser are not.
+	require_pos_document_access("Sales Invoice", original_invoice, ptype="read")
+	require_pos_document_access("Sales Invoice", return_invoice, ptype="read")
+
+	# Get both invoices only after the permission boundary has been checked.
 	return_doc = frappe.get_doc("Sales Invoice", return_invoice)
 	original_doc = frappe.get_doc("Sales Invoice", original_invoice)
 
-	if not return_doc.is_return or return_doc.return_against != original_invoice:
-		return
+	if original_doc.docstatus != 1 or return_doc.docstatus != 1:
+		frappe.throw(_("Wallet reversal requires submitted invoices."), frappe.ValidationError)
+	if (
+		return_doc.company != original_doc.company
+		or return_doc.customer != original_doc.customer
+		or not return_doc.is_return
+		or return_doc.return_against != original_invoice
+	):
+		frappe.throw(_("Return invoice does not match the original wallet invoice."), frappe.ValidationError)
 
 	existing = frappe.db.exists("Wallet Transaction", {
 		"reference_doctype": "Sales Invoice",
@@ -483,6 +489,8 @@ def reverse_wallet_transactions_for_return(original_invoice, return_invoice):
 
 	if original_total <= 0:
 		return
+	if returned_amount > original_total + 0.005:
+		frappe.throw(_("Return amount cannot exceed the original invoice amount."), frappe.ValidationError)
 
 	# Check if this is a full return
 	# Keep full precision for ratio; only round the final reverse_amount
@@ -492,7 +500,16 @@ def reverse_wallet_transactions_for_return(original_invoice, return_invoice):
 	# Get loyalty program details for tier-aware reversal of Loyalty Credit.
 	# Supports both "Single Tier Program" (one rule) and "Multiple Tier Program" (many rules).
 	# Original credit: points = int(eligible_amount / collection_factor), wallet = points * conversion_factor
-	loyalty_program = frappe.db.get_value("Customer", original_doc.customer, "loyalty_program")
+	loyalty_program = frappe.db.get_value(
+		"Loyalty Point Entry",
+		{
+			"invoice_type": "Sales Invoice",
+			"invoice": original_invoice,
+			"customer": original_doc.customer,
+			"loyalty_points": [">", 0],
+		},
+		"loyalty_program",
+	)
 
 	tiers = []
 	conversion_factor = 1.0
@@ -500,7 +517,7 @@ def reverse_wallet_transactions_for_return(original_invoice, return_invoice):
 		lp_doc = frappe.get_doc("Loyalty Program", loyalty_program)
 		conversion_factor = flt(lp_doc.conversion_factor) or 1.0
 		tiers = sorted(
-			[d.as_dict() for d in lp_doc.collection_rules],
+			[d.as_dict() for d in (lp_doc.get("collection_rules") or [])],
 			key=lambda r: flt(r.get("min_spent")),
 		)
 

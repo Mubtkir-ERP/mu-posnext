@@ -391,7 +391,9 @@ frappe.call({
         coupon_code: 'SUMMER2024',
         customer: 'CUST-00001',
         company: 'My Company',
-        grand_total: 1000
+        pos_profile: 'Main POS',
+        grand_total: 1000,
+        net_total: 900
     },
     callback: (r) => console.log(r.message)
 })

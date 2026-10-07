@@ -4,7 +4,7 @@
 import frappe
 from frappe import _
 from frappe.model.document import Document
-from frappe.utils import flt
+from frappe.utils import cint, flt
 from erpnext.accounts.utils import get_balance_on
 
 
@@ -14,52 +14,58 @@ class Wallet(Document):
 		self.validate_duplicate_wallet()
 
 	def validate_account_type(self):
-		"""Wallet account must be a Receivable account"""
-		if self.account:
-			account_type = frappe.get_value("Account", self.account, "account_type")
-			if account_type != "Receivable":
-				frappe.throw(_("Wallet Account must be a Receivable type account"))
+		"""Wallet account must be an active leaf Receivable account in the wallet company."""
+		if not self.account:
+			return
+		account = frappe.db.get_value(
+			"Account",
+			self.account,
+			["account_type", "company", "is_group", "disabled"],
+			as_dict=True,
+		)
+		if (
+			not account
+			or account.account_type != "Receivable"
+			or account.company != self.company
+			or cint(account.is_group)
+			or cint(account.disabled)
+		):
+			frappe.throw(_("Wallet Account must be an active Receivable account for the wallet company"))
 
 	def validate_duplicate_wallet(self):
-		"""Check for duplicate wallet for same customer and company"""
+		"""Check for duplicate wallet for same customer and company."""
 		if not self.is_new():
 			return
 		existing = frappe.db.exists(
 			"Wallet",
-			{"customer": self.customer, "company": self.company, "name": ("!=", self.name)}
+			{"customer": self.customer, "company": self.company, "name": ("!=", self.name)},
 		)
 		if existing:
-			frappe.throw(_("A wallet already exists for customer {0} in company {1}").format(
-				self.customer, self.company
-			))
+			frappe.throw(
+				_("A wallet already exists for customer {0} in company {1}").format(
+					self.customer, self.company
+				)
+			)
 
 	def get_balance(self):
-		"""Get current wallet balance from GL entries.
-
-		For receivable accounts:
-		- Negative balance = customer has credit (we owe them) = positive wallet balance
-		- Positive balance = customer owes us = negative wallet balance (shouldn't happen)
-		"""
+		"""Get current wallet balance from GL entries."""
 		if not self.account or not self.customer:
 			return 0.0
-
 		balance = get_balance_on(
 			account=self.account,
 			party_type="Customer",
-			party=self.customer
+			party=self.customer,
 		)
-		# Negate because negative receivable balance = positive wallet credit
 		return -flt(balance)
 
 	def get_available_balance(self):
-		"""Get available balance (current balance minus pending wallet payments)"""
-		current = self.get_balance()
-		pending = get_pending_wallet_payments(self.customer)
-		available = flt(current) - flt(pending)
-		return available if available > 0 else 0.0
+		"""Get available balance using the canonical wallet service."""
+		from pos_next.api.wallet import _get_customer_wallet_balance
+
+		return _get_customer_wallet_balance(self.customer, self.company)
 
 	def update_balance(self):
-		"""Update the current_balance and available_balance fields"""
+		"""Update cached balance fields from the canonical calculations."""
 		self.current_balance = self.get_balance()
 		self.available_balance = self.get_available_balance()
 		self.db_set("current_balance", self.current_balance, update_modified=False)
@@ -67,190 +73,89 @@ class Wallet(Document):
 
 
 @frappe.whitelist()
-def get_customer_wallet(customer, company=None):
-	"""Get wallet for a customer"""
-	filters = {"customer": customer}
-	if company:
-		filters["company"] = company
+def get_customer_wallet(customer, company=None, pos_profile=None):
+	"""Compatibility wrapper around the canonical POS wallet API."""
+	from pos_next.api.wallet import get_customer_wallet as canonical_get_customer_wallet
 
-	wallet = frappe.db.get_value(
-		"Wallet",
-		filters,
-		["name", "customer", "company", "account", "status"],
-		as_dict=True
-	)
-
-	return wallet
+	return canonical_get_customer_wallet(customer, company, pos_profile=pos_profile)
 
 
 @frappe.whitelist()
-def get_customer_wallet_balance(customer, company=None, exclude_invoice=None):
-	"""
-	Get customer's available wallet balance.
+def get_customer_wallet_balance(customer, company=None, exclude_invoice=None, pos_profile=None):
+	"""Compatibility wrapper around the canonical POS wallet balance API."""
+	from pos_next.api.wallet import get_customer_wallet_balance as canonical_get_balance
 
-	For receivable accounts:
-	- Negative GL balance = customer has credit (we owe them) = positive wallet balance
-	- Positive GL balance = customer owes us = no wallet balance
-
-	Args:
-		customer: Customer ID
-		company: Company (optional)
-		exclude_invoice: Invoice name to exclude from pending calculations
-
-	Returns:
-		float: Available wallet balance
-	"""
-	try:
-		filters = {"customer": customer, "status": "Active"}
-		if company:
-			filters["company"] = company
-
-		wallet = frappe.db.get_value("Wallet", filters, ["name", "account"], as_dict=True)
-
-		if not wallet:
-			return 0.0
-
-		# Get balance from GL entries
-		gl_balance = get_balance_on(
-			account=wallet.account,
-			party_type="Customer",
-			party=customer
-		)
-
-		# Negate because negative receivable balance = positive wallet credit
-		wallet_balance = -flt(gl_balance)
-
-		# Subtract pending wallet payments from open POS invoices
-		pending_wallet_amount = get_pending_wallet_payments(customer, exclude_invoice)
-
-		available_balance = flt(wallet_balance) - flt(pending_wallet_amount)
-
-		return available_balance if available_balance > 0 else 0.0
-
-	except Exception:
-		frappe.log_error(frappe.get_traceback(), "Wallet Balance Error")
-		return 0.0
-
-
-def get_pending_wallet_payments(customer, exclude_invoice=None):
-	"""
-	Get total wallet payments from unconsolidated/pending POS invoices.
-	This prevents double-spending of wallet balance.
-	"""
-	# Get open Sales Invoices (draft or unconsolidated POS invoices)
-	filters = {
-		"customer": customer,
-		"docstatus": ["in", [0, 1]],  # Draft or Submitted
-		"outstanding_amount": [">", 0],
-		"is_pos": 1
-	}
-
-	invoices = frappe.get_all(
-		"Sales Invoice",
-		filters=filters,
-		fields=["name"]
+	return canonical_get_balance(
+		customer,
+		company,
+		exclude_invoice=exclude_invoice,
+		pos_profile=pos_profile,
 	)
 
-	pending_amount = 0.0
 
-	for invoice in invoices:
-		if exclude_invoice and invoice.name == exclude_invoice:
-			continue
+def get_pending_wallet_payments(customer, company=None, exclude_invoice=None):
+	"""Compatibility wrapper for internal callers."""
+	from pos_next.api.wallet import get_pending_wallet_payments as canonical_pending
 
-		# Get wallet payments from this invoice
-		payments = frappe.get_all(
-			"Sales Invoice Payment",
-			filters={"parent": invoice.name},
-			fields=["mode_of_payment", "amount"]
-		)
-
-		for payment in payments:
-			is_wallet = frappe.db.get_value(
-				"Mode of Payment", payment.mode_of_payment, "is_wallet_payment"
-			)
-			if is_wallet:
-				pending_amount += flt(payment.amount)
-
-	return pending_amount
+	return canonical_pending(customer, company=company, exclude_invoice=exclude_invoice)
 
 
 @frappe.whitelist()
-def create_customer_wallet(customer, company, account=None):
+def create_customer_wallet(customer, company, account=None, pos_profile=None):
+	"""Create a wallet after explicit permission and POS-context checks.
+
+	``account`` is accepted for API compatibility but intentionally ignored; the
+	server selects the configured wallet account so clients cannot redirect GL
+	entries to an arbitrary Receivable account.
 	"""
-	Create a wallet for a customer.
+	frappe.has_permission("Wallet", "create", throw=True)
 
-	Args:
-		customer: Customer ID
-		company: Company
-		account: Wallet account (optional, will use default if not provided)
+	from pos_next.api.wallet import (
+		_authorize_wallet_context,
+		_get_or_create_wallet,
+		get_pos_settings,
+	)
 
-	Returns:
-		Wallet document
-	"""
-	# Check if wallet already exists
-	existing = frappe.db.exists("Wallet", {"customer": customer, "company": company})
-	if existing:
-		return frappe.get_doc("Wallet", existing)
-
-	# Get default wallet account if not provided
-	if not account:
-		account = get_default_wallet_account(company)
-
-	if not account:
-		frappe.throw(_("Please configure a default wallet account for company {0}").format(company))
-
-	wallet = frappe.get_doc({
-		"doctype": "Wallet",
-		"customer": customer,
-		"company": company,
-		"account": account,
-		"status": "Active"
-	})
-	wallet.insert(ignore_permissions=True)
-
-	return wallet
+	company, profile = _authorize_wallet_context(customer, company, pos_profile=pos_profile)
+	pos_settings = get_pos_settings(profile.name) if profile else None
+	return _get_or_create_wallet(
+		customer,
+		company,
+		pos_settings=pos_settings,
+		force_create=True,
+	)
 
 
 def get_default_wallet_account(company):
-	"""Get default wallet account for a company"""
-	# Try to get from POS Settings
+	"""Return a valid configured wallet Receivable account for a company."""
 	wallet_account = frappe.db.get_value(
 		"POS Settings",
-		{"company": company},
-		"wallet_account"
+		{"enabled": 1, "wallet_account": ["is", "set"]},
+		"wallet_account",
 	)
-
 	if wallet_account:
-		return wallet_account
+		row = frappe.db.get_value(
+			"Account", wallet_account, ["company", "account_type", "is_group", "disabled"], as_dict=True
+		)
+		if row and row.company == company and row.account_type == "Receivable" and not row.is_group and not row.disabled:
+			return wallet_account
 
-	# Fallback: Find a receivable account with 'wallet' in the name
-	wallet_account = frappe.db.get_value(
+	return frappe.db.get_value(
 		"Account",
 		{
 			"company": company,
 			"account_type": "Receivable",
 			"is_group": 0,
-			"name": ["like", "%wallet%"]
+			"disabled": 0,
+			"name": ["like", "%wallet%"],
 		},
-		"name"
+		"name",
 	)
-
-	return wallet_account
 
 
 @frappe.whitelist()
-def get_or_create_wallet(customer, company):
-	"""Get existing wallet or create a new one"""
-	wallet = get_customer_wallet(customer, company)
+def get_or_create_wallet(customer, company, pos_profile=None):
+	"""Compatibility wrapper around the canonical guarded wallet API."""
+	from pos_next.api.wallet import get_or_create_wallet as canonical_get_or_create
 
-	if not wallet:
-		wallet_doc = create_customer_wallet(customer, company)
-		wallet = {
-			"name": wallet_doc.name,
-			"customer": wallet_doc.customer,
-			"company": wallet_doc.company,
-			"account": wallet_doc.account,
-			"status": wallet_doc.status
-		}
-
-	return wallet
+	return canonical_get_or_create(customer, company, pos_profile=pos_profile)

@@ -5,6 +5,51 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.19.4] - 2026-10-07
+
+### Phase 3 - Coupon/discount hardening (Point 3 only)
+
+- Coupon validation is now scoped to the authorized POS Profile/company and re-run immediately before submit.
+- Coupon discount amounts are recalculated from ERPNext totals; browser-supplied coupon amounts are ignored.
+- Coupon maximum-use and one-use-per-customer checks use submitted transactions as the source of truth.
+- Added coupon row locking to prevent concurrent checkout from consuming the same final use.
+- Coupon usage counters are synchronized without manual commits and are corrected after Sales Invoice/Sales Order cancellation.
+- Manual invoice/item discounts are enforced server-side using POS Settings and Item max-discount policy.
+- Claimed Pricing Rules and free items are revalidated with ERPNext; forged pricing-rule metadata is rejected.
+- Discounted item lines use server price-list rates when available.
+- Coupon preview/list endpoints now require POS Profile authorization.
+- No Cash Disbursement, Negative Stock, cache redesign, or Phase 3 Point 4+ changes are included.
+
+## [1.19.3] - 2026-10-07
+
+### Phase 3 - Wallet/Loyalty hardening (Point 2 only)
+
+- Centralized wallet reads, creation, balance calculation, and payment validation behind one guarded server API.
+- Wallet customer/company/POS Profile context is validated on the server; client-supplied wallet accounts are ignored and replaced with the configured account.
+- Wallet payment methods must belong to the selected POS Profile and have a company account that exactly matches the configured wallet Receivable account.
+- Added wallet-row locking and draft-invoice reservation checks to prevent concurrent checkouts from spending the same wallet credit.
+- Submitted wallet payments are no longer subtracted twice from available balance because their effect is already posted in GL.
+- Loyalty-to-wallet credit now uses the submitted Sales Invoice's server-created Loyalty Point Entry and the Loyalty Program conversion factor; client point counts/conversion factors are never trusted.
+- Disabled the legacy direct loyalty conversion endpoint that accepted caller-provided points and conversion factors.
+- Loyalty/refund wallet credits are idempotent by reference, protecting retries from duplicate monetary credits.
+- Return wallet credit ignores caller-provided amounts and uses the submitted return invoice total only.
+- Hardened return reversal against cross-customer/company references, draft invoices, invalid return relationships, and over-return amounts.
+- POS Settings now validates that the wallet account is an active leaf Receivable account in the POS Profile company and that the default Loyalty Program belongs to that company.
+- Added focused Wallet/Loyalty security tests for draft reservations, account pinning, invoice exclusions, server-side conversion factors, disabled direct conversion, and trusted return amounts.
+- No Coupon/discount, Cash Disbursement, Negative Stock, cache redesign, or Phase 3 Point 3+ changes are included.
+
+## [1.19.2] - 2026-10-07
+
+### Phase 3 - Security hardening (Point 1 only)
+
+- Centralized authorization for POS Profile-bound reads and configuration access.
+- Protected POS Settings, payment methods, taxes, warehouses, default customer, sales persons, and profile data from cross-profile access.
+- Protected item/catalog/stock/batch/serial endpoints by POS Profile, accessible company, or warehouse ownership.
+- Protected single-invoice reads, return validation, partial-payment invoice access, POS status changes, and credit-sale reads/actions from cross-profile access.
+- Protected kitchen ticket and offer/profile lookups from unauthorized POS Profiles.
+- Preserved the existing hardened opening/closing shift and invoice create/update/submit authorization introduced in Phase 3A.
+- No Wallet/Loyalty, Coupon calculation, Negative Stock redesign, or payment-account logic changed in this release.
+
 ## [1.19.1] - 2026-10-05
 
 ### Fixed

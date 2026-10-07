@@ -14,6 +14,7 @@ from dataclasses import dataclass, asdict
 import frappe
 from frappe import _
 from frappe.utils import flt, getdate, nowdate
+from pos_next.api.security import require_pos_profile_access
 
 
 # ============================================================================
@@ -394,6 +395,7 @@ class OfferBuilder:
 
 @frappe.whitelist()
 def get_offers(pos_profile: str) -> List[Dict]:
+	require_pos_profile_access(pos_profile)
 	"""
 	Fetch all auto-applicable offers for the POS profile
 
@@ -528,69 +530,112 @@ def _get_standalone_pricing_rule_offers(company: str, date: str) -> List[Offer]:
 # ============================================================================
 
 @frappe.whitelist()
-def get_active_coupons(customer: str, company: str) -> List[Dict]:
-	"""Get active gift card coupons for a customer"""
+def get_active_coupons(customer: str, company: str = None, pos_profile: str = None) -> List[Dict]:
+	"""Get active gift card coupons for a customer within the authorized POS Profile."""
+	if not pos_profile:
+		frappe.throw(_("POS Profile is required."), frappe.PermissionError)
+
+	profile = require_pos_profile_access(pos_profile, company=company)
+	company = profile.company
+
 	if not frappe.db.table_exists("POS Coupon"):
 		return []
 
+	date = getdate()
 	coupons = frappe.get_all(
 		"POS Coupon",
 		filters={
 			"company": company,
 			"coupon_type": "Gift Card",
 			"customer": customer,
-			"used": 0,
+			"disabled": 0,
 		},
-		fields=["name", "coupon_code", "coupon_name", "valid_from", "valid_upto"],
+		fields=[
+			"name",
+			"coupon_code",
+			"coupon_name",
+			"valid_from",
+			"valid_upto",
+		],
 	)
 
-	return coupons
+	from pos_next.pos_next.doctype.pos_coupon.pos_coupon import check_coupon_code
+
+	active = []
+	for row in coupons:
+		if row.valid_from and getdate(row.valid_from) > date:
+			continue
+		if row.valid_upto and getdate(row.valid_upto) < date:
+			continue
+		result = check_coupon_code(row.coupon_code, customer=customer, company=company)
+		if result.get("valid"):
+			active.append(row)
+	return active
 
 
 @frappe.whitelist()
-def validate_coupon(coupon_code: str, customer: str, company: str) -> Dict:
-	"""Validate a coupon code and return its details"""
+def validate_coupon(
+	coupon_code: str,
+	customer: str,
+	company: str = None,
+	pos_profile: str = None,
+	grand_total: float = 0,
+	net_total: float = 0,
+) -> Dict:
+	"""Validate a coupon and calculate a server-side preview discount.
+
+	The checkout path re-runs the same validation against ERPNext-calculated
+	totals, so this preview is never trusted as the final discount amount.
+	"""
+	if not pos_profile:
+		frappe.throw(_("POS Profile is required."), frappe.PermissionError)
+
+	profile = require_pos_profile_access(pos_profile, company=company)
+	company = profile.company
+
 	if not frappe.db.table_exists("POS Coupon"):
 		return {"valid": False, "message": _("Coupons are not enabled")}
 
-	date = getdate()
-
-	# Fetch coupon with case-insensitive code matching
-	# Note: coupon_code field is unique, so we can fetch directly
-	coupon = frappe.db.get_value(
-		"POS Coupon",
-		{"coupon_code": coupon_code, "company": company},
-		["*"],
-		as_dict=1
+	from pos_next.pos_next.doctype.pos_coupon.pos_coupon import (
+		apply_coupon_discount,
+		check_coupon_code,
 	)
 
-	if not coupon:
-		return {"valid": False, "message": _("Invalid coupon code")}
+	validation = check_coupon_code(
+		coupon_code,
+		customer=customer,
+		company=company,
+	)
+	if not validation.get("valid"):
+		return {
+			"valid": False,
+			"message": validation.get("msg") or _("Invalid coupon code"),
+		}
 
-	if coupon.disabled:
-		return {"valid": False, "message": _("This coupon is disabled")}
+	coupon = validation["coupon"]
+	discount = apply_coupon_discount(coupon, grand_total, net_total)
+	if not discount.get("valid"):
+		return {
+			"valid": False,
+			"message": discount.get("message") or _("Coupon requirements are not met"),
+		}
 
-	# Check usage limits
-	if coupon.coupon_type == "Gift Card":
-		if coupon.used:
-			return {"valid": False, "message": _("This gift card has already been used")}
-	else:
-		# Promotional coupons
-		if coupon.maximum_use > 0 and coupon.used >= coupon.maximum_use:
-			return {"valid": False, "message": _("This coupon has reached its usage limit")}
-
-	# Check validity dates
-	if coupon.valid_from and coupon.valid_from > date:
-		return {"valid": False, "message": _("This coupon is not yet valid")}
-
-	if coupon.valid_upto and coupon.valid_upto < date:
-		return {"valid": False, "message": _("This coupon has expired")}
-
-	# Check customer restriction
-	if coupon.customer and coupon.customer != customer:
-		return {"valid": False, "message": _("This coupon is not valid for this customer")}
+	# Return only fields the POS needs; never expose the whole document.
+	coupon_data = {
+		"coupon_name": coupon.coupon_name,
+		"coupon_code": coupon.coupon_code,
+		"coupon_type": coupon.coupon_type,
+		"discount_type": coupon.discount_type,
+		"discount_percentage": flt(coupon.discount_percentage),
+		"discount_amount": flt(coupon.discount_amount),
+		"min_amount": flt(coupon.min_amount),
+		"max_amount": flt(coupon.max_amount),
+		"apply_on": coupon.apply_on,
+	}
 
 	return {
 		"valid": True,
-		"coupon": coupon
+		"coupon": coupon_data,
+		"discount": discount,
 	}
+

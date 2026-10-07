@@ -141,3 +141,14 @@ def before_cancel(doc, method=None):
 			alert=True,
 			indicator="orange"
 		)
+
+
+def on_cancel_coupon(doc, method=None):
+	"""Synchronize POS Coupon usage after a submitted sale/order is cancelled."""
+	coupon_code = getattr(doc, "coupon_code", None)
+	if not coupon_code or not frappe.db.table_exists("POS Coupon"):
+		return
+
+	from pos_next.pos_next.doctype.pos_coupon.pos_coupon import decrement_coupon_usage
+
+	decrement_coupon_usage(coupon_code)

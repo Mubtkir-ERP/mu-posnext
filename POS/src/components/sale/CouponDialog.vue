@@ -148,12 +148,9 @@
 import { DEFAULT_CURRENCY, formatCurrency as formatCurrencyUtil } from "@/utils/currency"
 import { Button, Dialog, Input, createResource } from "frappe-ui"
 import { ref, watch } from "vue"
-import { useInvoice } from "@/composables/useInvoice"
 import { useToast } from "@/composables/useToast"
 
-// Get calculateDiscountAmount helper from composable
-const { calculateDiscountAmount } = useInvoice()
-const { showSuccess, showError, showWarning } = useToast()
+const { showSuccess, showError } = useToast()
 
 const props = defineProps({
 	modelValue: Boolean,
@@ -204,6 +201,7 @@ const giftCardsResource = createResource({
 		return {
 			customer: props.customer,
 			company: props.company,
+			pos_profile: props.posProfile,
 		}
 	},
 	auto: false,
@@ -216,10 +214,17 @@ const giftCardsResource = createResource({
 const couponResource = createResource({
 	url: "pos_next.api.offers.validate_coupon",
 	makeParams() {
+		const grandTotal = Number.parseFloat(props.grandTotal || 0)
+		const taxAmount = Number.parseFloat(props.taxAmount || 0)
+		const netTotal = Math.max(grandTotal - taxAmount, 0)
+
 		return {
 			coupon_code: couponCode.value,
 			customer: props.customer,
 			company: props.company,
+			pos_profile: props.posProfile,
+			grand_total: grandTotal,
+			net_total: netTotal,
 		}
 	},
 	auto: false,
@@ -252,7 +257,7 @@ watch(
 )
 
 async function loadGiftCards() {
-	if (!props.customer || !props.company) return
+	if (!props.customer || !props.company || !props.posProfile) return
 	try {
 		await giftCardsResource.reload()
 	} catch (error) {
@@ -265,13 +270,6 @@ function applyGiftCard(card) {
 	applyCoupon()
 }
 
-function getCouponBaseAmount(coupon) {
-	const grandTotal = Number.parseFloat(props.grandTotal || 0)
-	const taxAmount = Number.parseFloat(props.taxAmount || 0)
-	const netTotal = Math.max(grandTotal - taxAmount, 0)
-
-	return coupon.apply_on === "Grand Total" ? grandTotal : netTotal
-}
 
 async function applyCoupon() {
 	if (!couponCode.value.trim()) {
@@ -298,41 +296,20 @@ async function applyCoupon() {
 		}
 
 		const coupon = validationData.coupon
-		const baseAmount = getCouponBaseAmount(coupon)
+		const serverDiscount = validationData.discount || {}
+		const discountAmount = Number.parseFloat(serverDiscount.discount || 0)
 
-		// Check minimum amount on the configured coupon base
-		if (coupon.min_amount && baseAmount < coupon.min_amount) {
-			errorMessage.value = __('This coupon requires a minimum purchase of ', [formatCurrency(coupon.min_amount)])
-			showWarning(errorMessage.value)
-			return
-		}
-
-		// Calculate discount on subtotal (before tax) using centralized helper
-		// Transform server coupon format to discount object format
-		const discountObj = {
-			percentage: coupon.discount_type === "Percentage" ? coupon.discount_percentage : 0,
-			amount: coupon.discount_type === "Amount" ? coupon.discount_amount : 0,
-		}
-
-		let discountAmount = calculateDiscountAmount(discountObj, baseAmount)
-
-		// Apply maximum discount limit if specified
-		if (coupon.max_amount && discountAmount > coupon.max_amount) {
-			discountAmount = coupon.max_amount
-		}
-
-		// Clamp discount to the selected coupon base to prevent negative totals
-		discountAmount = Math.min(discountAmount, baseAmount)
-
+		// Preview is calculated by the server. Checkout recalculates it again from
+		// ERPNext totals, so the browser never becomes the source of truth.
 		appliedDiscount.value = {
 			name: coupon.coupon_name || coupon.coupon_code,
-			code: couponCode.value.toUpperCase(),
+			code: coupon.coupon_code || couponCode.value.toUpperCase(),
 			percentage: coupon.discount_type === "Percentage" ? coupon.discount_percentage : 0,
 			amount: discountAmount,
 			type: coupon.discount_type,
 			coupon: coupon,
-			apply_on: coupon.apply_on,
-			base_amount: baseAmount,
+			apply_on: serverDiscount.apply_on || coupon.apply_on,
+			base_amount: Number.parseFloat(serverDiscount.base_amount || 0),
 		}
 
 		emit("discount-applied", appliedDiscount.value)

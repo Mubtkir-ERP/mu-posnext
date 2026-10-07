@@ -5,51 +5,69 @@ import unittest
 from unittest.mock import Mock, patch
 
 from pos_next.pos_next.doctype.pos_coupon.pos_coupon import (
+    _get_coupon_usage_count,
     _get_customer_coupon_usage_count,
+    apply_coupon_discount,
 )
 
 
 class TestPOSCoupon(unittest.TestCase):
     @patch("pos_next.pos_next.doctype.pos_coupon.pos_coupon.frappe.get_meta")
     @patch("pos_next.pos_next.doctype.pos_coupon.pos_coupon.frappe.db")
-    def test_one_use_coupon_counts_sales_invoice_and_pos_invoice(self, mock_db, mock_get_meta):
+    def test_one_use_coupon_counts_all_submitted_sales_doctypes(self, mock_db, mock_get_meta):
         def table_exists(doctype):
-            return doctype in {"Sales Invoice", "POS Invoice"}
+            return doctype in {"Sales Invoice", "POS Invoice", "Sales Order"}
 
         def count(doctype, filters=None):
-            counts = {"Sales Invoice": 1, "POS Invoice": 2}
+            counts = {"Sales Invoice": 1, "POS Invoice": 2, "Sales Order": 1}
             return counts[doctype]
 
         mock_db.table_exists.side_effect = table_exists
         mock_db.count.side_effect = count
         mock_get_meta.return_value = Mock(has_field=Mock(return_value=True))
 
-        used_count = _get_customer_coupon_usage_count("Customer A", "SAVE10")
+        used_count = _get_customer_coupon_usage_count("Customer A", "save10")
 
-        self.assertEqual(used_count, 3)
-        mock_db.count.assert_any_call(
-            "Sales Invoice",
-            filters={"customer": "Customer A", "coupon_code": "SAVE10", "docstatus": 1},
-        )
-        mock_db.count.assert_any_call(
-            "POS Invoice",
-            filters={"customer": "Customer A", "coupon_code": "SAVE10", "docstatus": 1},
-        )
+        self.assertEqual(used_count, 4)
+        for doctype in ("Sales Invoice", "POS Invoice", "Sales Order"):
+            mock_db.count.assert_any_call(
+                doctype,
+                filters={"customer": "Customer A", "coupon_code": "SAVE10", "docstatus": 1},
+            )
 
     @patch("pos_next.pos_next.doctype.pos_coupon.pos_coupon.frappe.get_meta")
     @patch("pos_next.pos_next.doctype.pos_coupon.pos_coupon.frappe.db")
-    def test_one_use_coupon_skips_doctypes_without_coupon_field(self, mock_db, mock_get_meta):
+    def test_coupon_usage_skips_doctypes_without_coupon_field(self, mock_db, mock_get_meta):
         mock_db.table_exists.return_value = True
         mock_db.count.return_value = 4
-        mock_get_meta.side_effect = [
-            Mock(has_field=Mock(return_value=True)),
-            Mock(has_field=Mock(return_value=False)),
-        ]
 
-        used_count = _get_customer_coupon_usage_count("Customer A", "SAVE10")
+        def get_meta(doctype):
+            if doctype == "Sales Invoice":
+                return Mock(has_field=Mock(return_value=True))
+            return Mock(has_field=Mock(return_value=False))
+
+        mock_get_meta.side_effect = get_meta
+
+        used_count = _get_coupon_usage_count("save10")
 
         self.assertEqual(used_count, 4)
         mock_db.count.assert_called_once_with(
             "Sales Invoice",
-            filters={"customer": "Customer A", "coupon_code": "SAVE10", "docstatus": 1},
+            filters={"coupon_code": "SAVE10", "docstatus": 1},
         )
+
+    def test_coupon_discount_is_clamped_to_base_and_maximum(self):
+        coupon = Mock(
+            apply_on="Net Total",
+            min_amount=0,
+            discount_type="Percentage",
+            discount_percentage=50,
+            discount_amount=0,
+            max_amount=30,
+        )
+
+        result = apply_coupon_discount(coupon, cart_total=200, net_total=100)
+
+        self.assertTrue(result["valid"])
+        self.assertEqual(result["base_amount"], 100)
+        self.assertEqual(result["discount"], 30)
