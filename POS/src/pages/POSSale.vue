@@ -2621,7 +2621,7 @@ async function handleSyncAll() {
 			uiStore.showError(
 				errorContext.title,
 				__(
-					"Failed to sync invoice for {0}\n\n${1}\n\nYou can delete this invoice from the offline queue if you don't need it.",
+					"Failed to sync invoice for {0}\n\n{1}\n\nYou can delete this invoice from the offline queue if you don't need it.",
 					[firstError.customer, errorContext.message]
 				),
 				errorContext.technicalDetails || __("Invoice ID: {0}", [firstError.invoiceId]),

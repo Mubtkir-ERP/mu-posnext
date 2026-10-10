@@ -31,6 +31,7 @@ class TestPaymentSecurity(unittest.TestCase):
         payment = PaymentRow(mode_of_payment="Cash", amount=100, account="Injected - A")
         doc = InvoiceDoc(
             is_pos=1,
+            is_created_using_pos=1,
             pos_profile="POS-A",
             company="Company A",
             payments=[payment],
@@ -50,12 +51,32 @@ class TestPaymentSecurity(unittest.TestCase):
         payment = PaymentRow(mode_of_payment="Wallet", amount=25, account="Wallet - A")
         doc = InvoiceDoc(
             is_pos=1,
+            is_created_using_pos=1,
             pos_profile="POS-A",
             company="Company A",
             payments=[payment],
         )
 
         payment_security.validate_and_pin_invoice_payments(doc)
+        mock_resolve.assert_not_called()
+
+    @patch("pos_next.api.payment_security.resolve_pos_payment_account")
+    @patch("pos_next.api.payment_security._get_mode_details")
+    def test_normal_sales_invoice_with_pos_profile_is_not_intercepted(self, mock_mode, mock_resolve):
+        """Desk Sales Invoice may be Paid + POS Profile without being created by POSNext."""
+        payment = PaymentRow(mode_of_payment="Cash", amount=100, account="Desk Cash - A")
+        doc = InvoiceDoc(
+            is_pos=1,
+            is_created_using_pos=0,
+            pos_profile="POS-A",
+            company="Company A",
+            payments=[payment],
+        )
+
+        payment_security.validate_and_pin_invoice_payments(doc)
+
+        self.assertEqual(payment.account, "Desk Cash - A")
+        mock_mode.assert_not_called()
         mock_resolve.assert_not_called()
 
     @patch("pos_next.api.payment_security.frappe.throw", side_effect=_raise)

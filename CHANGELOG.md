@@ -5,6 +5,34 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.19.8] - 2026-10-10
+
+### Fixed
+- ERPNext native **Coupon Code** is now the primary coupon source in POSNext.
+- Cashiers can enter the code created in ERPNext directly without duplicating it as a **POS Coupon**.
+- POSNext resolves the typed code to the canonical ERPNext Coupon Code document and applies its linked transaction Pricing Rule server-side.
+- Native ERPNext coupon usage counters are left to ERPNext core to avoid double increment/decrement.
+- Legacy POS Coupon remains supported as a fallback for existing gift cards/referrals.
+
+## [1.19.7] - 2026-10-10
+
+### Fixed
+- Validate item maximum discount immediately when updating the item instead of waiting until payment.
+- Prevent ERPNext payment-table refresh messages from aborting POS payment and offline invoice sync.
+- Restore payment rows after `set_missing_values()` using only mode/amount fields; accounts remain server-authoritative.
+- Fix offline sync error placeholder that displayed a stray `$` before the server message.
+- Add Arabic translations for the new/visible validation messages.
+
+## [1.19.6] - 2026-10-10
+
+### Hotfix - Keep normal Sales Invoice flow separate from POSNext security
+
+- Point 4 payment-account security now runs only when the Sales Invoice is actually marked as created using POS (`is_created_using_pos = 1`).
+- A normal ERPNext Sales Invoice created from Desk can remain Paid / use a POS Profile without being intercepted by POSNext payment-account pinning.
+- POSNext invoice draft and submit APIs now explicitly set `is_created_using_pos = 1`, so POSNext invoices retain all Point 4 protections.
+- Added a regression test confirming that a normal Desk Sales Invoice with a POS Profile is left untouched by the POSNext payment security hook.
+- No Wallet/Loyalty, coupon/discount, cash-disbursement rules, Negative Stock, or other Phase 3 behavior was changed.
+
 ## [1.19.5] - 2026-10-07
 
 ### Phase 3 - Cash disbursement and payment-account hardening (Point 4 only)

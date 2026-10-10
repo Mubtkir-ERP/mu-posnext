@@ -581,6 +581,7 @@ def validate_coupon(
 	pos_profile: str = None,
 	grand_total: float = 0,
 	net_total: float = 0,
+	items=None,
 ) -> Dict:
 	"""Validate a coupon and calculate a server-side preview discount.
 
@@ -593,12 +594,13 @@ def validate_coupon(
 	profile = require_pos_profile_access(pos_profile, company=company)
 	company = profile.company
 
-	if not frappe.db.table_exists("POS Coupon"):
+	if not frappe.db.table_exists("Coupon Code") and not frappe.db.table_exists("POS Coupon"):
 		return {"valid": False, "message": _("Coupons are not enabled")}
 
 	from pos_next.pos_next.doctype.pos_coupon.pos_coupon import (
 		apply_coupon_discount,
 		check_coupon_code,
+		evaluate_erpnext_item_coupon,
 	)
 
 	validation = check_coupon_code(
@@ -613,25 +615,74 @@ def validate_coupon(
 		}
 
 	coupon = validation["coupon"]
-	discount = apply_coupon_discount(coupon, grand_total, net_total)
+	pricing_rule = validation.get("pricing_rule")
+	discount = apply_coupon_discount(
+		coupon,
+		grand_total,
+		net_total,
+		pricing_rule=pricing_rule,
+	)
+
+	if (
+		validation.get("source") == "ERPNext"
+		and discount.get("requires_pricing_rule_engine")
+		and pricing_rule
+	):
+		discount = evaluate_erpnext_item_coupon(
+			coupon,
+			pricing_rule,
+			items or [],
+			company=company,
+			customer=customer,
+			pos_profile=profile.name,
+			currency=profile.get("currency"),
+			price_list=profile.get("selling_price_list"),
+		)
+
 	if not discount.get("valid"):
 		return {
 			"valid": False,
 			"message": discount.get("message") or _("Coupon requirements are not met"),
 		}
 
-	# Return only fields the POS needs; never expose the whole document.
-	coupon_data = {
-		"coupon_name": coupon.coupon_name,
-		"coupon_code": coupon.coupon_code,
-		"coupon_type": coupon.coupon_type,
-		"discount_type": coupon.discount_type,
-		"discount_percentage": flt(coupon.discount_percentage),
-		"discount_amount": flt(coupon.discount_amount),
-		"min_amount": flt(coupon.min_amount),
-		"max_amount": flt(coupon.max_amount),
-		"apply_on": coupon.apply_on,
-	}
+	# Return only fields the POS needs; never expose the whole document. Native
+	# ERPNext Coupon Code is the primary source; legacy POS Coupon remains a
+	# fallback for gift cards/referrals and older installations.
+	if validation.get("source") == "ERPNext":
+		rule = pricing_rule
+		rate_or_discount = rule.rate_or_discount if rule else None
+		discount_type = (
+			"Percentage"
+			if rate_or_discount == "Discount Percentage"
+			else "Amount" if rate_or_discount == "Discount Amount" else "Pricing Rule"
+		)
+		coupon_data = {
+			"coupon_name": coupon.coupon_name,
+			"coupon_code": coupon.coupon_code,
+			"coupon_type": coupon.coupon_type,
+			"discount_type": discount_type,
+			"discount_percentage": flt(rule.discount_percentage if rule else 0),
+			"discount_amount": flt(rule.discount_amount if rule else 0),
+			"min_amount": flt(rule.min_amt if rule else 0),
+			"max_amount": 0,
+			"apply_on": (rule.apply_discount_on or rule.apply_on) if rule else "Grand Total",
+			"source": "ERPNext",
+			"erpnext_coupon_name": coupon.name,
+			"pricing_rule": rule.name if rule else None,
+		}
+	else:
+		coupon_data = {
+			"coupon_name": coupon.coupon_name,
+			"coupon_code": coupon.coupon_code,
+			"coupon_type": coupon.coupon_type,
+			"discount_type": coupon.discount_type,
+			"discount_percentage": flt(coupon.discount_percentage),
+			"discount_amount": flt(coupon.discount_amount),
+			"min_amount": flt(coupon.min_amount),
+			"max_amount": flt(coupon.max_amount),
+			"apply_on": coupon.apply_on,
+			"source": "POS",
+		}
 
 	return {
 		"valid": True,

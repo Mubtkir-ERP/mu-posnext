@@ -71,3 +71,29 @@ class TestPOSCoupon(unittest.TestCase):
         self.assertTrue(result["valid"])
         self.assertEqual(result["base_amount"], 100)
         self.assertEqual(result["discount"], 30)
+    def test_erpnext_coupon_uses_linked_transaction_pricing_rule(self):
+        coupon = Mock(doctype="Coupon Code")
+        rule = Mock(
+            apply_on="Transaction",
+            min_amt=0,
+            max_amt=0,
+            apply_discount_on="Grand Total",
+            price_or_product_discount="Price",
+            rate_or_discount="Discount Percentage",
+            discount_percentage=10,
+            discount_amount=0,
+            name="PRLE-TEST",
+        )
+
+        result = apply_coupon_discount(
+            coupon,
+            cart_total=230,
+            net_total=200,
+            pricing_rule=rule,
+        )
+
+        self.assertTrue(result["valid"])
+        self.assertEqual(result["discount"], 23)
+        self.assertEqual(result["source"], "ERPNext")
+        self.assertEqual(result["pricing_rule"], "PRLE-TEST")
+

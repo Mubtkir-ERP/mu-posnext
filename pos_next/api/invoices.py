@@ -254,7 +254,55 @@ def _validate_and_normalize_requested_discounts(data, profile):
     """
     settings = _get_pos_discount_settings(profile.name)
     items = data.get("items") or []
-    coupon_code = cstr(data.get("coupon_code") or "").strip().upper()
+    coupon_code = cstr(data.get("coupon_code") or "").strip()
+
+    # If the entered code is a native ERPNext item/group/brand coupon, evaluate
+    # its linked Pricing Rule now. This lets the discount-security layer
+    # distinguish an authoritative coupon discount from a forged manual item
+    # discount before the document is created/submitted.
+    native_coupon_rule = None
+    native_coupon_updates = {}
+    native_coupon_free_items = []
+    if coupon_code:
+        from pos_next.pos_next.doctype.pos_coupon.pos_coupon import (
+            check_coupon_code,
+            evaluate_erpnext_item_coupon,
+        )
+
+        coupon_validation = check_coupon_code(
+            coupon_code,
+            customer=data.get("customer"),
+            company=profile.company,
+            lock=False,
+        )
+        if not coupon_validation.get("valid"):
+            frappe.throw(coupon_validation.get("msg") or _("Invalid coupon code"))
+
+        if coupon_validation.get("source") == "ERPNext":
+            linked_rule = coupon_validation.get("pricing_rule")
+            if linked_rule and linked_rule.apply_on != "Transaction":
+                coupon_eval = evaluate_erpnext_item_coupon(
+                    coupon_validation.get("coupon"),
+                    linked_rule,
+                    items,
+                    company=profile.company,
+                    customer=data.get("customer"),
+                    pos_profile=profile.name,
+                    currency=data.get("currency") or profile.get("currency"),
+                    price_list=profile.get("selling_price_list"),
+                    posting_date=data.get("posting_date"),
+                )
+                if not coupon_eval.get("valid"):
+                    frappe.throw(
+                        coupon_eval.get("message")
+                        or _("This coupon is not applicable to the current cart")
+                    )
+                native_coupon_rule = linked_rule.name
+                native_coupon_updates = {
+                    cint(update.get("index")): update
+                    for update in coupon_eval.get("item_updates") or []
+                }
+                native_coupon_free_items = coupon_eval.get("free_items") or []
 
     requested_additional = flt(data.get("discount_amount") or 0)
     if requested_additional < 0:
@@ -279,6 +327,8 @@ def _validate_and_normalize_requested_discounts(data, profile):
     claimed_rules = set()
     for row in items:
         claimed_rules.update(_normalize_pricing_rules(row.get("pricing_rules")))
+    if native_coupon_rule:
+        claimed_rules.discard(native_coupon_rule)
 
     offer_result = {"items": [], "free_items": [], "applied_pricing_rules": []}
     if claimed_rules:
@@ -319,10 +369,25 @@ def _validate_and_normalize_requested_discounts(data, profile):
             )
 
         server_item = server_items[index] if index < len(server_items) else {}
+        native_update = native_coupon_updates.get(index)
 
         # Free products are returned separately by ERPNext's pricing engine, so
-        # validate them against free_item_data rather than the same item index.
+        # validate them against either the native coupon or regular offer data.
         if is_free_item:
+            if native_coupon_rule:
+                valid_native_free = any(
+                    free.get("item_code") == item.get("item_code")
+                    and free.get("pricing_rules") == native_coupon_rule
+                    for free in native_coupon_free_items
+                )
+                if valid_native_free:
+                    item["rate"] = 0
+                    item["price_list_rate"] = 0
+                    item["discount_percentage"] = 0
+                    item["discount_amount"] = 0
+                    item["pricing_rules"] = native_coupon_rule
+                    continue
+
             verified_rules = client_rules & applied_rules
             valid_free = False
             for free in free_items:
@@ -347,40 +412,57 @@ def _validate_and_normalize_requested_discounts(data, profile):
             item["pricing_rules"] = ",".join(sorted(verified_rules))
             continue
 
-        server_rules = set(_normalize_pricing_rules(server_item.get("pricing_rules")))
-        verified_rules = client_rules & server_rules & applied_rules
-
-        if client_rules and verified_rules != client_rules:
-            frappe.throw(
-                _("Pricing rule for item {0} is no longer valid. Refresh the cart and try again.").format(
-                    item.get("item_code")
-                )
-            )
-
-        if verified_rules:
-            # Replace browser discount values with ERPNext-calculated values.
-            discount_pct = flt(server_item.get("discount_percentage") or 0)
-            discount_amt = flt(server_item.get("discount_amount") or 0)
+        if native_update:
+            # Native coupon values are recalculated by ERPNext's engine above;
+            # never trust corresponding browser discount fields.
+            verified_rules = {native_coupon_rule}
+            discount_pct = flt(native_update.get("discount_percentage") or 0)
+            discount_amt = flt(native_update.get("discount_amount") or 0)
+            item["price_list_rate"] = flt(native_update.get("price_list_rate") or 0)
+            item["rate"] = flt(native_update.get("rate") or 0)
             item["discount_percentage"] = discount_pct
             item["discount_amount"] = discount_amt
-            item["pricing_rules"] = ",".join(sorted(verified_rules))
-
-            # Fixed-rate Pricing Rules do not expose a discount percentage. The
-            # pricing engine returns the authoritative rule rate as the line's
-            # price_list_rate in this path; do not trust a browser-supplied rate.
-            if discount_pct <= 0 and discount_amt <= 0:
-                rule_rate = flt(server_item.get("price_list_rate") or 0)
-                if rule_rate > 0:
-                    item["price_list_rate"] = rule_rate
-                    item["rate"] = rule_rate
+            item["pricing_rules"] = native_coupon_rule
         else:
-            item["pricing_rules"] = ""
-            has_manual_discount = discount_pct > 0 or discount_amt > 0
-            if has_manual_discount and not cint(settings.allow_user_to_edit_item_discount):
+            server_rules = set(_normalize_pricing_rules(server_item.get("pricing_rules")))
+            verified_rules = client_rules & server_rules & applied_rules
+
+            # Ignore the linked native coupon rule if an earlier draft sent it
+            # back in the row; it is independently revalidated above.
+            non_coupon_client_rules = set(client_rules)
+            if native_coupon_rule:
+                non_coupon_client_rules.discard(native_coupon_rule)
+            if non_coupon_client_rules and verified_rules != non_coupon_client_rules:
                 frappe.throw(
-                    _("Item discount is not allowed for this POS Profile."),
-                    frappe.PermissionError,
+                    _("Pricing rule for item {0} is no longer valid. Refresh the cart and try again.").format(
+                        item.get("item_code")
+                    )
                 )
+
+            if verified_rules:
+                # Replace browser discount values with ERPNext-calculated values.
+                discount_pct = flt(server_item.get("discount_percentage") or 0)
+                discount_amt = flt(server_item.get("discount_amount") or 0)
+                item["discount_percentage"] = discount_pct
+                item["discount_amount"] = discount_amt
+                item["pricing_rules"] = ",".join(sorted(verified_rules))
+
+                # Fixed-rate Pricing Rules do not expose a discount percentage. The
+                # pricing engine returns the authoritative rule rate as the line's
+                # price_list_rate in this path; do not trust a browser-supplied rate.
+                if discount_pct <= 0 and discount_amt <= 0:
+                    rule_rate = flt(server_item.get("price_list_rate") or 0)
+                    if rule_rate > 0:
+                        item["price_list_rate"] = rule_rate
+                        item["rate"] = rule_rate
+            else:
+                item["pricing_rules"] = ""
+                has_manual_discount = discount_pct > 0 or discount_amt > 0
+                if has_manual_discount and not cint(settings.allow_user_to_edit_item_discount):
+                    frappe.throw(
+                        _("Item discount is not allowed for this POS Profile."),
+                        frappe.PermissionError,
+                    )
 
         has_discount = flt(item.get("discount_percentage") or 0) > 0 or flt(
             item.get("discount_amount") or 0
@@ -481,9 +563,13 @@ def _validate_manual_additional_discount(invoice_doc, settings):
 
 
 def _apply_coupon_authoritatively(invoice_doc, coupon_code, lock=False):
-    """Recalculate a POS Coupon from ERPNext totals and apply it to the document."""
-    code = cstr(coupon_code or "").strip().upper()
-    if not code:
+    """Resolve and apply a coupon using server-side ERPNext/POS rules.
+
+    ERPNext ``Coupon Code`` is the primary source. Legacy ``POS Coupon`` is
+    retained as a fallback for existing gift cards/referrals.
+    """
+    entered = cstr(coupon_code or "").strip()
+    if not entered:
         return None
     if invoice_doc.get("is_return"):
         frappe.throw(_("Coupons cannot be applied to return invoices."))
@@ -493,15 +579,15 @@ def _apply_coupon_authoritatively(invoice_doc, coupon_code, lock=False):
         check_coupon_code,
     )
 
-    # Remove any browser-provided invoice-level discount before calculating the
-    # base on which this coupon is actually allowed to operate.
+    # Remove browser-provided invoice-level discount. The authoritative coupon
+    # amount is recalculated from the current server totals below.
     invoice_doc.discount_amount = 0
     if invoice_doc.meta.has_field("additional_discount_percentage"):
         invoice_doc.additional_discount_percentage = 0
     invoice_doc.calculate_taxes_and_totals()
 
     validation = check_coupon_code(
-        code,
+        entered,
         customer=invoice_doc.customer,
         company=invoice_doc.company,
         lock=lock,
@@ -510,22 +596,117 @@ def _apply_coupon_authoritatively(invoice_doc, coupon_code, lock=False):
         frappe.throw(validation.get("msg") or _("Invalid coupon code"))
 
     coupon = validation["coupon"]
+    source = validation.get("source") or "POS"
+    pricing_rule = validation.get("pricing_rule")
     result = apply_coupon_discount(
         coupon,
         cart_total=invoice_doc.grand_total,
         net_total=invoice_doc.net_total,
+        pricing_rule=pricing_rule,
     )
     if not result.get("valid"):
         frappe.throw(result.get("message") or _("Coupon requirements are not met"))
 
-    invoice_doc.coupon_code = coupon.coupon_code
+    if source == "ERPNext":
+        # Sales Invoice / Sales Order coupon_code is a Link to Coupon Code, so
+        # persist the canonical document name, not the text code typed by cashier.
+        invoice_doc.coupon_code = coupon.name
+    else:
+        invoice_doc.coupon_code = coupon.coupon_code
+
+    if result.get("requires_pricing_rule_engine") and source == "ERPNext":
+        from pos_next.pos_next.doctype.pos_coupon.pos_coupon import (
+            evaluate_erpnext_item_coupon,
+        )
+
+        evaluation = evaluate_erpnext_item_coupon(
+            coupon,
+            pricing_rule,
+            [row.as_dict() for row in invoice_doc.get("items", [])],
+            company=invoice_doc.company,
+            customer=invoice_doc.customer,
+            pos_profile=invoice_doc.get("pos_profile"),
+            currency=invoice_doc.get("currency"),
+            price_list=invoice_doc.get("selling_price_list"),
+            posting_date=invoice_doc.get("posting_date"),
+        )
+        if not evaluation.get("valid"):
+            frappe.throw(
+                evaluation.get("message") or _("This coupon is not applicable to the current cart")
+            )
+
+        for update in evaluation.get("item_updates") or []:
+            idx = cint(update.get("index"))
+            if idx < 0 or idx >= len(invoice_doc.items):
+                continue
+            row = invoice_doc.items[idx]
+            row.price_list_rate = flt(update.get("price_list_rate"))
+            row.rate = flt(update.get("rate"))
+            row.discount_percentage = flt(update.get("discount_percentage"))
+            row.discount_amount = flt(update.get("discount_amount"))
+            if row.meta.has_field("pricing_rules"):
+                row.pricing_rules = frappe.as_json([update.get("pricing_rule")])
+
+        # Product-discount coupons can return free-item rows. Only append rows
+        # explicitly produced by the linked coupon Pricing Rule.
+        existing_free_keys = {
+            (row.get("item_code"), row.get("pricing_rules"))
+            for row in invoice_doc.get("items", [])
+            if cint(row.get("is_free_item") or 0)
+        }
+        for free_item in evaluation.get("free_items") or []:
+            key = (free_item.get("item_code"), free_item.get("pricing_rules"))
+            if key in existing_free_keys:
+                continue
+            invoice_doc.append("items", free_item)
+            existing_free_keys.add(key)
+
+        # Keep the global pricing engine disabled: the linked coupon rule has
+        # already been evaluated above, so unrelated automatic rules cannot be
+        # re-applied or double-discount the cart.
+        invoice_doc.ignore_pricing_rule = 1
+        invoice_doc.flags.ignore_pricing_rule = True
+        invoice_doc.calculate_taxes_and_totals()
+        return frappe._dict(
+            {
+                "coupon": coupon,
+                "source": source,
+                "pricing_rule": pricing_rule,
+                "discount": evaluation,
+            }
+        )
+
     if invoice_doc.meta.has_field("apply_discount_on"):
-        invoice_doc.apply_discount_on = coupon.apply_on or "Grand Total"
-    invoice_doc.discount_amount = flt(result.get("discount") or 0)
-    if invoice_doc.meta.has_field("additional_discount_percentage"):
-        invoice_doc.additional_discount_percentage = 0
+        invoice_doc.apply_discount_on = result.get("apply_on") or "Grand Total"
+
+    # Match ERPNext's native transaction-rule behavior: percentage coupons use
+    # additional_discount_percentage, amount coupons use discount_amount. This
+    # keeps tax/rounding behavior consistent with a normal ERPNext Sales Invoice.
+    if (
+        source == "ERPNext"
+        and result.get("discount_type") == "Percentage"
+        and invoice_doc.meta.has_field("additional_discount_percentage")
+    ):
+        invoice_doc.discount_amount = 0
+        invoice_doc.additional_discount_percentage = flt(
+            result.get("discount_percentage") or 0
+        )
+    else:
+        invoice_doc.discount_amount = flt(result.get("discount") or 0)
+        if invoice_doc.meta.has_field("additional_discount_percentage"):
+            invoice_doc.additional_discount_percentage = 0
+
     invoice_doc.calculate_taxes_and_totals()
-    return coupon
+
+    return frappe._dict(
+        {
+            "coupon": coupon,
+            "source": source,
+            "pricing_rule": pricing_rule,
+            "discount": result,
+        }
+    )
+
 
 # ==========================================
 # Stock Validation Functions
@@ -854,6 +1035,7 @@ def update_invoice(data):
         # Set invoice flags BEFORE calculations
         if doctype == "Sales Invoice":
             invoice_doc.is_pos = 1
+            invoice_doc.is_created_using_pos = 1
             invoice_doc.update_stock = 1
 
         # ========================================================================
@@ -880,16 +1062,40 @@ def update_invoice(data):
 
         invoice_doc.disable_rounded_total = disable_rounded
 
-        # Populate missing fields (company, currency, accounts, etc.)
-        # Mute msgprint temporarily: ERPNext's update_multi_mode_option triggers
-        # "Payment methods refreshed" msgprint when payments already exist,
-        # which the frontend treats as a ValidationError.
-        # frappe.throw still works — only informational messages are suppressed.
+        # Populate missing fields (company, currency, accounts, etc.).
+        #
+        # ERPNext may refresh the payment table inside set_missing_values() and
+        # emit the informational message "Payment methods refreshed. Please review
+        # before proceeding." Some frappe-ui versions surface that informational
+        # message as a failed request/TypeError. It also breaks offline sync.
+        #
+        # Keep the cashier's requested payment *selection* out of that internal
+        # refresh step, then restore only mode/amount fields. Accounts are pinned
+        # again from the server immediately afterwards by Point 4 security.
+        requested_payments = []
+        payment_source = data.get("payments") or invoice_doc.get("payments") or []
+        for row in payment_source:
+            requested_payments.append(
+                {
+                    "mode_of_payment": row.get("mode_of_payment"),
+                    "amount": flt(row.get("amount") or 0),
+                }
+            )
+
+        if requested_payments:
+            invoice_doc.set("payments", [])
+
+        previous_mute_messages = frappe.flags.get("mute_messages")
         frappe.flags.mute_messages = True
         try:
             invoice_doc.set_missing_values()
         finally:
-            frappe.flags.mute_messages = False
+            frappe.flags.mute_messages = previous_mute_messages
+
+        if requested_payments:
+            invoice_doc.set("payments", [])
+            for row in requested_payments:
+                invoice_doc.append("payments", row)
 
         # Calculate totals and apply discounts (with rounding disabled)
         invoice_doc.calculate_taxes_and_totals()
@@ -921,8 +1127,6 @@ def update_invoice(data):
         # additional discounts are validated against the POS policy instead.
         coupon_code = data.get("coupon_code")
         if coupon_code:
-            if not frappe.db.table_exists("POS Coupon"):
-                frappe.throw(_("Coupons are not enabled"))
             _apply_coupon_authoritatively(invoice_doc, coupon_code, lock=False)
         else:
             _validate_manual_additional_discount(invoice_doc, discount_settings)
@@ -1152,6 +1356,7 @@ def submit_invoice(invoice=None, data=None):
         if doctype == "Sales Invoice":
             invoice_doc.update_stock = 1
             invoice_doc.is_pos = 1
+            invoice_doc.is_created_using_pos = 1
 
         # Copy accounting dimensions from POS Profile if not already set
         if pos_profile and not invoice_doc.get("branch"):
@@ -1188,11 +1393,11 @@ def submit_invoice(invoice=None, data=None):
         # Recalculate coupon discount from current ERPNext totals and lock the
         # coupon row until this transaction completes. This closes the race where
         # two cashiers could consume the last use simultaneously.
-        coupon_code = cstr(invoice_doc.get("coupon_code") or "").strip().upper()
+        coupon_code = cstr(invoice_doc.get("coupon_code") or "").strip()
+        coupon_source = None
         if coupon_code:
-            if not frappe.db.table_exists("POS Coupon"):
-                frappe.throw(_("Coupons are not enabled"))
-            _apply_coupon_authoritatively(invoice_doc, coupon_code, lock=True)
+            coupon_result = _apply_coupon_authoritatively(invoice_doc, coupon_code, lock=True)
+            coupon_source = coupon_result.get("source") if coupon_result else None
             coupon_code = invoice_doc.coupon_code
         else:
             invoice_doc.calculate_taxes_and_totals()
@@ -1232,7 +1437,7 @@ def submit_invoice(invoice=None, data=None):
                 # The invoice/order is now submitted while the coupon row lock is
                 # still held. Synchronize the usage counter inside the same DB
                 # transaction; no manual commit is used.
-                if coupon_code:
+                if coupon_code and coupon_source == "POS":
                     from pos_next.pos_next.doctype.pos_coupon.pos_coupon import (
                         increment_coupon_usage,
                     )

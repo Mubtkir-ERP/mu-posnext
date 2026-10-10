@@ -183,7 +183,11 @@ def validate_and_pin_invoice_payments(doc):
     security layer.  Every non-wallet row is pinned to the server-configured
     Cash/Bank account for its Mode of Payment.
     """
-    if not doc or not doc.get("is_pos"):
+    # Only enforce POSNext/ERPNext POS payment wiring on invoices that were
+    # actually created through a POS frontend. A normal Sales Invoice created
+    # from Desk may legitimately have ``is_pos``/``pos_profile`` set (Paid +
+    # POS Profile) and must continue to use ERPNext's standard invoice flow.
+    if not doc or not doc.get("is_pos") or not doc.get("is_created_using_pos"):
         return
     if not doc.get("pos_profile") or not doc.get("company"):
         frappe.throw(_("POS Profile and company are required for POS payments."))
@@ -210,9 +214,11 @@ def validate_and_pin_invoice_payments(doc):
             allow_wallet=False,
         )
 
-        # The browser-provided account is never authoritative.  Pin the row to
-        # the configured account even if the payload tried to inject another one.
+        # The browser-provided account/type are never authoritative. Pin the row
+        # to the configured server-side payment wiring.
         payment.account = details.account
+        if hasattr(payment, "type"):
+            payment.type = details.mode_type
 
 
 def validate_requested_payment_account(expected_account, requested_account):

@@ -685,6 +685,39 @@ function formatCurrency(amount) {
 }
 
 function updateItem() {
+	// Validate manual item discount here, before the dialog is closed.
+	// The backend still re-validates at checkout for security, but the cashier
+	// should get immediate feedback when pressing "Update Product".
+	if (!hasPricingRules.value) {
+		const subtotal = Number(calculatedSubtotal.value || 0)
+		let requestedDiscountPct = 0
+
+		if (discountType.value === "percentage") {
+			requestedDiscountPct = Number(discountValue.value || 0)
+		} else if (subtotal > 0) {
+			requestedDiscountPct = (Number(discountValue.value || 0) / subtotal) * 100
+		}
+
+		const limits = []
+		const posLimit = Number(settingsStore.maxDiscountAllowed || 0)
+		const itemLimit = Number(localItem.value?.max_discount || 0)
+		if (posLimit > 0) limits.push(posLimit)
+		if (itemLimit > 0) limits.push(itemLimit)
+
+		if (limits.length > 0) {
+			const effectiveLimit = Math.min(...limits)
+			if (requestedDiscountPct > effectiveLimit + 0.0001) {
+				showError(
+					__('Discount for item {0} exceeds the maximum allowed discount of {1}%.', [
+						localItem.value?.item_code || localItem.value?.item_name || '',
+						effectiveLimit,
+					])
+				)
+				return
+			}
+		}
+	}
+
 	// Check if rate was manually edited
 	const isRateManuallyEdited = localRate.value !== originalPriceListRate.value
 

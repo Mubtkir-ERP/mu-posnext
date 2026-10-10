@@ -144,9 +144,16 @@ def before_cancel(doc, method=None):
 
 
 def on_cancel_coupon(doc, method=None):
-	"""Synchronize POS Coupon usage after a submitted sale/order is cancelled."""
+	"""Synchronize legacy POS Coupon usage after cancellation.
+
+	Native ERPNext Coupon Code counters are already maintained by ERPNext core,
+	so never touch the POS counter for those documents.
+	"""
 	coupon_code = getattr(doc, "coupon_code", None)
 	if not coupon_code or not frappe.db.table_exists("POS Coupon"):
+		return
+
+	if frappe.db.table_exists("Coupon Code") and frappe.db.exists("Coupon Code", coupon_code):
 		return
 
 	from pos_next.pos_next.doctype.pos_coupon.pos_coupon import decrement_coupon_usage

@@ -1659,3 +1659,16 @@ Please configure a default account for Mode of Payment {0} in company {1}.,ير�
 POS Profile is required when Cash Disbursement is enabled,ملف نقطة البيع مطلوب عند تفعيل الصرف النقدي.,
 A valid POS Profile is required when Cash Disbursement is enabled,يجب تحديد ملف نقطة بيع صالح عند تفعيل الصرف النقدي.,
 Cash Disbursement Account is required when Cash Disbursement is enabled,حساب الصرف النقدي مطلوب عند تفعيل الصرف النقدي.,
+"Sorry, this coupon code does not exist","عذرًا، رمز الخصم غير موجود.",""
+"Payment methods refreshed. Please review before proceeding.","تم تحديث طرق الدفع. يرجى مراجعتها قبل المتابعة.",""
+"Rate reduction of {0}% exceeds maximum allowed discount of {1}%","تخفيض السعر بنسبة {0}% يتجاوز الحد الأقصى المسموح للخصم وهو {1}%.",""
+"This coupon is not linked to a valid Pricing Rule","رمز الخصم غير مرتبط بقاعدة تسعير صالحة.",""
+"The Pricing Rule linked to this coupon is disabled","قاعدة التسعير المرتبطة برمز الخصم معطلة.",""
+"The Pricing Rule linked to this coupon is not enabled for selling","قاعدة التسعير المرتبطة برمز الخصم غير مفعلة للبيع.",""
+"The Pricing Rule linked to this coupon is not active yet","قاعدة التسعير المرتبطة برمز الخصم لم تبدأ صلاحيتها بعد.",""
+"The Pricing Rule linked to this coupon has expired","انتهت صلاحية قاعدة التسعير المرتبطة برمز الخصم.",""
+"This coupon is only valid up to a cart amount of {0}","رمز الخصم صالح حتى إجمالي سلة قدره {0} فقط.",""
+"This coupon is not applicable to the current cart","رمز الخصم غير قابل للتطبيق على السلة الحالية.",""
+"Add at least one item before applying this coupon","أضف منتجًا واحدًا على الأقل قبل تطبيق رمز الخصم.",""
+"No eligible items were found for this coupon","لا توجد منتجات مؤهلة لتطبيق رمز الخصم.",""
+"ERPNext Pricing Rule engine is unavailable","محرك قواعد التسعير في ERPNext غير متاح.",""

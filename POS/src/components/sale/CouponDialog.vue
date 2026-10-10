@@ -225,6 +225,7 @@ const couponResource = createResource({
 			pos_profile: props.posProfile,
 			grand_total: grandTotal,
 			net_total: netTotal,
+			items: JSON.stringify(props.items || []),
 		}
 	},
 	auto: false,
