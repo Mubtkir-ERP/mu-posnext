@@ -176,7 +176,7 @@ def resolve_pos_payment_account(
     )
 
 
-def validate_and_pin_invoice_payments(doc):
+def validate_and_pin_invoice_payments(doc, method=None):
     """Validate standard POS payment rows and overwrite client account values.
 
     Wallet rows are intentionally skipped here and remain validated by the wallet

@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.19.9] - 2026-10-10
+
+### Fixed
+- Fixed the Sales Invoice validate hook signature for `validate_and_pin_invoice_payments`. Frappe document-event hooks pass `(doc, method)`, so the security hook now accepts the optional method argument.
+- Restores normal Desk Sales Invoice save when `Paid` / `POS Profile` is selected. These invoices are still ignored by POSNext payment pinning unless `is_created_using_pos = 1`.
+
 ## [1.19.8] - 2026-10-10
 
 ### Fixed
