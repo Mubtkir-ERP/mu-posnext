@@ -165,6 +165,7 @@
 import { ref, reactive, computed, watch, nextTick } from "vue"
 import { call } from "@/utils/apiWrapper"
 import { logger } from "@/utils/logger"
+import { getPersistentRequestId, clearPersistentRequestId } from "@/utils/idempotency"
 
 const log = logger.create("CashDisbursement")
 
@@ -248,6 +249,11 @@ async function submitDisbursement() {
 	if (!validate()) return
 
 	submitting.value = true
+	const request = getPersistentRequestId(
+		"cash-disbursement",
+		props.shiftName,
+		{ amount: Number(form.amount || 0), reason: form.reason.trim() },
+	)
 	try {
 		const result = await call(
 			"pos_next.api.cash_disbursement.create_cash_disbursement",
@@ -257,8 +263,10 @@ async function submitDisbursement() {
 				reason: form.reason.trim(),
 				pos_profile: props.posProfile,
 				company: props.company,
+				request_id: request.requestId,
 			}
 		)
+		clearPersistentRequestId(request.key, request.requestId)
 		const data = result?.message || result
 		log.info("Disbursement created:", data?.name)
 

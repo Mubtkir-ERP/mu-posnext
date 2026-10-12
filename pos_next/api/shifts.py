@@ -233,22 +233,50 @@ def get_closing_shift_data(opening_shift):
 
 @frappe.whitelist()
 def submit_closing_shift(closing_shift):
-	"""Submit a POS Closing Shift after validating the session context."""
+	"""Submit a POS Closing Shift with idempotent retry semantics.
+
+	A weak connection may let the first request reach the server while the
+	response is lost. Retrying the same opening shift must return the existing
+	closing shift instead of throwing or creating a duplicate.
+	"""
 	from pos_next.pos_next.doctype.pos_closing_shift.pos_closing_shift import submit_closing_shift as submit_shift
 
 	try:
 		payload = json.loads(closing_shift) if isinstance(closing_shift, str) else dict(closing_shift or {})
 		if payload.get("doctype") not in (None, "", "POS Closing Shift"):
 			frappe.throw(_("Invalid document type for POS closing."), frappe.PermissionError)
+
 		opening_shift = payload.get("pos_opening_shift")
+		if not opening_shift:
+			frappe.throw(_("POS Opening Shift is required."))
+
+		# Authorize even when already closed so retries can safely recover the
+		# server result after a lost HTTP response.
+		shift = require_shift_access(
+			opening_shift,
+			pos_profile=payload.get("pos_profile"),
+			company=payload.get("company"),
+			require_open=False,
+		)
+
+		existing = shift.get("pos_closing_shift") or frappe.db.get_value(
+			"POS Closing Shift",
+			{"pos_opening_shift": opening_shift, "docstatus": 1},
+			"name",
+		)
+		if existing:
+			return {"name": existing, "status": "success", "already_closed": True}
+
+		# Normal first-time close still requires an open shift.
 		require_shift_access(
 			opening_shift,
 			pos_profile=payload.get("pos_profile"),
 			company=payload.get("company"),
 			require_open=True,
 		)
+
 		result = submit_shift(json.dumps(payload))
-		return {"name": result, "status": "success"}
+		return {"name": result, "status": "success", "already_closed": False}
 	except Exception as e:
 		frappe.log_error(frappe.get_traceback(), "Submit Closing Shift Error")
 		frappe.throw(_("Error submitting closing shift: {0}").format(str(e)))

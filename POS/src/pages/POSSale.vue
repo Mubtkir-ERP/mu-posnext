@@ -190,7 +190,7 @@
 					</button>
 					<!-- Cash Disbursement -->
 					<button
-						v-if="posSettingsStore.allowCashDisbursement && shiftStore.hasOpenShift && canAccessShiftActions"
+						v-if="posSettingsStore.allowCashDisbursement && profilePrintOptions.allowCashExpense && shiftStore.hasOpenShift && canAccessShiftActions"
 						@click="handleOpenCashDisbursement"
 						class="w-full text-start px-4 py-2.5 text-sm text-gray-700 hover:bg-amber-50 flex items-center gap-3 transition-colors"
 					>
@@ -623,12 +623,14 @@
 
 			<!-- Invoice History Dialog -->
 			<InvoiceHistoryDialog
+                :allow-a4="profilePrintOptions.allowA4"
 				v-model="uiStore.showHistoryDialog"
 				:pos-profile="shiftStore.profileName"
 				:pos-opening-shift="shiftStore.currentShift?.name"
 				:currency="shiftStore.profileCurrency"
 				@view-invoice="handleViewInvoice"
 				@print-invoice="handlePrintInvoice"
+                @print-a4="(invoice) => handlePrintInvoice(invoice, 'a4')"
 				@return-created="handleReturnCreated"
 			/>
 
@@ -664,6 +666,8 @@
 				@promotion-saved="handlePromotionSaved"
 			/>
 
+			<!-- Cashier device settings (QZ Tray remains on the cashier screen). -->
+			<CashierPreferences v-model="showCashierPreferences" @open-admin-settings="showPOSSettings = true" />
 			<!-- POS Settings -->
 			<POSSettings
 				v-model="showPOSSettings"
@@ -687,6 +691,8 @@
 				:draft-invoices="draftsStore.drafts"
 				@view-invoice="handleViewInvoice"
 				@print-invoice="handlePrintInvoice"
+				@print-a4="(invoice) => handlePrintInvoice(invoice, 'a4')"
+				:allow-a4="profilePrintOptions.allowA4"
 				@load-draft="handleLoadDraftFromManagement"
 				@delete-draft="handleDeleteDraft"
 			/>
@@ -933,6 +939,9 @@
 						<Button variant="subtle" @click="uiStore.showSuccessDialog = false">
 							{{ __("Close") }}
 						</Button>
+						<Button v-if="profilePrintOptions.allowA4" variant="subtle" @click="handlePrintInvoice({ name: uiStore.lastInvoiceName }, 'a4')">
+							{{ __("Print A4") }}
+						</Button>
 						<Button
 							variant="solid"
 							theme="blue"
@@ -1047,6 +1056,7 @@ import PromotionManagement from "@/components/sale/PromotionManagement.vue";
 import ReturnInvoiceDialog from "@/components/sale/ReturnInvoiceDialog.vue";
 import WarehouseAvailabilityDialog from "@/components/sale/WarehouseAvailabilityDialog.vue";
 import POSSettings from "@/components/settings/POSSettings.vue";
+import CashierPreferences from "@/components/settings/CashierPreferences.vue";
 import InvoiceManagement from "@/components/invoices/InvoiceManagement.vue";
 import InvoiceDetailDialog from "@/components/invoices/InvoiceDetailDialog.vue";
 import { useRealtimeStock } from "@/composables/useRealtimeStock";
@@ -1157,6 +1167,24 @@ const showPromotionManagement = ref(false);
 
 // Settings dialog
 const showPOSSettings = ref(false);
+const showCashierPreferences = ref(false);
+// Print options are resolved per active branch, not from global POS Settings.
+const profilePrintOptions = ref({ allowA4: false, allowWhatsApp: false, allowCashExpense: false });
+watch(() => shiftStore.profileName, async (profileName) => {
+	profilePrintOptions.value = { allowA4: false, allowWhatsApp: false, allowCashExpense: false };
+	if (!profileName) return;
+	try {
+		const profile = await call("frappe.client.get", { doctype: "POS Profile", name: profileName });
+		if (shiftStore.profileName !== profileName) return;
+		profilePrintOptions.value = {
+			allowA4: Boolean(Number(profile?.mu_allow_a4_print)) && Boolean(profile?.mu_a4_print_format),
+			allowWhatsApp: Boolean(Number(profile?.mu_allow_whatsapp_invoice)),
+            allowCashExpense: Boolean(Number(profile?.mu_allow_cash_expense)) && Boolean(profile?.mu_cash_expense_account),
+		};
+	} catch (error) {
+		log.warn("Cannot load branch print options", error);
+	}
+}, { immediate: true });
 
 // Cash Disbursement dialog
 const showCashDisbursement = ref(false);
@@ -2753,7 +2781,7 @@ function handleManagementMenuClick(menuItem) {
 	if (menuItem === "promotions") {
 		showPromotionManagement.value = true;
 	} else if (menuItem === "settings") {
-		showPOSSettings.value = true;
+		showCashierPreferences.value = true;
 	} else if (menuItem === "invoices") {
 		// Invoice Management loads paginated data on demand. Avoid preloading
 		// hundreds of invoices before opening the screen.
@@ -2791,23 +2819,22 @@ function onCashDisbursed(data) {
 }
 
 // Centralized print handler - uses printInvoice.js utilities
-async function handlePrintInvoice(invoiceData) {
+async function handlePrintInvoice(invoiceData, paper = "thermal") {
 	try {
 		// Silent print path — send directly to thermal printer via QZ Tray
-		if (posSettingsStore.silentPrint) {
+		if (paper === "thermal" && posSettingsStore.silentPrint) {
 			const result = await printWithSilentFallback(invoiceData);
-			if (result.method === "browser") {
-				log.info("Used browser print fallback");
-			}
+			if (!result.success) throw new Error("Both QZ Tray and browser printing failed");
+			if (result.method === "browser") log.info("Used browser print fallback");
 			return;
 		}
 
 		// Standard browser print path
 		if (invoiceData.name) {
 			// Always use printInvoiceByName to fetch custom print format from POS Profile
-			await printInvoiceByName(invoiceData.name);
+			await printInvoiceByName(invoiceData.name, null, null, paper);
 		} else if (invoiceData.items && Array.isArray(invoiceData.items)) {
-			await printInvoice(invoiceData);
+			await printInvoice({ ...invoiceData, pos_profile: shiftStore.profileName });
 		}
 	} catch (error) {
 		log.error("Error printing invoice:", error);

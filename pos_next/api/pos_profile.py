@@ -30,6 +30,19 @@ def get_pos_profiles():
 	return pos_profiles
 
 
+PROFILE_FEATURE_FIELDS = (
+    "mu_allow_item_discount", "mu_allow_additional_discount", "mu_max_discount_percent",
+    "mu_thermal_print_format", "mu_allow_a4_print", "mu_a4_print_format",
+    "mu_allow_whatsapp_invoice", "mu_allow_cash_expense", "mu_cash_expense_limit",
+    "mu_cash_expense_account",
+)
+
+
+def _profile_features(profile_doc):
+    """Read configured per-branch controls. Feature switches do not bypass global permissions."""
+    return {key: profile_doc.get(key) for key in PROFILE_FEATURE_FIELDS}
+
+
 @frappe.whitelist()
 def get_pos_profile_data(pos_profile):
 	"""Get detailed POS Profile data with hierarchical item groups for instant UI rendering."""
@@ -50,12 +63,16 @@ def get_pos_profile_data(pos_profile):
 
 	return {
 		"pos_profile": profile_doc,
+		"profile_features": _profile_features(profile_doc),
 		"company": company_doc,
 		"pos_settings": pos_settings,
 		"item_groups_hierarchy": item_groups_with_hierarchy,  # NEW: includes child_groups
 		"print_settings": {
 			"auto_print": profile_doc.get("print_receipt_on_order_complete", 0),
-			"print_format": profile_doc.get("print_format"),
+			"print_format": profile_doc.get("mu_thermal_print_format") or profile_doc.get("print_format"),
+			"a4_print_format": profile_doc.get("mu_a4_print_format"),
+			"allow_a4_print": cint(profile_doc.get("mu_allow_a4_print") or 0),
+			"allow_whatsapp_invoice": cint(profile_doc.get("mu_allow_whatsapp_invoice") or 0),
 			"letter_head": profile_doc.get("letter_head"),
 		}
 	}
@@ -82,6 +99,12 @@ def get_pos_settings(pos_profile):
 		if not pos_settings:
 			pos_settings = DEFAULT_POS_SETTINGS.copy()
 
+		global_allow_negative = cint(
+			frappe.db.get_single_value("Stock Settings", "allow_negative_stock") or 0
+		)
+		pos_settings["allow_negative_stock"] = global_allow_negative
+		pos_settings["_global_allow_negative_stock"] = global_allow_negative
+
 		# Get allow_rate_change from POS Profile
 		allow_rate_change = frappe.db.get_value("POS Profile", pos_profile, "allow_rate_change")
 		if allow_rate_change is not None:
@@ -89,6 +112,17 @@ def get_pos_settings(pos_profile):
 		else:
 			pos_settings["allow_rate_change"] = 0
 
+		profile = frappe.get_cached_doc("POS Profile", pos_profile)
+		if not cint(profile.get("mu_allow_item_discount")):
+			pos_settings["allow_user_to_edit_item_discount"] = 0
+		if not cint(profile.get("mu_allow_additional_discount")):
+			pos_settings["allow_user_to_edit_additional_discount"] = 0
+		# Zero means no additional branch ceiling, not unlimited globally.
+		from frappe.utils import flt
+		branch_limit = flt(profile.get("mu_max_discount_percent") or 0)
+		global_limit = flt(pos_settings.get("max_discount_allowed") or 0)
+		if branch_limit > 0:
+			pos_settings["max_discount_allowed"] = min(branch_limit, global_limit) if global_limit > 0 else branch_limit
 		return pos_settings
 	except Exception:
 		frappe.log_error(frappe.get_traceback(), "Get POS Settings Error")

@@ -166,7 +166,7 @@ import {
 	roundCurrency,
 } from "@/utils/currency"
 import { clearAllDrafts, deleteDraft, getAllDrafts } from "@/utils/draftManager"
-import { printInvoiceCustom } from "@/utils/printInvoice"
+
 import { useToast } from "@/composables/useToast"
 import { usePOSShiftStore } from "@/stores/posShift"
 import { Button, Dialog } from "frappe-ui"
@@ -223,30 +223,9 @@ async function loadDrafts() {
 }
 
 function handlePrintDraft(draft) {
-	if (!props.allowPrintDraftInvoices) {
-		return
-	}
-
-	try {
-		const invoiceData = {
-			name: draft.draft_id,
-			company: shiftStore.profileCompany,
-			items: draft.items,
-			payments: [],
-			grand_total: calculateTotal(draft.items),
-			posting_date: draft.created_at,
-			customer_name:
-				draft.customer?.customer_name || draft.customer?.name || draft.customer,
-			status: "Draft",
-			header: "Draft",
-			footer:
-				"الفاتورة لم يتم تسجيلها في حسابات الجهة، وبالتالي لا يُعتد بها، ولا تتحمل الجهة أي مسؤولية عن أي أضرار قد تنتج عنها.",
-		}
-		printInvoiceCustom(invoiceData)
-	} catch (error) {
-		console.error("Error printing draft:", error)
-		showError(__("Failed to print draft"))
-	}
+	// Local drafts have no ERPNext print document. Never print an internal receipt
+	// that bypasses the Print Format configured for the branch.
+	showError(__("Save/sync this draft before printing with the POS Profile format"))
 }
 
 function handleDeleteDraft(draftId) {

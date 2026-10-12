@@ -788,7 +788,7 @@ const {
 })
 
 // Local state
-const viewMode = ref("grid")
+const viewMode = ref(localStorage.getItem("pos_cashier_product_view") === "list" ? "list" : "grid")
 const itemThreshold = ref(50) // Threshold for auto-switching to list view
 const userManuallySetView = ref(false) // Track if user manually changed view mode
 const lastAutoSwitchCount = ref(0)
@@ -1006,7 +1006,13 @@ function handleScroll(event) {
 	handleScrollRAF(event)
 }
 
+function onCashierViewPreference(event) {
+  const next = event.detail === 'list' ? 'list' : 'grid'
+  viewMode.value = next
+  userManuallySetView.value = true
+}
 onMounted(() => {
+  window.addEventListener('pos-cashier-product-view', onCashierViewPreference)
 	// Items are now loaded automatically by setPosProfile() in the watcher
 	// This ensures item group filters are loaded BEFORE fetching items
 
@@ -1035,6 +1041,7 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  window.removeEventListener('pos-cashier-product-view', onCashierViewPreference)
 	// Cleanup background sync when component unmounts
 	itemStore.cleanup()
 
@@ -1196,6 +1203,7 @@ watch(viewMode, async () => {
 
 // View mode functions
 function setViewMode(mode) {
+	localStorage.setItem("pos_cashier_product_view", mode)
 	viewMode.value = mode
 	userManuallySetView.value = true
 }

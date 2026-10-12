@@ -512,6 +512,15 @@ import { useFormatters } from "../composables/useFormatters"
 import { usePOSSettingsStore } from "../stores/posSettings"
 import { usePOSShiftStore } from "../stores/posShift"
 import TranslatedHTML from "./common/TranslatedHTML.vue"
+import {
+	clearClosingShiftDraft,
+	getCachedPaymentMethods,
+	getClosingShiftDraft,
+	isNetworkLikeError,
+	saveClosingShiftDraft,
+	savePendingClosingShift,
+} from "@/utils/offline"
+import { offlineState } from "@/utils/offline/offlineState"
 
 const props = defineProps({
 	modelValue: {
@@ -547,6 +556,100 @@ const showSuccessReport = ref(false) // Track if shift is closed and showing rep
 const errorMessage = ref('') // User-friendly error message
 const showIdleWarning = ref(false)
 let _idleWarningTimer = null
+
+function makeReactiveClosingData(data, touchedFromCache = false) {
+	if (!data) return null
+	const cloned = JSON.parse(JSON.stringify(data))
+	if (cloned.payment_reconciliation) {
+		cloned.payment_reconciliation = cloned.payment_reconciliation.map((payment) =>
+			reactive({
+				...payment,
+				closing_amount: payment.closing_amount ?? null,
+				difference: Number(payment.difference || 0),
+				_touched:
+					touchedFromCache &&
+					payment.closing_amount !== null &&
+					payment.closing_amount !== undefined &&
+					payment.closing_amount !== "",
+			}),
+		)
+		cloned.payment_reconciliation.forEach((payment) => calculateDifference(payment))
+	}
+	return cloned
+}
+
+async function buildOfflineClosingData() {
+	const cachedDraft = await getClosingShiftDraft(props.openingShift)
+	if (cachedDraft) return makeReactiveClosingData(cachedDraft, true)
+
+	let cachedShift = null
+	try {
+		cachedShift = JSON.parse(localStorage.getItem("pos_shift_data") || "null")
+	} catch {
+		cachedShift = null
+	}
+
+	const opening = cachedShift?.pos_opening_shift
+	const profile = cachedShift?.pos_profile
+	if (!opening || opening.name !== props.openingShift || !profile?.name) return null
+
+	const methods = await getCachedPaymentMethods(profile.name)
+	const openingByMode = Object.fromEntries(
+		(opening.balance_details || []).map((row) => [row.mode_of_payment, Number(row.amount || 0)]),
+	)
+	const uniqueModes = [...new Set([
+		...Object.keys(openingByMode),
+		...methods.map((row) => row.mode_of_payment).filter(Boolean),
+	])]
+
+	const fallback = {
+		doctype: "POS Closing Shift",
+		pos_opening_shift: opening.name,
+		period_start_date: opening.period_start_date,
+		pos_profile: profile.name,
+		company: profile.company || cachedShift?.company?.name || opening.company,
+		user: opening.user,
+		payment_reconciliation: uniqueModes.map((mode) => ({
+			mode_of_payment: mode,
+			opening_amount: openingByMode[mode] || 0,
+			expected_amount: openingByMode[mode] || 0,
+			closing_amount: null,
+			difference: 0,
+		})),
+		pos_transactions: [],
+		taxes: [],
+		_offline_fallback: true,
+	}
+	return makeReactiveClosingData(fallback, false)
+}
+
+async function queueClosingLocally() {
+	await saveClosingShiftDraft(props.openingShift, closingData.value)
+	const queued = await savePendingClosingShift(closingData.value)
+	localStorage.setItem(
+		"pos_shift_pending_close",
+		JSON.stringify({
+			opening_shift: props.openingShift,
+			close_id: queued.close_id,
+			queued_at: Date.now(),
+		}),
+	)
+	localStorage.removeItem("pos_shift_data")
+	shiftState.value = {
+		pos_opening_shift: null,
+		pos_profile: null,
+		company: null,
+		isOpen: false,
+		_initialElapsedMs: 0,
+		_receivedAt: 0,
+	}
+	window.frappe?.show_alert?.({
+		message: __("Shift close saved locally and will sync automatically when the connection is stable."),
+		indicator: "orange",
+	}, 7)
+	emit("shift-closed")
+	open.value = false
+}
 
 // Watch dialog open state
 watch(open, async (isOpen) => {
@@ -584,37 +687,28 @@ onBeforeUnmount(() => {
 
 async function loadClosingData() {
 	try {
-		errorMessage.value = '' // Clear any previous errors
+		errorMessage.value = ''
 
 		const data = await closingDataResource.submit({
 			opening_shift: props.openingShift,
 		})
 
-		// Make payment_reconciliation reactive
-		if (data.payment_reconciliation) {
-			data.payment_reconciliation = data.payment_reconciliation.map((payment) =>
-				reactive({
-					...payment,
-					closing_amount: payment.closing_amount ?? null,
-					difference: 0,
-					_touched: false,
-				}),
-			)
+		closingData.value = makeReactiveClosingData(data, false)
+		await saveClosingShiftDraft(props.openingShift, closingData.value)
 
-			// Calculate initial differences
-			data.payment_reconciliation.forEach((payment) => {
-				calculateDifference(payment)
-			})
-		}
-
-		closingData.value = data
-
-		// Auto-expand invoice details if there are few invoices
 		if (invoiceCount.value > 0 && invoiceCount.value <= 10) {
 			showInvoiceDetails.value = true
 		}
 	} catch (error) {
 		console.error("Error loading closing data:", error)
+		const cached = await buildOfflineClosingData()
+		if (cached) {
+			closingData.value = cached
+			errorMessage.value = __(
+				"Connection is unavailable. You can enter the counted amounts and close the shift locally; server totals will be recalculated during sync.",
+			)
+			return
+		}
 		errorMessage.value = 'Unable to load shift data. Please check your connection and try again.'
 	}
 }
@@ -630,6 +724,9 @@ function updateClosingAmount(payment, value) {
 	payment.closing_amount = value
 	payment._touched = true
 	calculateDifference(payment)
+	if (closingData.value) {
+		saveClosingShiftDraft(props.openingShift, closingData.value).catch(() => {})
+	}
 }
 
 const canSubmit = computed(() => {
@@ -650,27 +747,39 @@ async function submitClosing() {
 	if (!closingData.value) return
 
 	try {
-		errorMessage.value = '' // Clear any previous errors
+		errorMessage.value = ''
 
-		// Ensure all differences are calculated
 		if (closingData.value.payment_reconciliation) {
 			closingData.value.payment_reconciliation.forEach((payment) => {
 				calculateDifference(payment)
 			})
 		}
+		await saveClosingShiftDraft(props.openingShift, closingData.value)
 
-		// Submit to server
-		await submitResource.submit({ closing_shift: closingData.value })
+		const quality = offlineState.getConnectionQuality()?.quality
+		if (offlineState.isOffline || quality === "poor") {
+			await queueClosingLocally()
+			return
+		}
 
-		// If hideExpectedAmount is enabled, show success report before closing
+		try {
+			await submitResource.submit({ closing_shift: closingData.value })
+			await clearClosingShiftDraft(props.openingShift)
+			localStorage.removeItem("pos_shift_pending_close")
+		} catch (error) {
+			if (isNetworkLikeError(error)) {
+				await queueClosingLocally()
+				return
+			}
+			throw error
+		}
+
 		if (hideExpectedAmount.value) {
 			showSuccessReport.value = true
-			// Auto-expand invoice details in success report
 			if (invoiceCount.value > 0 && invoiceCount.value <= 10) {
 				showInvoiceDetails.value = true
 			}
 		} else {
-			// Normal mode: close immediately
 			emit("shift-closed")
 			closeDialog()
 		}

@@ -2,6 +2,8 @@ import { createResource } from "frappe-ui"
 import { defineStore } from "pinia"
 import { computed, ref } from "vue"
 import { useBootstrapStore } from "./bootstrap"
+import { getSetting, setSetting } from "@/utils/offline/db"
+import { ensureProfileCacheScope } from "@/utils/offline/cache"
 
 export const usePOSSettingsStore = defineStore("posSettings", () => {
 	// State
@@ -68,6 +70,7 @@ export const usePOSSettingsStore = defineStore("posSettings", () => {
 		// Miscellaneous
 		input_qty: 0,
 		allow_negative_stock: 0,
+		_global_allow_negative_stock: 0,
 		// Sales Persons
 		enable_sales_persons: "Disabled",
 		// Security
@@ -110,10 +113,10 @@ export const usePOSSettingsStore = defineStore("posSettings", () => {
 		Boolean(settings.value.allow_user_to_edit_item_discount),
 	)
 	const allowRateChange = computed(() =>
-		Boolean(settings.value.allow_rate_change),
+		Boolean(settings.value.enabled) && Boolean(settings.value.allow_rate_change) && Boolean(settings.value.allow_user_to_edit_rate),
 	)
 	const allowUserToEditRate = computed(() =>
-		Boolean(settings.value.allow_user_to_edit_rate),
+		Boolean(settings.value.enabled) && Boolean(settings.value.allow_user_to_edit_rate) && Boolean(settings.value.allow_rate_change),
 	)
 	const disableRoundedTotal = computed(() =>
 		Boolean(settings.value.disable_rounded_total),
@@ -203,7 +206,17 @@ export const usePOSSettingsStore = defineStore("posSettings", () => {
 	const allowPrintLastInvoice = computed(() =>
 		Boolean(settings.value.allow_print_last_invoice),
 	)
-	const silentPrint = computed(() => Boolean(settings.value.silent_print))
+	// Per-device preference; null means preserve the existing POS setting until a cashier chooses.
+	const localSilentPrint = ref(null)
+	try {
+		const saved = localStorage.getItem("pos_next_cashier_silent_print")
+		if (saved === "1" || saved === "0") localSilentPrint.value = saved === "1"
+	} catch (_) { /* Storage may be disabled in private browsing. */ }
+	const silentPrint = computed(() => localSilentPrint.value ?? Boolean(settings.value.silent_print))
+	function setLocalSilentPrint(enabled) {
+		localSilentPrint.value = Boolean(enabled)
+		try { localStorage.setItem("pos_next_cashier_silent_print", enabled ? "1" : "0") } catch (_) {}
+	}
 
 	// Computed - Delivery
 	const useDeliveryCharges = computed(() =>
@@ -233,7 +246,7 @@ export const usePOSSettingsStore = defineStore("posSettings", () => {
 	// Computed - Miscellaneous
 	const inputQty = computed(() => Boolean(settings.value.input_qty))
 	const allowNegativeStock = computed(() =>
-		Boolean(settings.value.allow_negative_stock),
+		Boolean(settings.value._global_allow_negative_stock ?? settings.value.allow_negative_stock),
 	)
 
 	// Computed - Sales Persons
@@ -263,8 +276,15 @@ export const usePOSSettingsStore = defineStore("posSettings", () => {
 		url: "pos_next.pos_next.doctype.pos_settings.pos_settings.get_pos_settings",
 		onSuccess(data) {
 			if (data) {
-				Object.assign(settings.value, data)
+				const profile = settings.value.pos_profile
+				Object.assign(settings.value, data, { pos_profile: profile })
 				isLoaded.value = true
+				if (profile) {
+					setSetting(`pos_settings_${profile}`, {
+						data: JSON.parse(JSON.stringify(settings.value)),
+						cached_at: Date.now(),
+					}).catch(() => {})
+				}
 			}
 			isLoading.value = false
 		},
@@ -280,27 +300,51 @@ export const usePOSSettingsStore = defineStore("posSettings", () => {
 		}
 
 		isLoading.value = true
+		const previousProfile = settings.value.pos_profile
+		if (previousProfile && previousProfile !== posProfile) {
+			resetSettings()
+		}
 		settings.value.pos_profile = posProfile
 
-		// OPTIMIZATION: Check if bootstrap has preloaded the settings
+		// Profile-specific operational data must never leak into another profile.
+		await ensureProfileCacheScope(posProfile)
+
+		// OPTIMIZATION: use bootstrap only when it belongs to this exact profile.
 		try {
 			const bootstrapStore = useBootstrapStore()
+			const preloadedProfile = bootstrapStore.getPreloadedPOSProfile()
 			const preloadedSettings = bootstrapStore.getPreloadedPOSSettings()
-			if (preloadedSettings && Object.keys(preloadedSettings).length > 0) {
-				Object.assign(settings.value, preloadedSettings)
+			if (
+				preloadedProfile?.name === posProfile &&
+				preloadedSettings &&
+				Object.keys(preloadedSettings).length > 0
+			) {
+				Object.assign(settings.value, preloadedSettings, { pos_profile: posProfile })
 				isLoaded.value = true
 				isLoading.value = false
+				await setSetting(`pos_settings_${posProfile}`, {
+					data: JSON.parse(JSON.stringify(settings.value)),
+					cached_at: Date.now(),
+				})
 				return true
 			}
 		} catch {
-			// Bootstrap store may not be available, fall through to API call
+			// Bootstrap store may not be available, fall through to API/cache.
 		}
 
-		// Fallback to API call
 		try {
 			await settingsResource.submit({ pos_profile: posProfile })
 			return true
 		} catch {
+			// Weak/offline connection: use only a cache created for this same profile.
+			const cached = await getSetting(`pos_settings_${posProfile}`, null)
+			if (cached?.data) {
+				Object.assign(settings.value, cached.data, { pos_profile: posProfile })
+				isLoaded.value = true
+				isLoading.value = false
+				return true
+			}
+			isLoading.value = false
 			return false
 		}
 	}
@@ -358,6 +402,7 @@ export const usePOSSettingsStore = defineStore("posSettings", () => {
 			allow_change_posting_date: 0,
 			input_qty: 0,
 			allow_negative_stock: 0,
+			_global_allow_negative_stock: 0,
 			enable_sales_persons: "Disabled",
 			// Security
 			enable_session_lock: 0,
@@ -384,7 +429,7 @@ export const usePOSSettingsStore = defineStore("posSettings", () => {
 	 * @returns {boolean} - True if negative stock is allowed
 	 */
 	function isNegativeStockAllowed() {
-		return isEnabled.value && Boolean(settings.value.allow_negative_stock)
+		return isEnabled.value && allowNegativeStock.value
 	}
 
 	/**
@@ -392,7 +437,7 @@ export const usePOSSettingsStore = defineStore("posSettings", () => {
 	 * @returns {boolean} - True if stock validation should prevent negative stock
 	 */
 	function shouldEnforceStockValidation() {
-		return isEnabled.value && !Boolean(settings.value.allow_negative_stock)
+		return isEnabled.value && !allowNegativeStock.value
 	}
 
 	/**
@@ -401,20 +446,25 @@ export const usePOSSettingsStore = defineStore("posSettings", () => {
 	 * to ensure all components have the latest settings immediately
 	 */
 	async function reloadSettings() {
-		if (!settings.value.pos_profile) {
-			return false
-		}
+		const profile = settings.value.pos_profile
+		if (!profile) return false
 
 		isLoading.value = true
-
 		try {
-			// Use submit with pos_profile to ensure proper reload
-			await settingsResource.submit({ pos_profile: settings.value.pos_profile })
+			await settingsResource.submit({ pos_profile: profile })
 			return true
 		} catch {
-			return false
+			// Keep the last known settings for this profile; never substitute another profile.
+			const cached = await getSetting(`pos_settings_${profile}`, null)
+			if (cached?.data) {
+				Object.assign(settings.value, cached.data, { pos_profile: profile })
+				isLoaded.value = true
+			}
+			isLoading.value = false
+			return Boolean(cached?.data)
 		}
 	}
+
 
 	return {
 		// State
@@ -474,6 +524,7 @@ export const usePOSSettingsStore = defineStore("posSettings", () => {
 		cashDisbursementAccount,
 		allowPrintLastInvoice,
 		silentPrint,
+		setLocalSilentPrint,
 
 		// Computed - Delivery
 		useDeliveryCharges,

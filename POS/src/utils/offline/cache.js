@@ -157,6 +157,61 @@ export const toggleManualOffline = async () => {
 	return newState
 }
 
+
+/**
+ * Ensure cached operational data belongs to the active POS Profile.
+ * Queued invoices/closures and history are intentionally preserved.
+ */
+export const ensureProfileCacheScope = async (posProfile) => {
+	if (!posProfile) return false
+	const activeProfile =
+		(await getSetting("active_pos_profile", null)) ||
+		(await getSetting("items_sync_profile", null))
+	if (!activeProfile) {
+		await setSetting("active_pos_profile", posProfile)
+		return false
+	}
+	if (activeProfile === posProfile) {
+		await setSetting("active_pos_profile", posProfile)
+		return false
+	}
+
+	await Promise.all([
+		db.items.clear(),
+		db.customers.clear(),
+		db.item_prices.clear(),
+		db.stock.clear(),
+		db.payment_methods.clear(),
+		db.sales_persons.clear(),
+		db.offers.clear(),
+	])
+
+	memory.items = []
+	memory.customers = []
+	memory.item_prices = {}
+	memory.local_stock = {}
+	memory.payment_methods = []
+	memory.items_last_sync = null
+	memory.customers_last_sync = null
+	memory.payment_methods_last_sync = null
+	memory.cache_ready = false
+	memory.stock_cache_ready = false
+
+	await Promise.all([
+		setSetting("active_pos_profile", posProfile),
+		setSetting("items_last_sync", null),
+		setSetting("customers_last_sync", null),
+		setSetting("payment_methods_last_sync", null),
+		setSetting("cache_ready", false),
+		setSetting("stock_cache_ready", false),
+		setSetting("items_sync_complete", false),
+		setSetting("items_sync_profile", posProfile),
+	])
+
+	console.info(`POS profile changed from ${activeProfile} to ${posProfile}; scoped cache reset`)
+	return true
+}
+
 // Load items from server (returns data for worker to cache)
 export const cacheItemsFromServer = async (posProfile) => {
 	try {
@@ -386,8 +441,11 @@ export async function cachePaymentMethodsFromServer(posProfile) {
 			pos_profile: posProfile,
 		}))
 
-		// Store in IndexedDB
-		await db.payment_methods.bulkPut(methodsWithProfile)
+		// Replace this profile atomically so removed/disabled methods cannot remain stale
+		await db.transaction("rw", db.payment_methods, async () => {
+			await db.payment_methods.where("pos_profile").equals(posProfile).delete()
+			await db.payment_methods.bulkPut(methodsWithProfile)
+		})
 
 		// Update last sync timestamp
 		const timestamp = Date.now()
@@ -442,8 +500,11 @@ export async function cacheSalesPersonsFromServer(posProfile) {
 			pos_profile: posProfile,
 		}))
 
-		// Store in IndexedDB
-		await db.sales_persons.bulkPut(personsWithProfile)
+		// Replace this profile atomically so removed sales persons cannot remain stale
+		await db.transaction("rw", db.sales_persons, async () => {
+			await db.sales_persons.where("pos_profile").equals(posProfile).delete()
+			await db.sales_persons.bulkPut(personsWithProfile)
+		})
 
 		// Update last sync timestamp
 		const timestamp = Date.now()

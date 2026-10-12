@@ -209,6 +209,7 @@
 <script setup>
 import { DEFAULT_CURRENCY, formatCurrency as formatCurrencyUtil } from "@/utils/currency"
 import { getInvoiceStatusColor } from "@/utils/invoice"
+import { getPersistentRequestId, clearPersistentRequestId } from "@/utils/idempotency"
 import PaymentDialog from "@/components/sale/PaymentDialog.vue"
 import { usePOSSettingsStore } from "@/stores/posSettings"
 import { useToast } from "@/composables/useToast"
@@ -318,12 +319,20 @@ async function handlePaymentCompleted(paymentData) {
 		return
 	}
 
+	const request = getPersistentRequestId(
+		"partial-payment",
+		selectedInvoice.value.name,
+		paymentData.payments,
+	)
+
 	try {
 		console.log('[PartialPayments] Calling API to add payment...')
 		const result = await call("pos_next.api.partial_payments.add_payment_to_partial_invoice", {
 			invoice_name: selectedInvoice.value.name,
 			payments: paymentData.payments,
+			request_id: request.requestId,
 		})
+		clearPersistentRequestId(request.key, request.requestId)
 
 		console.log('[PartialPayments] API response:', result)
 

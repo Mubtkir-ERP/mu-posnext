@@ -41,6 +41,9 @@ const CURRENT_SCHEMA = {
 	// Invoice queue for offline submissions
 	invoice_queue: "++id, timestamp, synced",
 
+	// Pending shift-close requests. close_id is unique so retries cannot create duplicates.
+	closing_shift_queue: "++id, &close_id, opening_shift, timestamp, synced",
+
 	// Items cache with searchable fields
 	// variant_of index allows querying variants by their template item
 	// brand index allows efficient brand-based filtering in offline mode
@@ -56,10 +59,10 @@ const CURRENT_SCHEMA = {
 	stock: "&[item_code+warehouse], item_code, warehouse",
 
 	// Payment methods cache
-	payment_methods: "&mode_of_payment, pos_profile",
+	payment_methods: "&[pos_profile+mode_of_payment], pos_profile, mode_of_payment",
 
 	// Sales persons cache
-	sales_persons: "&name, pos_profile",
+	sales_persons: "&[pos_profile+name], pos_profile, name",
 
 	// Payment queue for offline payments
 	payment_queue: "++id, timestamp, synced",
@@ -72,7 +75,7 @@ const CURRENT_SCHEMA = {
 
 	// Promotional offers cache for offline use
 	// Indexed by name (unique), filterable by pos_profile
-	offers: "&name, pos_profile, apply_on, valid_upto",
+	offers: "&[pos_profile+name], pos_profile, name, apply_on, valid_upto",
 
 	// Invoice history cache for offline viewing
 	// Stores submitted invoices for offline access
@@ -237,6 +240,7 @@ export const clearCachedData = async (options = {}) => {
 		preserveInvoices = true,
 		preserveDrafts = true,
 		preserveSettings = true,
+		preserveClosingShifts = true,
 	} = options
 
 	const results = {
@@ -246,8 +250,10 @@ export const clearCachedData = async (options = {}) => {
 		item_prices: 0,
 		payment_methods: 0,
 		sales_persons: 0,
+		offers: 0,
 		invoices: 0,
 		payments: 0,
+		closing_shifts: 0,
 		drafts: 0,
 		settings: 0,
 	}
@@ -260,11 +266,16 @@ export const clearCachedData = async (options = {}) => {
 		results.item_prices = await db.item_prices.clear()
 		results.payment_methods = await db.payment_methods.clear()
 		results.sales_persons = await db.sales_persons.clear()
+		results.offers = await db.offers.clear()
 
 		// Conditionally clear invoice and payment queues
 		if (!preserveInvoices) {
 			results.invoices = await db.invoice_queue.clear()
 			results.payments = await db.payment_queue.clear()
+		}
+
+		if (!preserveClosingShifts) {
+			results.closing_shifts = await db.closing_shift_queue.clear()
 		}
 
 		// Conditionally clear drafts

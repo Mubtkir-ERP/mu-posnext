@@ -10,7 +10,17 @@ from pos_next.api.security import require_pos_profile_access, require_pos_profil
 
 class POSSettings(Document):
 	def validate(self):
-		"""Validate POS Settings"""
+		"""Validate POS Settings.
+
+		ERPNext Stock Settings is the authoritative global source for negative-stock
+		policy.  The local field is kept only as a backwards-compatible mirror for
+		older POSNext clients; saving POS Settings must never toggle ERPNext's global
+		stock policy.  Item-level exceptions are read directly from Item at runtime.
+		"""
+		self.allow_negative_stock = cint(
+			frappe.db.get_single_value("Stock Settings", "allow_negative_stock") or 0
+		)
+
 		# Guard against None values and validate discount percentage
 		max_discount = flt(self.max_discount_allowed)
 		if max_discount < 0 or max_discount > 100:
@@ -144,54 +154,6 @@ class POSSettings(Document):
 			if not program_company or program_company != company:
 				frappe.throw("Default Loyalty Program must belong to the POS Profile company")
 
-	def on_update(self):
-		"""Sync allow_negative_stock with Stock Settings"""
-		self.sync_negative_stock_setting()
-
-	def sync_negative_stock_setting(self):
-		"""
-		Synchronize allow_negative_stock with Stock Settings.
-
-		When enabled in POS Settings, it enables the global Stock Settings.
-		When disabled, it only disables global Stock Settings if no other
-		POS Settings have it enabled.
-
-		Note: Runs in the same transaction as the save, no manual commits.
-		"""
-		current_stock_setting = cint(
-			frappe.db.get_single_value("Stock Settings", "allow_negative_stock") or 0
-		)
-
-		if cint(self.allow_negative_stock):
-			# Enable Stock Settings if not already enabled
-			if not current_stock_setting:
-				frappe.db.set_single_value("Stock Settings", "allow_negative_stock", 1, update_modified=False)
-				frappe.msgprint(
-					"Stock Settings 'Allow Negative Stock' has been automatically enabled.",
-					indicator="green",
-					alert=True
-				)
-		else:
-			# Only disable if no other enabled POS Settings have it enabled
-			if current_stock_setting:
-				# Use count for better performance and clarity
-				other_enabled_count = frappe.db.count(
-					"POS Settings",
-					{
-						"allow_negative_stock": 1,
-						"enabled": 1,  # Only check enabled POS Settings
-						"name": ["!=", self.name]
-					}
-				)
-
-				if other_enabled_count == 0:
-					frappe.db.set_single_value("Stock Settings", "allow_negative_stock", 0, update_modified=False)
-					frappe.msgprint(
-						"Stock Settings 'Allow Negative Stock' has been automatically disabled.",
-						indicator="orange",
-						alert=True
-					)
-
 
 @frappe.whitelist()
 def get_pos_settings(pos_profile):
@@ -228,11 +190,20 @@ def get_pos_settings(pos_profile):
 	else:
 		settings["allow_rate_change"] = 0
 
-	# Inject the current global Stock Settings value for transparency
-	# This helps UI reflect the actual state even if multiple POS Settings exist
-	settings["_global_allow_negative_stock"] = cint(
+	# One effective rule across ERPNext and POSNext; never elevate permissions.
+	settings["allow_user_to_edit_rate"] = int(
+		bool(cint(settings.get("enabled")))
+		and bool(cint(settings.get("allow_user_to_edit_rate")))
+		and bool(cint(settings["allow_rate_change"]))
+	)
+
+	# ERPNext Stock Settings is the global source of truth.  Keep the legacy
+	# POSSettings field as a read-only mirror for frontend compatibility.
+	global_allow_negative = cint(
 		frappe.db.get_single_value("Stock Settings", "allow_negative_stock") or 0
 	)
+	settings["allow_negative_stock"] = global_allow_negative
+	settings["_global_allow_negative_stock"] = global_allow_negative
 
 	return settings
 
@@ -255,6 +226,11 @@ def update_pos_settings(pos_profile, settings):
 
 	if isinstance(settings, str):
 		settings = json.loads(settings)
+
+	# Negative stock is controlled by ERPNext Stock Settings / Item, never by
+	# caller-supplied POS Settings.  Ignore the legacy mirror field on writes.
+	settings.pop("allow_negative_stock", None)
+	settings.pop("_global_allow_negative_stock", None)
 
 	require_pos_profile_access(pos_profile)
 

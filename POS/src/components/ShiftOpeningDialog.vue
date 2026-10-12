@@ -197,6 +197,7 @@ import { useShift } from "../composables/useShift"
 import { useFormatters } from "../composables/useFormatters"
 import ShiftClosingDialog from "./ShiftClosingDialog.vue"
 import TranslatedHTML from "./common/TranslatedHTML.vue"
+import { syncPendingOperations } from "@/utils/offline"
 
 const props = defineProps({
 	modelValue: Boolean,
@@ -220,6 +221,14 @@ const existingShift = ref(null)
 const showClosingDialog = ref(false)
 const closingExistingShift = ref(false)
 const restartProfileName = ref(null)
+
+function getPendingCloseMarker() {
+	try {
+		return JSON.parse(localStorage.getItem("pos_shift_pending_close") || "null")
+	} catch {
+		return null
+	}
+}
 
 // Get POS Profiles
 const profilesResource = createResource({
@@ -278,11 +287,23 @@ async function initDialog() {
 		// Await profile fetch to ensure data is loaded before proceeding
 		await profilesResource.fetch()
 
-		// Check if user already has an open shift
-		const checkResult = await checkOpeningShift.fetch()
-		if (checkResult) {
-			existingShift.value = checkResult
-			step.value = 3
+		// A locally queued close must sync before another shift can be opened.
+		// Try immediately on dialog open; offline mode simply leaves it queued.
+		if (getPendingCloseMarker()) {
+			try {
+				await syncPendingOperations()
+			} catch (error) {
+				console.debug("Pending shift close still waiting for sync", error)
+			}
+		}
+
+		// Do not resurrect the old cached/server shift while its close is pending.
+		if (!getPendingCloseMarker()) {
+			const checkResult = await checkOpeningShift.fetch()
+			if (checkResult) {
+				existingShift.value = checkResult
+				step.value = 3
+			}
 		}
 	} catch (error) {
 		console.error("Error initializing shift dialog:", error)
@@ -313,6 +334,15 @@ async function nextStep() {
 
 async function openShift() {
 	if (!selectedProfile.value) return
+
+	if (getPendingCloseMarker()) {
+		window.frappe?.msgprint?.({
+			title: __("Shift close pending sync"),
+			message: __("The previous shift was closed locally. Connect to the server and wait for the close to sync before opening a new shift."),
+			indicator: "orange",
+		})
+		return
+	}
 
 	// Prepare balance details
 	const balance_details = paymentMethods.value.map((method) => ({
@@ -357,6 +387,12 @@ function closeDialog(reason) {
 
 async function handleExistingShiftClosed() {
 	showClosingDialog.value = false
+	if (getPendingCloseMarker()) {
+		restartProfileName.value = null
+		existingShift.value = null
+		closeDialog("shift-close-pending-sync")
+		return
+	}
 	const profileToRestore = restartProfileName.value
 	restartProfileName.value = null
 	existingShift.value = null

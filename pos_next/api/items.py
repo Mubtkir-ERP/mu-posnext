@@ -9,7 +9,7 @@ from erpnext.stock.doctype.batch.batch import get_batch_qty
 from erpnext.stock.get_item_details import get_item_details as erpnext_get_item_details
 from frappe import _
 from frappe.query_builder import DocType, functions as fn
-from frappe.utils import flt, nowdate
+from frappe.utils import cint, flt, nowdate
 from pos_next.api.security import require_pos_profile_access, require_warehouse_access, require_company_access
 
 ITEM_RESULT_FIELDS = [
@@ -19,6 +19,7 @@ ITEM_RESULT_FIELDS = [
 	"stock_uom",
 	"image",
 	"is_stock_item",
+	"allow_negative_stock",
 	"has_batch_no",
 	"has_serial_no",
 	"item_group",
@@ -294,7 +295,7 @@ def get_item_detail(item, doc=None, warehouse=None, price_list=None, company=Non
 	item_data = frappe.db.get_value(
 		"Item",
 		item_code,
-		["max_discount", "item_group", "brand", "stock_uom"],
+		["max_discount", "item_group", "brand", "stock_uom", "allow_negative_stock"],
 		as_dict=True
 	) or {}
 
@@ -319,6 +320,7 @@ def get_item_detail(item, doc=None, warehouse=None, price_list=None, company=Non
 		res["actual_qty"] = get_stock_availability(item_code, warehouse)
 
 	res["max_discount"] = item_data.get("max_discount")
+	res["allow_negative_stock"] = cint(item_data.get("allow_negative_stock") or 0)
 	res["batch_no_data"] = batch_no_data
 	res["serial_no_data"] = serial_no_data
 	res["item_group"] = item_data.get("item_group")
@@ -408,6 +410,7 @@ def search_by_barcode(barcode, pos_profile):
 			"has_batch_no": item_doc.has_batch_no or 0,
 			"has_serial_no": item_doc.has_serial_no or 0,
 			"is_stock_item": item_doc.is_stock_item or 0,
+			"allow_negative_stock": cint(item_doc.get("allow_negative_stock") or 0),
 			"pos_profile": pos_profile,
 		}
 
@@ -576,6 +579,7 @@ def get_item_variants(template_item, pos_profile):
 				Item.stock_uom,
 				Item.image,
 				Item.is_stock_item,
+				Item.allow_negative_stock,
 				Item.has_batch_no,
 				Item.has_serial_no,
 				Item.item_group,
@@ -785,6 +789,24 @@ def _get_allowed_profile_brands(pos_profile):
 	"""
 	return _get_pos_profile_configured_brands(pos_profile)
 
+def _global_negative_stock_allowed():
+	"""Return ERPNext's global negative-stock policy."""
+	return bool(cint(frappe.db.get_single_value("Stock Settings", "allow_negative_stock") or 0))
+
+
+def _negative_stock_allowed_items(item_codes):
+	"""Return item codes that ERPNext permits to go negative at item level."""
+	if not item_codes or not frappe.get_meta("Item").has_field("allow_negative_stock"):
+		return set()
+	return set(
+		frappe.get_all(
+			"Item",
+			filters={"name": ["in", list(set(item_codes))], "allow_negative_stock": 1},
+			pluck="name",
+		)
+	)
+
+
 def _build_item_base_conditions(
 	pos_profile_doc,
 	item_group=None,
@@ -836,7 +858,7 @@ def _build_item_base_conditions(
 	extra_joins = ""
 	join_params = []
 
-	if hide_unavailable and warehouse:
+	if hide_unavailable and warehouse and not _global_negative_stock_allowed():
 		warehouses = [warehouse]
 		if frappe.db.get_value("Warehouse", warehouse, "is_group"):
 			warehouses = frappe.db.get_descendants("Warehouse", warehouse) or [warehouse]
@@ -844,7 +866,9 @@ def _build_item_base_conditions(
 		wh_placeholders = ", ".join(["%s"] * len(warehouses))
 		extra_joins = f"LEFT JOIN `tabBin` bin ON bin.item_code = i.name AND bin.warehouse IN ({wh_placeholders})"
 		join_params.extend(warehouses)
-		conditions.append("(i.is_stock_item = 0 OR i.has_variants = 1 OR bin.actual_qty > 0)")
+		conditions.append(
+			"(i.is_stock_item = 0 OR i.has_variants = 1 OR IFNULL(i.allow_negative_stock, 0) = 1 OR bin.actual_qty > 0)"
+		)
 
 	# Merge: join params come before WHERE params to match SQL placeholder order
 	return conditions, join_params + where_params, extra_joins
@@ -961,6 +985,10 @@ def _calculate_bundle_availability_bulk(bundle_codes, warehouse):
 	#
 	# Example: {"LAPTOP", "MOUSE", "KEYBOARD", "MONITOR", "CABLE"}
 	component_codes = list(set(c["component_code"] for c in bundle_components))
+	global_negative_allowed = _global_negative_stock_allowed()
+	negative_allowed_components = (
+		set(component_codes) if global_negative_allowed else _negative_stock_allowed_items(component_codes)
+	)
 
 	# ===========================================================================
 	# STEP 3: Resolve Warehouse Hierarchy (Group Warehouse Support)
@@ -1026,25 +1054,27 @@ def _calculate_bundle_availability_bulk(bundle_codes, warehouse):
 	#     - MOUSE (need 1): 30 available → 30 possible bundles ← LIMITING FACTOR
 	#     - KEYBOARD (need 1): 100 available → 100 possible bundles
 	#   Result: LAPTOP-COMBO availability = 30 (limited by MOUSE)
-	bundle_availability = {}
+	bundle_limits = defaultdict(list)
 	for comp in bundle_components:
 		bundle_code = comp["bundle_code"]
-		available = component_stock_map.get(comp["component_code"], 0)
+		component_code = comp["component_code"]
 		required = flt(comp["required_qty"])
+		if required <= 0:
+			continue
+		if component_code in negative_allowed_components and not global_negative_allowed:
+			continue
 
-		if required > 0:
-			# Calculate how many bundles this component can supply
-			possible = int(available / required)
+		available = component_stock_map.get(component_code, 0)
+		bundle_limits[bundle_code].append(int(available / required))
 
-			# Update bundle availability with minimum across all components
-			if bundle_code not in bundle_availability:
-				# First component for this bundle
-				bundle_availability[bundle_code] = possible
-			else:
-				# Subsequent components - take minimum (most constrained)
-				bundle_availability[bundle_code] = min(bundle_availability[bundle_code], possible)
-
-	return bundle_availability
+	# A bundle whose every stock component permits negative stock must remain
+	# sellable.  Use 1 as a display sentinel; the cart/server do not treat this
+	# number as an authoritative quantity when ERPNext permits negative stock.
+	bundle_codes_found = {c["bundle_code"] for c in bundle_components}
+	return {
+		bundle_code: (min(bundle_limits[bundle_code]) if bundle_limits[bundle_code] else 1)
+		for bundle_code in bundle_codes_found
+	}
 
 
 def _get_bundle_warehouse_availability_bulk(bundle_codes, warehouses):
@@ -1089,6 +1119,10 @@ def _get_bundle_warehouse_availability_bulk(bundle_codes, warehouses):
 		return {}
 
 	component_codes = list(set(c["component_code"] for c in bundle_components))
+	global_negative_allowed = _global_negative_stock_allowed()
+	negative_allowed_components = (
+		set(component_codes) if global_negative_allowed else _negative_stock_allowed_items(component_codes)
+	)
 	warehouse_resolution_map = {}
 	all_resolved_warehouses = set()
 	
@@ -1150,6 +1184,8 @@ def _get_bundle_warehouse_availability_bulk(bundle_codes, warehouses):
 				
 				if required_qty <= 0:
 					continue
+				if component_code in negative_allowed_components and not global_negative_allowed:
+					continue
 				
 				# Sum stock across all resolved warehouses (for group warehouse support)
 				total_available = sum(
@@ -1157,17 +1193,13 @@ def _get_bundle_warehouse_availability_bulk(bundle_codes, warehouses):
 					for wh in resolved_whs
 				)
 				
-				# Calculate how many bundles this component can supply
-				possible = int(total_available / required_qty) if required_qty > 0 else 0
-				
-				# Track minimum (most constrained component)
-				if min_possible is None:
-					min_possible = possible
-				else:
-					min_possible = min(min_possible, possible)
+				possible = int(total_available / required_qty)
+				min_possible = possible if min_possible is None else min(min_possible, possible)
 			
-			# Only include if bundle is available (min_possible > 0)
-			if min_possible is not None and min_possible > 0:
+			# If every component permits negative stock, keep the bundle selectable.
+			if min_possible is None:
+				result[bundle_code][wh_name] = 1
+			elif min_possible > 0:
 				result[bundle_code][wh_name] = min_possible
 	
 	return dict(result)
@@ -1533,7 +1565,7 @@ def get_items(pos_profile, search_term=None, item_group=None, start=0, limit=20,
 		# The SQL-level filter exempts non-stock items (is_stock_item=0) since they
 		# have no Bin rows. Bundles are non-stock items whose availability is computed
 		# from component stock. Filter them out here if they have 0 availability.
-		if hide_unavailable and bundle_availability_map:
+		if hide_unavailable and bundle_availability_map and not _global_negative_stock_allowed():
 			items = [
 				item for item in items
 				if not item.get("is_bundle") or item.get("actual_qty", 0) > 0
@@ -1724,7 +1756,7 @@ def get_items_bulk(pos_profile, item_groups=None, start=0, limit=2000, include_v
 				item["attributes"] = attributes_map[item_code]
 
 		# Post-filter: hide unavailable bundles
-		if hide_unavailable and bundle_availability_map:
+		if hide_unavailable and bundle_availability_map and not _global_negative_stock_allowed():
 			items = [
 				item for item in items
 				if not item.get("is_bundle") or item.get("actual_qty", 0) > 0
@@ -1831,6 +1863,7 @@ def get_item_details(item_code, pos_profile, customer=None, qty=1, uom=None):  #
 			"has_batch_no": item_doc.has_batch_no,
 			"has_serial_no": item_doc.has_serial_no,
 			"is_stock_item": item_doc.is_stock_item,
+			"allow_negative_stock": cint(item_doc.get("allow_negative_stock") or 0),
 			"pos_profile": pos_profile,
 			"qty": qty,
 		}
@@ -2191,6 +2224,12 @@ def get_item_warehouse_availability(item_code=None, item_codes=None, company=Non
 		# STEP 4: Query stock for regular items from Bin table
 		# ---------------------------------------------------------------------
 		if regular_items:
+			negative_allowed_regular = (
+				set(regular_items)
+				if _global_negative_stock_allowed()
+				else _negative_stock_allowed_items(regular_items)
+			)
+
 			bin_tbl = DocType("Bin")
 			query = (
 				frappe.qb.from_(bin_tbl)
@@ -2201,7 +2240,6 @@ def get_item_warehouse_availability(item_code=None, item_codes=None, company=Non
 				)
 				.where(bin_tbl.item_code.isin(regular_items))
 				.where(bin_tbl.warehouse.isin(warehouse_names))
-				.having(fn.Sum(bin_tbl.actual_qty) > 0)
 			)
 
 			# Group by item_code too when multiple items requested
@@ -2211,10 +2249,39 @@ def get_item_warehouse_availability(item_code=None, item_codes=None, company=Non
 				query = query.groupby(bin_tbl.warehouse)
 
 			for stock in query.run(as_dict=True):
-				result.append(_build_stock_entry(
-					stock.warehouse, stock.actual_qty, stock.reserved_qty,
-					warehouse_map, stock.get("item_code") if include_item_code else None, company
-				))
+				stock_item = stock.get("item_code") if include_item_code else None
+				show_row = flt(stock.actual_qty) > 0
+				if include_item_code and stock_item in negative_allowed_regular:
+					show_row = True
+				elif not include_item_code and negative_allowed_regular:
+					show_row = True
+
+				if show_row:
+					result.append(_build_stock_entry(
+						stock.warehouse, stock.actual_qty, stock.reserved_qty,
+						warehouse_map, stock_item, company
+					))
+
+			# A negative-stock-enabled item can be sold from a warehouse with no Bin
+			# row yet. Include those warehouses as zero balances so warehouse selection
+			# does not hide a choice that ERPNext itself permits.
+			if negative_allowed_regular:
+				if include_item_code:
+					existing = {(r.get("item_code"), r.get("warehouse")) for r in result}
+					for allowed_item in negative_allowed_regular:
+						for wh_name in warehouse_names:
+							if (allowed_item, wh_name) not in existing:
+								result.append(_build_stock_entry(
+									wh_name, 0, 0, warehouse_map, allowed_item, company
+								))
+				else:
+					existing_warehouses = {r.get("warehouse") for r in result}
+					if negative_allowed_regular:
+						for wh_name in warehouse_names:
+							if wh_name not in existing_warehouses:
+								result.append(_build_stock_entry(
+									wh_name, 0, 0, warehouse_map, None, company
+								))
 
 		# ---------------------------------------------------------------------
 		# STEP 5: Calculate availability for Product Bundles

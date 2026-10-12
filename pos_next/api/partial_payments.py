@@ -24,7 +24,7 @@ Architecture:
 import frappe
 from frappe import _
 from typing import Dict, List, Optional, Tuple, Any
-from frappe.utils import flt, nowdate, get_datetime, cint, get_time
+from frappe.utils import flt, nowdate, get_datetime, cint, get_time, cstr
 from datetime import datetime
 from enum import Enum
 from pos_next.api.security import user_has_pos_profile_access, require_pos_document_access
@@ -717,7 +717,7 @@ def get_partial_payment_details(invoice_name: str) -> Dict:
 
 
 @frappe.whitelist()
-def add_payment_to_partial_invoice(invoice_name: str, payments) -> Dict:
+def add_payment_to_partial_invoice(invoice_name: str, payments, request_id: str = None) -> Dict:
     """
     Add payments to a partially paid invoice via Payment Entry.
 
@@ -773,6 +773,38 @@ def add_payment_to_partial_invoice(invoice_name: str, payments) -> Dict:
         frappe.throw(_("At least one payment is required"))
 
     require_pos_document_access("Sales Invoice", invoice_name, ptype="write")
+
+    # Serialize payment mutations for this invoice. This prevents two retries or
+    # double-clicks from validating against the same outstanding amount.
+    sales_invoice = frappe.qb.DocType("Sales Invoice")
+    (
+        frappe.qb.from_(sales_invoice)
+        .select(sales_invoice.name)
+        .where(sales_invoice.name == invoice_name)
+        .for_update()
+        .run()
+    )
+
+    request_id = cstr(request_id or "").strip()[:140]
+    idempotency_marker = f"[POSNEXT-PARTIAL:{request_id}]" if request_id else None
+
+    if idempotency_marker:
+        existing_entries = frappe.get_all(
+            "Payment Entry",
+            filters={
+                "docstatus": 1,
+                "remarks": ["like", f"%{idempotency_marker}%"],
+            },
+            pluck="name",
+            order_by="creation asc",
+        )
+        if existing_entries:
+            result = get_partial_payment_details(invoice_name)
+            result["payment_entries_created"] = existing_entries
+            result["success"] = True
+            result["already_processed"] = True
+            result["request_id"] = request_id
+            return result
 
     # Validate total payment amount doesn't exceed outstanding
     try:
@@ -832,7 +864,11 @@ def add_payment_to_partial_invoice(invoice_name: str, payments) -> Dict:
                 mode_of_payment=mode_of_payment,
                 payment_account=payment_account,
                 reference_no=reference_no,
-                remarks=f"POS Payment - {mode_of_payment}",
+                remarks=(
+                    f"{idempotency_marker} POS Payment - {mode_of_payment}"
+                    if idempotency_marker
+                    else f"POS Payment - {mode_of_payment}"
+                ),
             )
 
             payment_entries_created.append(pe_name)
@@ -851,6 +887,9 @@ def add_payment_to_partial_invoice(invoice_name: str, payments) -> Dict:
     result = get_partial_payment_details(invoice_name)
     result["payment_entries_created"] = payment_entries_created
     result["success"] = True
+    result["already_processed"] = False
+    if request_id:
+        result["request_id"] = request_id
 
     return result
 
@@ -1021,8 +1060,6 @@ def update_pos_status(invoice_id, new_status):
         doc.pos_status = new_status
         doc.add_comment("Comment", f"POS Status changed from '{old_status}' to '{new_status}'")
         doc.save(ignore_permissions=False)
-
-        frappe.db.commit()
 
         return {
             "success": True,

@@ -1,9 +1,37 @@
 # Changelog
 
+## [1.21.0] - 2026-10-12
+
+### Added
+- Retry-safe idempotency for online/offline sales, partial payments, cash disbursements, manual wallet credits and POS shift closing.
+- Profile-scoped settings/tax/payment/sales-person/offer cache isolation.
+- Offline/poor-network shift-close queue with invoice-before-close ordering.
+
+### Fixed
+- Prevented duplicate operations after lost HTTP responses and double-click retries.
+- Prevented stale POS Profile cache data leaking into another profile.
+- Prevented a locally queued shift close from being reopened in the UI before synchronization.
+
+
 All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [1.20.0] - 2026-10-11
+
+### Changed
+- Completed Phase 3 / Point 5 **Negative Stock**. ERPNext `Stock Settings.allow_negative_stock` is now the authoritative global policy and `Item.allow_negative_stock` is respected per product.
+- POSNext no longer changes ERPNext global negative-stock settings when saving POS Settings; the POS checkbox is now a read-only mirror.
+- Item list, variants, item details, offline-cached item data, warehouse selection, and cart validation now carry the item-level negative-stock flag.
+- Product Bundle availability ignores components that ERPNext explicitly permits to go negative while still enforcing constrained components.
+
+### Fixed
+- Server-side stock validation no longer depends on `is_stock_item` being present on Sales Invoice child rows; Item master metadata is fetched server-side.
+- Split invoice rows for the same item/warehouse are aggregated before stock comparison to prevent overselling by duplicate lines.
+- Stock checks use `actual_qty - reserved_qty` and defer serial/batch edge cases to ERPNext core validation.
+- Final invoice submit never forces a POSNext negative-stock bypass; ERPNext stock ledger validation remains authoritative.
+- Zero-stock warehouses remain selectable for items that ERPNext allows to go negative.
 
 ## [1.19.9] - 2026-10-10
 

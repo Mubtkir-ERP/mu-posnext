@@ -162,13 +162,24 @@ def _get_pos_discount_settings(pos_profile):
     )
     if row:
         defaults.update(row)
-        # Match the frontend contract: when POS Settings is disabled, its
-        # discount controls do not restrict checkout.
+        # Disabled settings must not silently grant sensitive permissions.
         if not cint(row.get("enabled")):
-            defaults.allow_user_to_edit_additional_discount = 1
-            defaults.allow_user_to_edit_item_discount = 1
-            defaults.allow_user_to_edit_rate = 1
-            defaults.max_discount_allowed = 0
+            defaults.allow_user_to_edit_additional_discount = 0
+            defaults.allow_user_to_edit_item_discount = 0
+            defaults.allow_user_to_edit_rate = 0
+        # Both ERPNext POS Profile and POSNext must authorize rate editing.
+    profile_rate = cint(frappe.db.get_value("POS Profile", pos_profile, "allow_rate_change") or 0)
+    defaults.allow_user_to_edit_rate = cint(defaults.allow_user_to_edit_rate) and profile_rate
+    # Branch policy narrows global POSNext permissions; it never grants extras.
+    profile = frappe.get_cached_doc("POS Profile", pos_profile)
+    if not cint(profile.get("mu_allow_item_discount")):
+        defaults.allow_user_to_edit_item_discount = 0
+    if not cint(profile.get("mu_allow_additional_discount")):
+        defaults.allow_user_to_edit_additional_discount = 0
+    branch_limit = flt(profile.get("mu_max_discount_percent") or 0)
+    global_limit = flt(defaults.max_discount_allowed or 0)
+    if branch_limit > 0:
+        defaults.max_discount_allowed = min(global_limit, branch_limit) if global_limit > 0 else branch_limit
     return defaults
 
 
@@ -354,6 +365,12 @@ def _validate_and_normalize_requested_discounts(data, profile):
         discount_amt = flt(item.get("discount_amount") or 0)
         is_free_item = cint(item.get("is_free_item") or 0)
         client_rules = set(_normalize_pricing_rules(item.get("pricing_rules")))
+
+        if cint(item.get("is_rate_manually_edited") or 0) and not cint(settings.allow_user_to_edit_rate):
+            frappe.throw(
+                _("Manual rate editing is not allowed for this POS Profile."),
+                frappe.PermissionError,
+            )
 
         if discount_pct < 0 or discount_pct > 100:
             frappe.throw(
@@ -713,43 +730,113 @@ def _apply_coupon_authoritatively(invoice_doc, coupon_code, lock=False):
 # ==========================================
 
 
-def _get_available_stock(item):
-    """Return available stock qty for an item row."""
-    warehouse = item.get("warehouse")
-    batch_no = item.get("batch_no")
-    item_code = item.get("item_code")
+def _erpnext_allows_negative_stock(item_code=None):
+    """Return ERPNext's effective negative-stock policy for an item.
 
+    ERPNext Stock Settings is the global source of truth.  On versions that
+    support Item.allow_negative_stock, an item may opt in even when the global
+    setting is disabled.  Prefer ERPNext's own helper when available so POSNext
+    stays aligned with core behavior across supported ERPNext releases.
+    """
+    try:
+        from erpnext.stock.stock_ledger import is_negative_stock_allowed
+
+        return bool(is_negative_stock_allowed(item_code=item_code))
+    except (ImportError, AttributeError, TypeError):
+        global_allow = cint(
+            frappe.db.get_single_value("Stock Settings", "allow_negative_stock") or 0
+        )
+        if global_allow:
+            return True
+
+        if item_code and frappe.get_meta("Item").has_field("allow_negative_stock"):
+            return bool(
+                cint(
+                    frappe.get_cached_value("Item", item_code, "allow_negative_stock")
+                    or 0
+                )
+            )
+        return False
+
+
+def _get_available_stock(item_code, warehouse):
+    """Return sellable Bin quantity using ERPNext's actual minus reserved stock."""
     if not item_code or not warehouse:
-        return 0
+        return 0.0
 
-    if batch_no:
-        return get_batch_qty(batch_no, warehouse) or 0
-
-    # Get stock from Bin
-    bin_qty = frappe.db.get_value(
-        "Bin", {"item_code": item_code, "warehouse": warehouse}, "actual_qty"
-    )
-    return flt(bin_qty) or 0
+    row = frappe.db.get_value(
+        "Bin",
+        {"item_code": item_code, "warehouse": warehouse},
+        ["actual_qty", "reserved_qty"],
+        as_dict=True,
+    ) or {}
+    return flt(row.get("actual_qty")) - flt(row.get("reserved_qty"))
 
 
 def _collect_stock_errors(items):
-    """Return list of items exceeding available stock."""
-    errors = []
-    for d in items:
-        if flt(d.get("qty")) < 0:
+    """Return aggregated stock shortages that POSNext should block early.
+
+    This is an early cashier-facing guard only.  ERPNext's stock ledger remains
+    authoritative at submit time, including serial/batch, reservation and future
+    stock rules.  We intentionally do not bypass ERPNext submit validation.
+    """
+    rows = [d for d in (items or []) if d and d.get("item_code") and d.get("warehouse")]
+    if not rows:
+        return []
+
+    item_codes = list({d.get("item_code") for d in rows if d.get("item_code")})
+    fields = ["name", "is_stock_item", "has_serial_no", "has_batch_no"]
+    if frappe.get_meta("Item").has_field("allow_negative_stock"):
+        fields.append("allow_negative_stock")
+
+    item_meta = {
+        d.name: d
+        for d in frappe.get_all(
+            "Item",
+            filters={"name": ["in", item_codes]},
+            fields=fields,
+        )
+    }
+
+    # Multiple invoice rows can consume the same item/warehouse. Aggregate them
+    # before comparing with Bin so split lines cannot oversell the same balance.
+    requested_by_key = {}
+    for d in rows:
+        qty = flt(d.get("qty"))
+        stock_qty = flt(d.get("stock_qty"))
+        if not stock_qty:
+            stock_qty = qty * flt(d.get("conversion_factor") or 1)
+
+        # Returns/inward rows do not consume stock.
+        if stock_qty <= 0:
             continue
 
-        available = _get_available_stock(d)
-        requested = flt(
-            d.get("stock_qty")
-            or (flt(d.get("qty")) * flt(d.get("conversion_factor") or 1))
-        )
+        item_code = d.get("item_code")
+        warehouse = d.get("warehouse")
+        meta = item_meta.get(item_code)
+        if not meta or not cint(meta.get("is_stock_item")):
+            continue
 
+        # Serial/batch availability has dedicated ERPNext validation and POS
+        # selectors.  Core may apply rules such as allow_negative_stock_for_batch;
+        # duplicating those here can incorrectly reject a valid core transaction.
+        if cint(meta.get("has_serial_no")) or cint(meta.get("has_batch_no")):
+            continue
+
+        if _erpnext_allows_negative_stock(item_code):
+            continue
+
+        key = (item_code, warehouse)
+        requested_by_key[key] = requested_by_key.get(key, 0.0) + stock_qty
+
+    errors = []
+    for (item_code, warehouse), requested in requested_by_key.items():
+        available = _get_available_stock(item_code, warehouse)
         if requested > available:
             errors.append(
                 {
-                    "item_code": d.get("item_code"),
-                    "warehouse": d.get("warehouse"),
+                    "item_code": item_code,
+                    "warehouse": warehouse,
                     "requested_qty": requested,
                     "available_qty": available,
                 }
@@ -758,60 +845,22 @@ def _collect_stock_errors(items):
     return errors
 
 
-def _should_block(pos_profile):
-    """Check if sale should be blocked for insufficient stock."""
-    # First check global ERPNext Stock Settings
-    allow_negative = cint(
-        frappe.db.get_single_value("Stock Settings", "allow_negative_stock") or 0
-    )
-    if allow_negative:
-        return False
-
-    # Check POS Settings for the specific profile
-    if pos_profile:
-        # Check if POS Settings allows negative stock
-        pos_settings_allow_negative = cint(
-            frappe.db.get_value(
-                "POS Settings",
-                {"pos_profile": pos_profile},
-                "allow_negative_stock"
-            ) or 0
-        )
-        if pos_settings_allow_negative:
-            return False
-
-        # Try to get custom field (may not exist in vanilla ERPNext)
-        block_sale = cint(
-            frappe.db.get_value(
-                "POS Profile", pos_profile, "posa_block_sale_beyond_available_qty"
-            )
-            or 1
-        )
-        return bool(block_sale)
-
-    # Default to blocking if no profile specified
-    return True
-
-
 def _validate_stock_on_invoice(invoice_doc):
-    """Validate stock availability before submission."""
+    """Run POSNext's early stock guard while leaving final authority to ERPNext."""
     if invoice_doc.doctype == "Sales Invoice" and not cint(
         getattr(invoice_doc, "update_stock", 0)
     ):
         return
 
-    # Collect all stock items to check
-    items_to_check = [d.as_dict() for d in invoice_doc.items if d.get("is_stock_item")]
-
-    # Include packed items if present
+    # Do not depend on child-row ``is_stock_item`` fields: Sales Invoice Item and
+    # Packed Item do not reliably carry that metadata.  _collect_stock_errors()
+    # fetches Item master policy server-side instead.
+    items_to_check = [d.as_dict() for d in invoice_doc.get("items", [])]
     if hasattr(invoice_doc, "packed_items"):
-        items_to_check.extend([d.as_dict() for d in invoice_doc.packed_items])
+        items_to_check.extend([d.as_dict() for d in invoice_doc.get("packed_items", [])])
 
-    # Check for stock errors
     errors = _collect_stock_errors(items_to_check)
-
-    # Throw error if stock insufficient and blocking is enabled
-    if errors and _should_block(invoice_doc.pos_profile):
+    if errors:
         frappe.throw(frappe.as_json({"errors": errors}), frappe.ValidationError)
 
 
@@ -865,9 +914,6 @@ def validate_cart_items(items, pos_profile=None):
     if not pos_profile:
         frappe.throw(_("POS Profile is required."), frappe.PermissionError)
     require_pos_profile_access(pos_profile)
-
-    if not _should_block(pos_profile):
-        return []
 
     errors = _collect_stock_errors(items)
     if not errors:
@@ -1406,27 +1452,17 @@ def submit_invoice(invoice=None, data=None):
         # Auto-set batch numbers for returns
         _auto_set_return_batches(invoice_doc)
 
-        # Check if POS Settings allows negative stock
-        pos_settings_allow_negative = False
-        if pos_profile:
-            pos_settings_allow_negative = cint(
-                frappe.db.get_value(
-                    "POS Settings",
-                    {"pos_profile": pos_profile},
-                    "allow_negative_stock"
-                ) or 0
-            )
-
-        # Validate stock availability only if negative stock is not allowed
-        if not pos_settings_allow_negative:
-            _validate_stock_on_invoice(invoice_doc)
+        # Phase 3 / Point 5: run an early stock check using ERPNext's global +
+        # item-level negative-stock policy. ERPNext submit remains authoritative
+        # and still performs its own stock-ledger / serial / batch validations.
+        _validate_stock_on_invoice(invoice_doc)
 
         # Save before submit. The bounded bypass follows POS profile/shift authorization.
         _save_authorized_pos_doc(invoice_doc)
 
-        # Submit invoice with error handling
-        # Note: Negative stock handling is now done through the CustomSalesInvoice override
-        # which checks POS Settings in the update_stock_ledger method
+        # Submit invoice with error handling.  Do not pass or force an
+        # allow_negative_stock override here: ERPNext Stock Settings / Item policy
+        # must remain the final source of truth.
         try:
             previous_ignore = getattr(frappe.flags, "ignore_account_permission", False)
             frappe.flags.ignore_account_permission = True

@@ -19,7 +19,7 @@ export function shouldValidateItemStock(item) {
 	if (item.is_stock_item === 0 || item.is_stock_item === false) return false
 
 	// Item-level allow_negative_stock bypasses validation
-	if (item.allow_negative_stock === 1 || item.allow_negative_stock === true) return false
+	if (item.allow_negative_stock === true || Number(item.allow_negative_stock || 0) === 1) return false
 
 	// Batch / serial items have their own dialog-level validation
 	if (item.has_serial_no || item.has_batch_no) return false

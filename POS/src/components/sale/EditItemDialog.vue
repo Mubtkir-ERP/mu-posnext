@@ -285,7 +285,7 @@
 import { useToast } from "@/composables/useToast"
 import { usePOSSettingsStore } from "@/stores/posSettings"
 import { useSerialNumberStore } from "@/stores/serialNumber"
-import { getItemStock } from "@/utils/stockValidator"
+import { getItemStock, shouldValidateItemStock } from "@/utils/stockValidator"
 import { formatCurrency as formatCurrencyUtil, getCurrencySymbol, roundCurrency } from "@/utils/currency"
 import { Button, FeatherIcon, createResource } from "frappe-ui"
 import { computed, ref, watch } from "vue"
@@ -596,6 +596,14 @@ async function handleUomChange(newUom) {
 async function handleWarehouseChange() {
 	if (!localItem.value || !localWarehouse.value) return
 
+	// ERPNext global/item-level negative-stock policy is authoritative.
+	// When the item is allowed to go negative, warehouse quantity is informative
+	// only and must not disable the Update Item action.
+	if (!settingsStore.shouldEnforceStockValidation() || !shouldValidateItemStock(localItem.value)) {
+		hasStock.value = true
+		return
+	}
+
 	isCheckingStock.value = true
 	try {
 		// Check stock availability in the new warehouse
@@ -724,6 +732,10 @@ function updateItem() {
 	// ========================================================================
 	// RATE EDIT VALIDATION
 	// ========================================================================
+	if (isRateManuallyEdited && !settingsStore.allowUserToEditRate) {
+		showError(__('Rate editing is disabled'))
+		return
+	}
 	if (settingsStore.allowUserToEditRate && isRateManuallyEdited) {
 		// Validate rate is positive
 		if (localRate.value <= 0) {

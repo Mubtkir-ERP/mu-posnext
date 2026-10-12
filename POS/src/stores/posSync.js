@@ -19,7 +19,7 @@ import {
 	cacheCustomersFromServer,
 	cachePaymentMethodsFromServer,
 	cacheSalesPersonsFromServer,
-	syncOfflineInvoices,
+	syncPendingOperations,
 	cacheInvoiceHistory,
 	cacheUnpaidInvoices,
 	cacheUnpaidSummary,
@@ -123,9 +123,9 @@ export const usePOSSyncStore = defineStore("posSync", () => {
 
 		isSyncing.value = true
 		try {
-			const result = await syncOfflineInvoices()
+			const operations = await syncPendingOperations()
 			await updatePendingCount()
-			return result
+			return { ...operations.invoices, closing_shifts: operations.closings }
 		} catch (error) {
 			log.error('Failed to sync invoices', error)
 			throw error

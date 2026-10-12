@@ -107,6 +107,12 @@
 										</svg>
 									</button>
 									<button
+                                        v-if="allowA4"
+                                        @click="emit('print-a4', invoice)"
+                                        class="p-1.5 hover:bg-green-50 rounded transition-colors text-xs font-bold text-green-700"
+                                        :title="__('Print A4')"
+                                    >A4</button>
+									<button
 										v-if="canCreateReturn(invoice)"
 										@click="openReturnModal(invoice)"
 										class="p-1.5 hover:bg-orange-50 rounded transition-colors"
@@ -160,6 +166,7 @@ const { showError } = useToast()
 
 const props = defineProps({
 	modelValue: Boolean,
+	allowA4: { type: Boolean, default: false },
 	posProfile: String,
 	posOpeningShift: String,
 	currency: {
@@ -172,7 +179,7 @@ function formatCurrency(amount) {
 	return formatCurrencyUtil(Number.parseFloat(amount || 0), props.currency)
 }
 
-const emit = defineEmits(["update:modelValue", "create-return", "view-invoice", "print-invoice", "return-created"])
+const emit = defineEmits(["update:modelValue", "create-return", "view-invoice", "print-invoice", "print-a4", "return-created"])
 
 const show = ref(props.modelValue)
 const invoices = ref([])

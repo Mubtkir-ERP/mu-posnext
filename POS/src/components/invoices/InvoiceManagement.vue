@@ -566,8 +566,9 @@
 															<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
 														</svg>
 													</button>
-													<button
-														@click="$emit('print-invoice', invoice)"
+													<button v-if="allowA4" @click="$emit('print-a4', invoice)" class="px-2 py-1 text-xs rounded bg-slate-100" :title="__('Print A4')">A4</button>
+											<button
+												@click="$emit('print-invoice', invoice)"
 														class="p-1.5 hover:bg-green-50 rounded transition-colors"
 														:title="__('Print')"
 													>
@@ -628,6 +629,7 @@ import {
 	getCachedUnpaidSummary,
 } from "@/utils/offline/sync"
 import { logger } from "@/utils/logger"
+import { getPersistentRequestId, clearPersistentRequestId } from "@/utils/idempotency"
 
 const log = logger.create("InvoiceManagement")
 const { showSuccess, showError } = useToast()
@@ -640,6 +642,7 @@ const props = defineProps({
 		type: String,
 		default: DEFAULT_CURRENCY,
 	},
+	allowA4: { type: Boolean, default: false },
 	draftInvoices: {
 		type: Array,
 		default: () => [],
@@ -650,6 +653,7 @@ const emit = defineEmits([
 	"update:modelValue",
 	"view-invoice",
 	"print-invoice",
+	"print-a4",
 	"load-draft",
 	"delete-draft",
 ])
@@ -1097,11 +1101,19 @@ async function selectInvoiceForPayment(invoice) {
 async function handlePaymentCompleted(paymentData) {
 	if (!selectedInvoice.value) return
 
+	const request = getPersistentRequestId(
+		"partial-payment",
+		selectedInvoice.value.name,
+		paymentData.payments,
+	)
+
 	try {
 		await call("pos_next.api.partial_payments.add_payment_to_partial_invoice", {
 			invoice_name: selectedInvoice.value.name,
 			payments: paymentData.payments,
+			request_id: request.requestId,
 		})
+		clearPersistentRequestId(request.key, request.requestId)
 
 		showSuccess(__("Payment added successfully"))
 

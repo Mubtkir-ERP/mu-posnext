@@ -1,6 +1,7 @@
 import { createResource } from "frappe-ui"
 import { computed, ref, toRaw } from "vue"
-import { isOffline, getCachedItem } from "@/utils/offline"
+import { isOffline, getCachedItem, getSetting, setSetting } from "@/utils/offline"
+import { ensureOfflineInvoiceId } from "@/utils/offline/offlineInvoiceId"
 import { useSerialNumberStore } from "@/stores/serialNumber"
 import { CoalescingMutex } from "@/utils/mutex"
 import { logger } from "@/utils/logger"
@@ -33,6 +34,8 @@ export function useInvoice() {
 
 	// Submission state - prevents duplicate submissions
 	const isSubmitting = ref(false)
+	// Stable idempotency key for one sale across retries / lost HTTP responses.
+	const currentSubmissionId = ref(null)
 
 	// Performance: Incrementally maintained aggregates (updated on add/remove/change)
 	// This avoids O(n) array reductions on every reactive change
@@ -958,6 +961,10 @@ export function useInvoice() {
 
 			isSubmitting.value = true
 
+			if (targetDoctype === "Sales Invoice" && !currentSubmissionId.value) {
+				currentSubmissionId.value = ensureOfflineInvoiceId({})
+			}
+
 			try {
 				// Step 1: Create invoice draft
 				// Use toRaw() to ensure we get current, non-reactive values (prevents stale cached quantities)
@@ -1026,8 +1033,13 @@ export function useInvoice() {
 				}
 
 				try {
+					const submitInvoiceDoc =
+						targetDoctype === "Sales Invoice" && currentSubmissionId.value
+							? { ...invoiceDoc, offline_id: currentSubmissionId.value }
+							: invoiceDoc
+
 					const result = await submitInvoiceResource.submit({
-						invoice: invoiceDoc,
+						invoice: submitInvoiceDoc,
 						data: submitData,
 					})
 
@@ -1143,6 +1155,7 @@ export function useInvoice() {
 		payments.value = []
 		additionalDiscount.value = 0
 		couponCode.value = null
+		currentSubmissionId.value = null
 
 		// Reset incremental cache
 		_cachedSubtotal.value = 0
@@ -1170,6 +1183,7 @@ export function useInvoice() {
 		payments.value = []
 		additionalDiscount.value = 0
 		couponCode.value = null
+		currentSubmissionId.value = null
 
 		// Reset incremental cache
 		_cachedSubtotal.value = 0
@@ -1197,29 +1211,27 @@ export function useInvoice() {
 
 	async function loadTaxRules(profileName, posSettings = null) {
 		/**
-		 * Load tax rules from POS Profile and tax inclusive setting from POS Settings
+		 * Tax rules are profile-scoped. Fresh server data replaces the cache;
+		 * offline/weak connections may only reuse the cache for the same profile.
 		 */
+		const cacheKey = `pos_tax_rules_${profileName}`
 		try {
 			const result = await getTaxesResource.submit({ pos_profile: profileName })
 			taxRules.value = result?.data || result || []
-
-			// Load tax inclusive setting from POS Settings if provided
-			if (posSettings && posSettings.tax_inclusive !== undefined) {
-				taxInclusive.value = posSettings.tax_inclusive || false
-			}
-
-			// Recalculate all items with new tax rules and tax inclusive setting
-			invoiceItems.value.forEach((item) => recalculateItem(item))
-
-			// Rebuild cache after bulk operation
-			rebuildIncrementalCache()
-
-			return taxRules.value
+			await setSetting(cacheKey, { data: JSON.parse(JSON.stringify(taxRules.value)), cached_at: Date.now() })
 		} catch (error) {
 			console.error("Error loading tax rules:", error)
-			taxRules.value = []
-			return []
+			const cached = await getSetting(cacheKey, null)
+			taxRules.value = cached?.data || []
 		}
+
+		if (posSettings && posSettings.tax_inclusive !== undefined) {
+			taxInclusive.value = posSettings.tax_inclusive || false
+		}
+
+		invoiceItems.value.forEach((item) => recalculateItem(item))
+		rebuildIncrementalCache()
+		return taxRules.value
 	}
 
 	function setTaxInclusive(value) {

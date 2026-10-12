@@ -241,6 +241,8 @@ import { computed, nextTick, ref, watch } from "vue"
 import TranslatedHTML from "../common/TranslatedHTML.vue"
 import { offlineState } from "@/utils/offline/offlineState"
 import { getCachedVariants, cacheItems } from "@/utils/offline/items"
+import { usePOSSettingsStore } from "@/stores/posSettings"
+import { shouldValidateItemStock } from "@/utils/stockValidator"
 
 const props = defineProps({
 	modelValue: Boolean,
@@ -257,6 +259,8 @@ const props = defineProps({
 })
 
 const emit = defineEmits(["update:modelValue", "option-selected"])
+
+const settingsStore = usePOSSettingsStore()
 
 const isOpen = computed({
 	get: () => props.modelValue,
@@ -290,6 +294,7 @@ const confirmButtonText = computed(() => {
 // Computed: Stock warning when quantity exceeds available stock
 const stockWarning = computed(() => {
 	if (props.mode !== "uom" || !selectedOption.value) return null
+	if (!settingsStore.shouldEnforceStockValidation() || !shouldValidateItemStock(selectedOption.value)) return null
 
 	const availableStock = selectedOption.value.stock_qty ?? selectedOption.value.actual_qty ?? null
 	if (availableStock === null) return null

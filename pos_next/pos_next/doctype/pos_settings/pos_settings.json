@@ -543,10 +543,11 @@
   },
   {
    "default": "0",
-   "description": "Enable selling items even when stock reaches zero or below. Integrates with ERPNext negative stock settings.",
+   "description": "Read-only mirror of ERPNext Stock Settings > Allow Negative Stock. Item-level exceptions are controlled on the Item record.",
    "fieldname": "allow_negative_stock",
    "fieldtype": "Check",
-   "label": "Allow Negative Stock"
+   "label": "Allow Negative Stock",
+   "read_only": 1
   },
   {
    "collapsible": 1,

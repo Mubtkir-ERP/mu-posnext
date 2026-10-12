@@ -47,6 +47,17 @@ def _get_disbursement_settings(pos_profile):
             _("Cash disbursement is disabled for this POS Profile."),
             frappe.PermissionError,
         )
+    profile = frappe.db.get_value(
+        "POS Profile", pos_profile,
+        ["mu_allow_cash_expense", "mu_cash_expense_limit", "mu_cash_expense_account"],
+        as_dict=True,
+    )
+    if not profile or not cint(profile.mu_allow_cash_expense):
+        frappe.throw(_("Cash disbursement is not allowed for this POS Profile."), frappe.PermissionError)
+    # The branch's configured expense account is required, while the global
+    # POS Settings switch remains an additional safety gate.
+    if not profile.mu_cash_expense_account:
+        frappe.throw(_("Configure the expense account in POS Profile first."))
     if not settings.cash_disbursement_account:
         frappe.throw(
             _("Please configure Cash Disbursement Account in POS Settings first."),
@@ -151,7 +162,7 @@ def _validate_disbursement_account(account_name, company, cash_account=None):
 def _get_disbursement_account(pos_profile, company, cash_account=None):
     """Return the trusted debit account from enabled POS Settings."""
     settings = _get_disbursement_settings(pos_profile)
-    account_name = settings.cash_disbursement_account
+    account_name = frappe.db.get_value("POS Profile", pos_profile, "mu_cash_expense_account")
     _validate_disbursement_account(account_name, company, cash_account=cash_account)
     return account_name
 
@@ -164,7 +175,10 @@ def _parse_remark(remark):
     parts = cstr(remark).split("|", 2)
     if len(parts) < 3 or parts[0] != _MARKER:
         return None, None
-    return parts[1], parts[2]
+    reason = parts[2]
+    if "|REQ:" in reason:
+        reason = reason.split("|REQ:", 1)[0]
+    return parts[1], reason
 
 
 # ---------------------------------------------------------------------------
@@ -180,6 +194,7 @@ def create_cash_disbursement(
     pos_profile=None,
     company=None,
     disbursement_account=None,
+    request_id=None,
 ):
     """Create a Journal Entry recording cash paid out from the active POS shift."""
     amount = flt(amount)
@@ -205,7 +220,49 @@ def create_cash_disbursement(
     pos_profile = shift.pos_profile
     company = shift.company
 
-    # Feature flag + both accounts come from trusted configuration.
+    # Serialize mutations for one shift so a double click / retry cannot create
+    # two Journal Entries before either response reaches the browser.
+    opening = frappe.qb.DocType("POS Opening Shift")
+    (
+        frappe.qb.from_(opening)
+        .select(opening.name)
+        .where(opening.name == shift_name)
+        .for_update()
+        .run()
+    )
+
+    request_id = cstr(request_id or "").strip()[:140]
+    request_marker = f"|REQ:{request_id}" if request_id else ""
+    if request_id:
+        existing = frappe.get_all(
+            "Journal Entry",
+            filters={
+                "docstatus": 1,
+                "company": company,
+                "cheque_no": shift_name,
+                "user_remark": ["like", f"%|REQ:{request_id}%"],
+            },
+            fields=["name", "posting_date", "user_remark"],
+            limit=1,
+        )
+        if existing:
+            _, existing_reason = _parse_remark(existing[0].user_remark)
+            return {
+                "name": existing[0].name,
+                "amount": flt(amount),
+                "reason": existing_reason or reason,
+                "posting_date": existing[0].posting_date,
+                "already_processed": True,
+                "request_id": request_id,
+            }
+
+    # Both global and branch-level feature flags must authorize the movement.
+    branch = frappe.db.get_value(
+        "POS Profile", pos_profile,
+        ["mu_cash_expense_limit", "mu_cash_expense_account"], as_dict=True,
+    )
+    if flt(branch.mu_cash_expense_limit) > 0 and amount > flt(branch.mu_cash_expense_limit):
+        frappe.throw(_("Disbursement exceeds the configured POS Profile limit."), frappe.PermissionError)
     _get_disbursement_settings(pos_profile)
     cash_account, cash_mode = _get_cash_account(pos_profile, company)
     configured_debit_account = _get_disbursement_account(
@@ -229,7 +286,7 @@ def create_cash_disbursement(
     je.voucher_type = "Cash Entry"
     je.company = company
     je.posting_date = nowdate()
-    je.user_remark = _remark(shift_name, reason)
+    je.user_remark = _remark(shift_name, reason) + request_marker
     je.cheque_no = shift_name
     je.cheque_date = nowdate()
 
@@ -288,6 +345,8 @@ def create_cash_disbursement(
         "name": je.name,
         "amount": amount,
         "reason": reason,
+        "already_processed": False,
+        "request_id": request_id or None,
         "journal_entry": je.name,
         "posting_date": je.posting_date,
         "mode_of_payment": cash_mode,

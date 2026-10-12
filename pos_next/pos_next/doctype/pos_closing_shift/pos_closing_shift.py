@@ -650,18 +650,45 @@ def submit_closing_shift(closing_shift):
         frappe.throw(_("Invalid document type for POS closing."), frappe.PermissionError)
 
     opening_shift_name = payload.get("pos_opening_shift")
-    shift = require_shift_access(
+    if not opening_shift_name:
+        frappe.throw(_("POS Opening Shift is required."))
+
+    # Authorize first without requiring Open so a retry after a lost response can
+    # return the already-created closing shift. Then lock the opening row so two
+    # concurrent close requests cannot both pass the open-state check.
+    require_shift_access(
         opening_shift_name,
         pos_profile=payload.get("pos_profile"),
         company=payload.get("company"),
-        require_open=True,
+        require_open=False,
     )
+
+    opening = frappe.qb.DocType("POS Opening Shift")
+    (
+        frappe.qb.from_(opening)
+        .select(opening.name)
+        .where(opening.name == opening_shift_name)
+        .for_update()
+        .run()
+    )
+
+    shift = frappe.get_doc("POS Opening Shift", opening_shift_name)
+    existing = shift.get("pos_closing_shift") or frappe.db.get_value(
+        "POS Closing Shift",
+        {"pos_opening_shift": opening_shift_name, "docstatus": 1},
+        "name",
+    )
+    if existing:
+        return existing
+
+    if shift.status != "Open":
+        frappe.throw(_("Selected POS Opening Shift should be open."), title=_("Invalid Opening Entry"))
 
     # Rebuild all financial/transaction data on the server. The client is only
     # allowed to supply physically counted closing amounts. This prevents a
     # cashier from injecting or removing invoices/taxes/payments in the payload.
     trusted = make_closing_shift_from_opening(
-        json.dumps(frappe.get_doc("POS Opening Shift", opening_shift_name).as_dict(), default=str)
+        json.dumps(shift.as_dict(), default=str)
     )
     trusted["doctype"] = "POS Closing Shift"
 
@@ -691,7 +718,7 @@ def submit_closing_shift(closing_shift):
     closing_shift_doc.user = shift.user
 
     # POS cashiers may not have broad Desk create/submit rights. The bypass is
-    # bounded by the shift/profile/user authorization above.
+    # bounded by the shift/profile/user/company authorization above.
     closing_shift_doc.flags.ignore_permissions = True
     try:
         closing_shift_doc.insert(ignore_permissions=True)

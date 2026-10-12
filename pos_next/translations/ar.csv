@@ -1672,3 +1672,6 @@ Cash Disbursement Account is required when Cash Disbursement is enabled,حساب
 "Add at least one item before applying this coupon","أضف منتجًا واحدًا على الأقل قبل تطبيق رمز الخصم.",""
 "No eligible items were found for this coupon","لا توجد منتجات مؤهلة لتطبيق رمز الخصم.",""
 "ERPNext Pricing Rule engine is unavailable","محرك قواعد التسعير في ERPNext غير متاح.",""
+Controlled by ERPNext Stock Settings. Individual products can also allow negative stock from the Item record.,يتم التحكم به من إعدادات المخزون في ERPNext. ويمكن السماح بالمخزون السالب لمنتجات محددة من بطاقة المنتج.,
+<strong>Note:</strong> This value mirrors ERPNext. POSNext does not change the global stock policy. Product-level exceptions are read from the Item record.,<strong>ملاحظة:</strong> هذه القيمة تعكس إعداد ERPNext فقط. نقاط البيع لا تغيّر سياسة المخزون العامة، ويتم قراءة استثناءات المنتجات من بطاقة المنتج.,
+&lt;strong&gt;Note:&lt;/strong&gt; This value mirrors ERPNext. POSNext does not change the global stock policy. Product-level exceptions are read from the Item record.,&lt;strong&gt;ملاحظة:&lt;/strong&gt; هذه القيمة تعكس إعداد ERPNext فقط. نقاط البيع لا تغيّر سياسة المخزون العامة، ويتم قراءة استثناءات المنتجات من بطاقة المنتج.,

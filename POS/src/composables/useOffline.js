@@ -1,4 +1,4 @@
-import { syncOfflineInvoices } from "@/utils/offline"
+import { syncPendingOperations } from "@/utils/offline"
 import { offlineState } from "@/utils/offline/offlineState"
 import { offlineWorker } from "@/utils/offline/workerClient"
 import { computed, onMounted, onUnmounted, ref, watch } from "vue"
@@ -49,9 +49,9 @@ export function useOffline() {
 
 		isSyncing.value = true
 		try {
-			const result = await syncOfflineInvoices()
+			const operations = await syncPendingOperations()
 			await updatePendingCount()
-			return result
+			return { ...operations.invoices, closing_shifts: operations.closings }
 		} catch (error) {
 			console.error("[useOffline] Error syncing invoices:", error)
 			throw error

@@ -84,7 +84,6 @@ def create_referral_code(company, customer, referrer_discount_type, referrer_dis
     doc.referee_discount_amount = referee_discount_amount
 
     doc.insert()
-    frappe.db.commit()
     return doc
 
 
@@ -156,7 +155,6 @@ def apply_referral_code(referral_code, referee_customer):
     # Increment referrals count
     referral.referrals_count = (referral.referrals_count or 0) + 1
     referral.save()
-    frappe.db.commit()
 
     return result
 

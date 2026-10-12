@@ -82,8 +82,37 @@ class OfflineInvoiceSync(Document):
             "status": status,
         })
         doc.flags.ignore_permissions = True
-        doc.insert()
-        return doc
+        try:
+            doc.insert()
+            return doc
+        except frappe.DuplicateEntryError:
+            # Concurrent retries can race on the unique offline_id. The unique
+            # index is the final arbiter; after it wins, converge on that row
+            # instead of surfacing an error or creating another invoice.
+            existing_name = frappe.db.get_value(
+                "Offline Invoice Sync", {"offline_id": offline_id}, "name"
+            )
+            if not existing_name:
+                raise
+            existing_doc = frappe.get_doc("Offline Invoice Sync", existing_name)
+            changed = False
+            if sales_invoice and not existing_doc.sales_invoice:
+                existing_doc.sales_invoice = sales_invoice
+                changed = True
+            if pos_profile and not existing_doc.pos_profile:
+                existing_doc.pos_profile = pos_profile
+                changed = True
+            if customer and not existing_doc.customer:
+                existing_doc.customer = customer
+                changed = True
+            if status == "Synced" and existing_doc.status != "Synced":
+                existing_doc.status = "Synced"
+                existing_doc.synced_at = frappe.utils.now_datetime()
+                changed = True
+            if changed:
+                existing_doc.flags.ignore_permissions = True
+                existing_doc.save()
+            return existing_doc
 
     @staticmethod
     def get_state(offline_id):

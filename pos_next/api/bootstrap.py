@@ -215,6 +215,14 @@ def _get_pos_settings(pos_profile_doc):
 			as_dict=True
 		) or DEFAULT_POS_SETTINGS.copy()
 
+		# ERPNext Stock Settings is the global source of truth for negative stock.
+		# The POS Settings field is retained only as a frontend compatibility mirror.
+		global_allow_negative = cint(
+			frappe.db.get_single_value("Stock Settings", "allow_negative_stock") or 0
+		)
+		settings["allow_negative_stock"] = global_allow_negative
+		settings["_global_allow_negative_stock"] = global_allow_negative
+
 		# Derive from POS Profile (single source of truth)
 		settings["allow_write_off_change"] = 1 if (
 			pos_profile_doc.write_off_account and (pos_profile_doc.write_off_limit or 0) > 0

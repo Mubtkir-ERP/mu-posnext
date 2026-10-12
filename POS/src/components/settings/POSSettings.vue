@@ -24,7 +24,7 @@
 									<svg class="w-4 h-4 me-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 										<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
 									</svg>
-									{{ settings.pos_profile || posProfile }}
+									{{ __('System-wide policies and stock synchronization') }}
 								</p>
 							</div>
 						</div>
@@ -76,19 +76,22 @@
 
 						<!-- Settings Form -->
 						<div v-else-if="settings.pos_profile || posProfile" class="p-6 flex flex-col gap-6">
+							<div class="p-4 rounded-lg bg-indigo-50 border border-indigo-200 text-sm text-indigo-900" dir="auto">
+                                {{ __('Branch-specific pricing, discounts, sales permissions, warehouse and printer preferences are not edited here. They retain their existing values until the POS Profile and cashier preferences screens are updated.') }}
+                            </div>
 							<!-- Tabs Navigation -->
 							<div class="flex p-1 bg-gray-200 rounded-lg self-start">
 								<button
 									@click="activeTab = 'stock'"
 									:class="['px-4 py-2 text-sm font-medium rounded-md transition-all duration-200', activeTab === 'stock' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-200/50']"
 								>
-									{{ __('Stock Management') }}
+									{{ __('Inventory & Synchronization') }}
 								</button>
 								<button
 									@click="activeTab = 'sales'"
 									:class="['px-4 py-2 text-sm font-medium rounded-md transition-all duration-200', activeTab === 'sales' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-200/50']"
 								>
-									{{ __('Sales Management') }}
+									{{ __('General Policies') }}
 								</button>
 							</div>
 
@@ -116,6 +119,8 @@
 									</div>
 								</div>
 								<div class="p-6 flex flex-col gap-6">
+									<!-- Warehouse selection is owned by POS Profile, not global settings -->
+									<div v-if="false">
 									<!-- Warehouse Selection -->
 									<div :class="warehouseSubsectionClasses.container">
 										<div class="flex items-center gap-2 mb-4">
@@ -139,6 +144,7 @@
 										/>
 									</div>
 
+									</div>
 									<!-- Stock Policy Settings -->
 									<div :class="stockPolicySubsectionClasses.container">
 										<div class="flex items-center gap-2 mb-4">
@@ -151,7 +157,8 @@
 											<CheckboxField
 												v-model="settings.allow_negative_stock"
 												:label="__('Allow Negative Stock')"
-												:description="__('Enable selling items even when stock reaches zero or below. Integrates with Back Office stock settings.')"
+												:description="__('Controlled by ERPNext Stock Settings. Individual products can also allow negative stock from the Item record.')"
+												disabled
 											/>
 											<div class="mt-3 p-3 bg-blue-100 rounded-md">
 												<div class="flex items-start gap-2">
@@ -161,7 +168,7 @@
 													<TranslatedHTML 
 														:tag="'p'"
 														class="text-xs text-blue-800 leading-relaxed" 
-														:inner="__('&lt;strong&gt;Note:&lt;strong&gt; When enabled, the system will allow sales even when stock quantity is zero or negative. This is useful for handling stock sync delays or backorders. All transactions are tracked in the stock ledger.')"
+														:inner="__('&lt;strong&gt;Note:&lt;/strong&gt; This value mirrors ERPNext. POSNext does not change the global stock policy. Product-level exceptions are read from the Item record.')"
 													/>
 												</div>
 											</div>
@@ -295,6 +302,7 @@
 												:description="__('When enabled, displayed prices include tax. When disabled, tax is calculated separately. Changes apply immediately to your cart when you save.')"
 											/>
 											<NumberField
+												v-if="false"
 												v-model="settings.max_discount_allowed"
 												:label="__('Max Discount (%)')"
 												:description="__('Maximum discount per item')"
@@ -302,21 +310,25 @@
 												:max="100"
 											/>
 											<CheckboxField
+												v-if="false"
 												v-model="settings.use_percentage_discount"
 												:label="__('Use Percentage Discount')"
 												:description="__('Show discounts as percentages')"
 											/>
 											<CheckboxField
+												v-if="false"
 												v-model="settings.allow_user_to_edit_additional_discount"
 												:label="__('Allow Additional Discount')"
 												:description="__('Enable invoice-level discount')"
 											/>
 											<CheckboxField
+												v-if="false"
 												v-model="settings.allow_user_to_edit_item_discount"
 												:label="__('Allow Item Discount')"
 												:description="__('Enable item-level discount in edit dialog')"
 											/>
 											<CheckboxField
+												v-if="false"
 												v-model="settings.allow_user_to_edit_rate"
 												:label="__('Allow User To Edit Rate')"
 												:description="__('Allow editing item rate in cart. Disabled when offers are applied.')"
@@ -329,6 +341,8 @@
 										</div>
 									</div>
 
+									<!-- Operations vary per profile; controls retained for migration but not shown here -->
+									<div v-if="false">
 									<!-- Sales Operations -->
 									<div :class="operationsSubsectionClasses.container">
 										<div class="flex items-center gap-2 mb-4">
@@ -543,6 +557,7 @@
 									</div>
 
 
+									</div>
 									<!-- Customer Settings -->
 									<div :class="customerSubsectionClasses.container">
 										<div class="flex items-center gap-2 mb-4">
@@ -634,6 +649,7 @@ const settings = ref({
 	allow_partial_payment: 0,
 	silent_print: 0,
 	allow_negative_stock: 0,
+	_global_allow_negative_stock: 0,
 	tax_inclusive: 0,
 	default_customer_group: "",
 })
@@ -731,9 +747,6 @@ const customerGroupsResource = createResource({
 	},
 })
 
-// Track original allow_negative_stock value for detecting changes
-const originalAllowNegativeStock = ref(null)
-
 const settingsResource = createResource({
 	url: "pos_next.pos_next.doctype.pos_settings.pos_settings.get_pos_settings",
 	makeParams() {
@@ -745,8 +758,6 @@ const settingsResource = createResource({
 		if (data) {
 			Object.assign(settings.value, data)
 			settings.value.pos_profile = props.posProfile
-			// Store original value
-			originalAllowNegativeStock.value = data.allow_negative_stock
 			// Update event system snapshot
 			updateSettingsSnapshot(settings.value)
 		}
@@ -849,7 +860,6 @@ async function saveSettings() {
 	saving.value = true
 	const oldWarehouse = props.currentWarehouse
 	const warehouseChanged = selectedWarehouse.value !== oldWarehouse
-	const negativeStockChanged = originalAllowNegativeStock.value !== settings.value.allow_negative_stock
 	const taxInclusiveChanged = originalTaxInclusive.value !== null && originalTaxInclusive.value !== settings.value.tax_inclusive
 
 	// Capture old settings for change detection
@@ -872,7 +882,6 @@ async function saveSettings() {
 			Object.assign(settings.value, result)
 			settings.value.pos_profile = props.posProfile
 			// Update original values after successful save
-			originalAllowNegativeStock.value = result.allow_negative_stock
 			originalTaxInclusive.value = result.tax_inclusive
 		}
 
@@ -897,20 +906,6 @@ async function saveSettings() {
 		// This will notify all listeners (POSSale, stock store, cart store, etc.)
 		detectSettingsChanges(settings.value, oldSettings)
 
-		// IMPORTANT: Page reload for critical stock policy change
-		// The allow_negative_stock setting affects deep stock validation logic
-		// throughout the app, including:
-		// - Stock validation in cart operations (posCart.js:59)
-		// - Stock enforcement checks (posSettings.js:268)
-		// - Item addition logic and error handling
-		// A page reload ensures all components get the fresh setting and
-		// prevents inconsistent state. Event listeners are still notified
-		// before reload for any cleanup needed.
-		if (negativeStockChanged) {
-			log.info("Stock policy changed, reloading page for consistency...")
-			window.location.reload()
-			return
-		}
 
 		// Show success toast for other changes
 		let successMessage = __("Settings saved successfully")

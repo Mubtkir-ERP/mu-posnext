@@ -176,3 +176,59 @@ class TestDiscountSecurity(unittest.TestCase):
 
         with self.assertRaisesRegex(RuntimeError, "Additional discount is not allowed"):
             invoices._validate_and_normalize_requested_discounts(data, self._profile())
+
+
+class TestNegativeStockPolicy(unittest.TestCase):
+    class _Row(dict):
+        __getattr__ = dict.get
+
+    @patch("pos_next.api.invoices._get_available_stock", return_value=10)
+    @patch("pos_next.api.invoices._erpnext_allows_negative_stock", return_value=False)
+    @patch("pos_next.api.invoices.frappe.get_all")
+    @patch("pos_next.api.invoices.frappe.get_meta")
+    def test_split_lines_are_aggregated_before_stock_check(
+        self, mock_get_meta, mock_get_all, _mock_policy, _mock_available
+    ):
+        mock_get_meta.return_value.has_field.return_value = True
+        mock_get_all.return_value = [
+            self._Row(
+                name="ITEM-1",
+                is_stock_item=1,
+                has_serial_no=0,
+                has_batch_no=0,
+                allow_negative_stock=0,
+            )
+        ]
+
+        errors = invoices._collect_stock_errors(
+            [
+                {"item_code": "ITEM-1", "warehouse": "WH-A", "qty": 6, "conversion_factor": 1},
+                {"item_code": "ITEM-1", "warehouse": "WH-A", "qty": 5, "conversion_factor": 1},
+            ]
+        )
+
+        self.assertEqual(len(errors), 1)
+        self.assertEqual(errors[0]["requested_qty"], 11)
+        self.assertEqual(errors[0]["available_qty"], 10)
+
+    @patch("pos_next.api.invoices._erpnext_allows_negative_stock", return_value=True)
+    @patch("pos_next.api.invoices.frappe.get_all")
+    @patch("pos_next.api.invoices.frappe.get_meta")
+    def test_item_level_negative_stock_bypasses_pos_early_block(
+        self, mock_get_meta, mock_get_all, _mock_policy
+    ):
+        mock_get_meta.return_value.has_field.return_value = True
+        mock_get_all.return_value = [
+            self._Row(
+                name="ITEM-1",
+                is_stock_item=1,
+                has_serial_no=0,
+                has_batch_no=0,
+                allow_negative_stock=1,
+            )
+        ]
+
+        errors = invoices._collect_stock_errors(
+            [{"item_code": "ITEM-1", "warehouse": "WH-A", "qty": 999, "conversion_factor": 1}]
+        )
+        self.assertEqual(errors, [])

@@ -276,28 +276,198 @@ export const saveOfflinePayment = async (paymentData) => {
 	}
 }
 
+
+// ---------------------------------------------------------------------------
+// Shift close queue + sync integrity
+// ---------------------------------------------------------------------------
+
+const closingDraftKey = (openingShift) => `closing_shift_draft_${openingShift}`
+
+export const ensureClosingShiftId = (closingShift) => {
+	const openingShift = closingShift?.pos_opening_shift || closingShift?.opening_shift
+	if (!openingShift) throw new Error("POS Opening Shift is required")
+	return closingShift?.close_id || `POS-CLOSE-${openingShift}`
+}
+
+export const isNetworkLikeError = (error) => {
+	if (offlineState.isOffline) return true
+	const text = [
+		error?.message,
+		error?.exception,
+		error?.exc_type,
+		error?.resourceError?.message,
+	].filter(Boolean).join(" ").toLowerCase()
+	return ["network", "failed to fetch", "timeout", "timed out", "abort", "connection", "502", "503", "504"].some((token) => text.includes(token))
+}
+
+export const saveClosingShiftDraft = async (openingShift, data) => {
+	if (!openingShift || !data) return false
+	await setSetting(closingDraftKey(openingShift), {
+		data: JSON.parse(JSON.stringify(data)),
+		updated_at: Date.now(),
+	})
+	return true
+}
+
+export const getClosingShiftDraft = async (openingShift) => {
+	const cached = await getSetting(closingDraftKey(openingShift), null)
+	return cached?.data || null
+}
+
+export const clearClosingShiftDraft = async (openingShift) => {
+	if (!openingShift) return
+	await db.settings.delete(closingDraftKey(openingShift))
+}
+
+export const savePendingClosingShift = async (closingShift) => {
+	const cleanData = JSON.parse(JSON.stringify(closingShift || {}))
+	const openingShift = cleanData.pos_opening_shift
+	const closeId = ensureClosingShiftId(cleanData)
+	cleanData.close_id = closeId
+
+	const existing = await db.closing_shift_queue.where("close_id").equals(closeId).first()
+	const row = {
+		close_id: closeId,
+		opening_shift: openingShift,
+		data: cleanData,
+		timestamp: existing?.timestamp || Date.now(),
+		updated_at: Date.now(),
+		synced: false,
+		retry_count: existing?.retry_count || 0,
+		sync_failed: false,
+		error: null,
+	}
+
+	if (existing) {
+		await db.closing_shift_queue.update(existing.id, row)
+		return { ...row, id: existing.id }
+	}
+
+	const id = await db.closing_shift_queue.add(row)
+	return { ...row, id }
+}
+
+export const getPendingClosingShifts = async () => {
+	return db.closing_shift_queue.filter((row) => row.synced === false).toArray()
+}
+
+export const hasPendingClosingShift = async () => {
+	return (await db.closing_shift_queue.filter((row) => row.synced === false).count()) > 0
+}
+
+export const syncPendingClosingShifts = async () => {
+	if (isOffline()) return { success: 0, failed: 0, deferred: 0 }
+
+	const closings = await getPendingClosingShifts()
+	let success = 0
+	let failed = 0
+	let deferred = 0
+
+	for (const row of closings) {
+		try {
+			// Never close a shift while one of its offline invoices is still unsynced.
+			// This guarantees the server closing summary includes every sale from the shift.
+			const pendingInvoices = await getOfflineInvoices()
+			const sameShiftPending = pendingInvoices.some((invoice) => {
+				const invoiceShift = invoice?.data?.posa_pos_opening_shift
+				// Older queued rows may not carry the shift ID. Be conservative and
+				// postpone closing until those invoices are resolved too.
+				return !invoiceShift || invoiceShift === row.opening_shift
+			})
+			if (sameShiftPending) {
+				deferred++
+				continue
+			}
+
+			const response = await call("pos_next.api.shifts.submit_closing_shift", {
+				closing_shift: JSON.stringify({ ...row.data, close_id: row.close_id }),
+			})
+			const result = response?.message || response || {}
+			const closingName = typeof result === "string" ? result : result?.name
+			if (!closingName) throw new Error("Server did not confirm POS Closing Shift")
+
+			await db.closing_shift_queue.update(row.id, {
+				synced: true,
+				server_closing_shift: closingName,
+				synced_at: Date.now(),
+				already_closed: Boolean(result?.already_closed),
+				error: null,
+			})
+			await clearClosingShiftDraft(row.opening_shift)
+
+			try {
+				const pendingMarker = JSON.parse(localStorage.getItem("pos_shift_pending_close") || "null")
+				if (pendingMarker?.opening_shift === row.opening_shift) {
+					localStorage.removeItem("pos_shift_pending_close")
+				}
+			} catch {
+				localStorage.removeItem("pos_shift_pending_close")
+			}
+
+			success++
+			if (typeof window !== "undefined") {
+				window.dispatchEvent(new CustomEvent("offlineShiftClosed", { detail: { openingShift: row.opening_shift, closingShift: closingName } }))
+			}
+		} catch (error) {
+			failed++
+			await db.closing_shift_queue.update(row.id, {
+				retry_count: (row.retry_count || 0) + 1,
+				error: error?.message || String(error),
+				last_attempt_at: Date.now(),
+			})
+		}
+	}
+
+	const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000
+	await db.closing_shift_queue
+		.filter((item) => item.synced === true && (item.synced_at || item.timestamp) < weekAgo)
+		.delete()
+
+	return { success, failed, deferred }
+}
+
+let _syncPendingPromise = null
+
+export const syncPendingOperations = async () => {
+	if (_syncPendingPromise) return _syncPendingPromise
+
+	_syncPendingPromise = (async () => {
+		// Ordering is deliberate: invoices first, then shift close. A closing request
+		// is deferred until every queued invoice for that opening shift is confirmed.
+		const invoices = await syncOfflineInvoices()
+		const closings = await syncPendingClosingShifts()
+		return { invoices, closings }
+	})()
+
+	try {
+		return await _syncPendingPromise
+	} finally {
+		_syncPendingPromise = null
+	}
+}
+
 // Auto-sync when coming back online
 if (typeof window !== "undefined") {
 	// Listen to centralized offline state changes for auto-sync
 	offlineState.subscribe(async (state) => {
 		// Only sync when transitioning from offline to online
 		if (!state.isOffline && state.source !== 'manual') {
-			console.log("Back online, syncing pending invoices...")
-			const result = await syncOfflineInvoices()
+			console.log("Back online, syncing pending POS operations...")
+			const result = await syncPendingOperations()
 
 			// Dispatch event to notify components to update their pending count
 			window.dispatchEvent(
 				new CustomEvent("offlineInvoicesSynced", {
-					detail: result,
+					detail: result.invoices,
 				}),
 			)
 
-			if (result.success > 0) {
-				console.log(`Successfully synced ${result.success} invoices`)
+			if (result.invoices.success > 0) {
+				console.log(`Successfully synced ${result.invoices.success} invoices`)
 				if (window.frappe?.msgprint) {
 					window.frappe.msgprint({
 						title: __("Sync Complete"),
-						message: `Successfully synced ${result.success} offline invoices`,
+						message: `Successfully synced ${result.invoices.success} offline invoices`,
 						indicator: "green",
 					})
 				}

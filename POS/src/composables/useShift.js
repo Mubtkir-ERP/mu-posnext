@@ -1,5 +1,7 @@
 import { createResource } from "frappe-ui"
 import { computed, ref } from "vue"
+import { syncPendingOperations } from "@/utils/offline"
+import { offlineState } from "@/utils/offline/offlineState"
 
 export const shiftState = ref({
 	pos_opening_shift: null,
@@ -18,6 +20,36 @@ export function useShift() {
 		url: "pos_next.api.shifts.check_opening_shift",
 		auto: false,
 		onSuccess(data) {
+			let pendingClose = null
+			try {
+				pendingClose = JSON.parse(localStorage.getItem("pos_shift_pending_close") || "null")
+			} catch {
+				pendingClose = null
+			}
+
+			if (
+				data?.pos_opening_shift?.name &&
+				pendingClose?.opening_shift === data.pos_opening_shift.name
+			) {
+				// The cashier already closed this shift locally. Never resurrect it in
+				// the UI while the queued close is waiting for a stable connection.
+				shiftState.value = {
+					pos_opening_shift: null,
+					pos_profile: null,
+					company: null,
+					isOpen: false,
+					_initialElapsedMs: 0,
+					_receivedAt: 0,
+				}
+				localStorage.removeItem("pos_shift_data")
+				if (!offlineState.isOffline) {
+					syncPendingOperations().catch((error) =>
+						console.error("Failed to sync pending POS close:", error),
+					)
+				}
+				return
+			}
+
 			if (data) {
 				// Compute initial elapsed time using server timestamps
 				// (avoids timezone mismatch between server and browser)

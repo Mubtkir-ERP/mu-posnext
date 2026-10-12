@@ -10,7 +10,7 @@ loyalty points and conversion factors are always read from ERPNext on the server
 
 import frappe
 from frappe import _
-from frappe.utils import cint, flt
+from frappe.utils import cint, flt, cstr
 
 from pos_next.api.security import (
 	require_company_access,
@@ -676,7 +676,7 @@ def get_wallet_info(customer, company, pos_profile=None):
 
 
 @frappe.whitelist()
-def create_manual_wallet_credit(customer, company, amount, remarks=None, pos_profile=None):
+def create_manual_wallet_credit(customer, company, amount, remarks=None, pos_profile=None, request_id=None):
 	"""Create an explicitly authorized manual wallet adjustment."""
 	frappe.has_permission("Wallet Transaction", "create", throw=True)
 	company, profile = _authorize_wallet_context(customer, company, pos_profile=pos_profile)
@@ -690,13 +690,34 @@ def create_manual_wallet_credit(customer, company, amount, remarks=None, pos_pro
 	if not wallet:
 		frappe.throw(_("Could not create wallet for customer {0}").format(customer))
 
+	wallet_name = wallet.name if hasattr(wallet, "name") else wallet["name"]
+	_lock_wallet(wallet_name)
+
+	request_id = cstr(request_id or "").strip()[:140]
+	marker = f"[POSNEXT-WALLET:{request_id}]" if request_id else None
+	if marker:
+		existing = frappe.get_all(
+			"Wallet Transaction",
+			filters={
+				"wallet": wallet_name,
+				"source_type": "Manual Adjustment",
+				"transaction_type": "Credit",
+				"docstatus": 1,
+				"remarks": ["like", f"%{marker}%"],
+			},
+			pluck="name",
+			limit=1,
+		)
+		if existing:
+			return existing[0]
+
 	from pos_next.pos_next.doctype.wallet_transaction.wallet_transaction import create_wallet_credit
 
 	transaction = create_wallet_credit(
-		wallet=wallet.name if hasattr(wallet, "name") else wallet["name"],
+		wallet=wallet_name,
 		amount=amount,
 		source_type="Manual Adjustment",
-		remarks=remarks or _("Manual wallet credit"),
+		remarks=(f"{marker} {remarks or _('Manual wallet credit')}" if marker else (remarks or _("Manual wallet credit"))),
 		submit=True,
 	)
 	return transaction.name
