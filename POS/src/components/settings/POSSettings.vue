@@ -557,6 +557,7 @@
 							</div>
 
 						</div>
+					</div>
 
 						<!-- Empty State -->
 						<div v-else class="flex flex-col items-center justify-center py-16 text-center">
