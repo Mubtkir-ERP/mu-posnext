@@ -221,24 +221,24 @@
 															<TranslatedHTML 
 																:tag="'p'"
 																:inner="stockSyncStatus.enabled 
-																	? __('&lt;strong&gt;Status:&lt;strong&gt; Running')
-																	: __('&lt;strong&gt;Status:&lt;strong&gt; Stopped')"
+																	? __('&lt;strong&gt;Status:&lt;/strong&gt; Running')
+																	: __('&lt;strong&gt;Status:&lt;/strong&gt; Stopped')"
 															/>
 															<TranslatedHTML
 																:tag="'p'"
-																:inner="__('&lt;strong&gt;Items Tracked:&lt;strong&gt; {0}', [stockSyncStatus.itemCount || 0])"
+																:inner="__('&lt;strong&gt;Items Tracked:&lt;/strong&gt; {0}', [stockSyncStatus.itemCount || 0])"
 															/>
 															<TranslatedHTML 
 																:tag="'p'"
 																:inner="stockSyncStatus.warehouse
-																	? __('&lt;strong&gt;Warehouse:&lt;strong&gt; {0}', [stockSyncStatus.warehouse])
+																	? __('&lt;strong&gt;Warehouse:&lt;/strong&gt; {0}', [stockSyncStatus.warehouse])
 																	: __('Warehouse not set')"
 															/>
 															<TranslatedHTML 
 																:tag="'p'"
 																:inner="stockSyncStatus.lastSync
-																	? __('&lt;strong&gt;Last Sync:&lt;strong&gt; {0}', [formatSyncTime(stockSyncStatus.lastSync)]) 
-																	: __('&lt;strong&gt;Last Sync:&lt;strong&gt; Never')"
+																	? __('&lt;strong&gt;Last Sync:&lt;/strong&gt; {0}', [formatSyncTime(stockSyncStatus.lastSync)]) 
+																	: __('&lt;strong&gt;Last Sync:&lt;/strong&gt; Never')"
 															/>
 														</div>
 													</div>
@@ -552,12 +552,10 @@
 										</div>
 									</div>
 
-
 									</div>
+								</div>
 							</div>
-
 						</div>
-					</div>
 
 						<!-- Empty State -->
 						<div v-else class="flex flex-col items-center justify-center py-16 text-center">
