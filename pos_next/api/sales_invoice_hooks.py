@@ -29,7 +29,7 @@ def apply_tax_inclusive(doc):
 	"""
 	Mark taxes as inclusive based on POS Profile setting.
 
-	This function reads the tax_inclusive setting from POS Settings
+	This function reads the mu_tax_inclusive setting from POS Profile
 	and applies it to all taxes in the invoice (except Actual charge type).
 
 	Args:
@@ -38,17 +38,10 @@ def apply_tax_inclusive(doc):
 	if not doc.pos_profile:
 		return
 
-	try:
-		# Get POS Settings for this profile
-		pos_settings = frappe.db.get_value(
-			"POS Settings",
-			{"pos_profile": doc.pos_profile},
-			["tax_inclusive"],
-			as_dict=True
-		)
-		tax_inclusive = pos_settings.get("tax_inclusive", 0) if pos_settings else 0
-	except Exception:
-		tax_inclusive = 0
+	# Use the originating POS Profile, not a POS Settings record shared by
+	# an unrelated branch. Keep the tax calculation aligned with the cashier.
+	profile = frappe.get_cached_doc("POS Profile", doc.pos_profile)
+	tax_inclusive = int(profile.get("mu_tax_inclusive") or 0)
 
 	has_changes = False
 	for tax in doc.get("taxes", []):

@@ -507,7 +507,7 @@
 						<tr>
 							<th scope="col" class="px-2 sm:px-3 py-2 sm:py-2.5 text-start text-[10px] sm:text-xs font-semibold text-gray-700 uppercase tracking-wider bg-gray-50 border-b-2 border-gray-200 sticky top-0 z-10 w-[50px] sm:w-[60px]">{{ __('Image') }}</th>
 							<th scope="col" class="px-2 sm:px-3 py-2 sm:py-2.5 text-start text-[10px] sm:text-xs font-semibold text-gray-700 uppercase tracking-wider bg-gray-50 border-b-2 border-gray-200 sticky top-0 z-10 max-w-[120px] sm:max-w-[180px] md:max-w-[200px]">{{ __('Name') }}</th>
-							<th scope="col" class="hidden sm:table-cell px-2 sm:px-3 py-2 sm:py-2.5 text-start text-[10px] sm:text-xs font-semibold text-gray-700 uppercase tracking-wider bg-gray-50 border-b-2 border-gray-200 sticky top-0 z-10 sm:max-w-[150px]">{{ __('Code') }}</th>
+							<th v-if="showCashierItemCode" scope="col" class="hidden sm:table-cell px-2 sm:px-3 py-2 sm:py-2.5 text-start text-[10px] sm:text-xs font-semibold text-gray-700 uppercase tracking-wider bg-gray-50 border-b-2 border-gray-200 sticky top-0 z-10 sm:max-w-[150px]">{{ __('Code') }}</th>
 							<th scope="col" class="px-2 sm:px-3 py-2 sm:py-2.5 text-start text-[10px] sm:text-xs font-semibold text-gray-700 uppercase tracking-wider bg-gray-50 border-b-2 border-gray-200 sticky top-0 z-10 w-[70px] sm:w-[100px]">{{ __('Rate') }}</th>
 							<th scope="col" class="px-2 sm:px-3 py-2 sm:py-2.5 text-start text-[10px] sm:text-xs font-semibold text-gray-700 uppercase tracking-wider bg-gray-50 border-b-2 border-gray-200 sticky top-0 z-10 w-[70px] sm:w-[100px]">{{ __('Qty') }}</th>
 							<th scope="col" class="hidden md:table-cell px-2 sm:px-3 py-2 sm:py-2.5 text-start text-[10px] sm:text-xs font-semibold text-gray-700 uppercase tracking-wider bg-gray-50 border-b-2 border-gray-200 sticky top-0 z-10 md:w-[80px]">{{ __('UOM') }}</th>
@@ -552,7 +552,7 @@
 									{{ Object.values(item.attributes).join(' / ') }}
 								</div>
 							</td>
-							<td class="hidden sm:table-cell px-2 sm:px-3 py-2 whitespace-nowrap sm:max-w-[150px]">
+							<td v-if="showCashierItemCode" class="hidden sm:table-cell px-2 sm:px-3 py-2 whitespace-nowrap sm:max-w-[150px]">
 								<div class="text-xs sm:text-sm text-gray-500 truncate" :title="item.item_code">{{ item.item_code }}</div>
 							</td>
 							<td class="px-2 sm:px-3 py-2 whitespace-nowrap w-[70px] sm:w-[100px]">
@@ -789,6 +789,10 @@ const {
 
 // Local state
 const viewMode = ref(localStorage.getItem("pos_cashier_product_view") === "list" ? "list" : "grid")
+const showCashierItemCode = ref(localStorage.getItem('pos_cashier_show_item_code') !== '0')
+function onCashierItemCodePreference(event) {
+  showCashierItemCode.value = Boolean(event.detail)
+}
 const itemThreshold = ref(50) // Threshold for auto-switching to list view
 const userManuallySetView = ref(false) // Track if user manually changed view mode
 const lastAutoSwitchCount = ref(0)
@@ -1013,6 +1017,7 @@ function onCashierViewPreference(event) {
 }
 onMounted(() => {
   window.addEventListener('pos-cashier-product-view', onCashierViewPreference)
+  window.addEventListener('pos-cashier-show-item-code', onCashierItemCodePreference)
 	// Items are now loaded automatically by setPosProfile() in the watcher
 	// This ensures item group filters are loaded BEFORE fetching items
 
@@ -1042,6 +1047,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   window.removeEventListener('pos-cashier-product-view', onCashierViewPreference)
+  window.removeEventListener('pos-cashier-show-item-code', onCashierItemCodePreference)
 	// Cleanup background sync when component unmounts
 	itemStore.cleanup()
 

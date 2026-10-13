@@ -34,7 +34,7 @@ PROFILE_FEATURE_FIELDS = (
     "mu_allow_item_discount", "mu_allow_additional_discount", "mu_max_discount_percent",
     "mu_thermal_print_format", "mu_allow_a4_print", "mu_a4_print_format",
     "mu_allow_whatsapp_invoice", "mu_allow_cash_expense", "mu_cash_expense_limit",
-    "mu_cash_expense_account",
+    "mu_cash_expense_account", "mu_default_customer_group", "mu_tax_inclusive",
 )
 
 
@@ -98,6 +98,12 @@ def get_pos_settings(pos_profile):
 
 		if not pos_settings:
 			pos_settings = DEFAULT_POS_SETTINGS.copy()
+		else:
+			# Never let a disabled policy record grant sensitive permissions.
+			pos_settings = dict(pos_settings)
+			if not cint(pos_settings.get("enabled")):
+				for field in ("allow_user_to_edit_rate", "allow_user_to_edit_item_discount", "allow_user_to_edit_additional_discount", "allow_cash_disbursement"):
+					pos_settings[field] = 0
 
 		global_allow_negative = cint(
 			frappe.db.get_single_value("Stock Settings", "allow_negative_stock") or 0
@@ -107,12 +113,18 @@ def get_pos_settings(pos_profile):
 
 		# Get allow_rate_change from POS Profile
 		allow_rate_change = frappe.db.get_value("POS Profile", pos_profile, "allow_rate_change")
-		if allow_rate_change is not None:
-			pos_settings["allow_rate_change"] = cint(allow_rate_change)
-		else:
-			pos_settings["allow_rate_change"] = 0
+		pos_settings["allow_rate_change"] = cint(allow_rate_change or 0)
+		# Same effective permission used in invoice validation and the cashier UI.
+		pos_settings["allow_user_to_edit_rate"] = (
+			cint(pos_settings.get("enabled"))
+			and cint(pos_settings.get("allow_user_to_edit_rate"))
+			and cint(pos_settings["allow_rate_change"])
+		)
 
 		profile = frappe.get_cached_doc("POS Profile", pos_profile)
+		# The POS Profile owns per-branch tax display/calculation mode.
+		pos_settings["tax_inclusive"] = cint(profile.get("mu_tax_inclusive") or 0)
+		pos_settings["default_customer_group"] = profile.get("mu_default_customer_group") or ""
 		if not cint(profile.get("mu_allow_item_discount")):
 			pos_settings["allow_user_to_edit_item_discount"] = 0
 		if not cint(profile.get("mu_allow_additional_discount")):

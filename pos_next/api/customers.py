@@ -86,6 +86,10 @@ def get_default_customer_group(pos_profile=None):
     no profile-specific default has been configured.
     """
     if pos_profile:
+        profile_group = frappe.db.get_value("POS Profile", pos_profile, "mu_default_customer_group")
+        if profile_group:
+            return profile_group
+        # Compatibility for existing branches until the value is migrated.
         customer_group = frappe.db.get_value(
             "POS Settings",
             {"enabled": 1, "pos_profile": pos_profile},

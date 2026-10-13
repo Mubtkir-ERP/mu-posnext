@@ -8,7 +8,7 @@
 		>
 			<!-- Main Container -->
 			<div class="fixed inset-0 flex items-center justify-center p-4 md:p-6">
-				<div class="w-full max-w-5xl max-h-[90vh] bg-white rounded-xl shadow-2xl overflow-hidden flex flex-col">
+				<div class="w-full max-w-6xl max-h-[90vh] bg-white rounded-xl shadow-2xl overflow-hidden flex flex-col">
 					<!-- Header -->
 					<div class="flex items-center justify-between px-6 py-5 border-b bg-gradient-to-r from-blue-50 to-indigo-50">
 						<div class="flex items-center gap-3">
@@ -19,12 +19,12 @@
 								</svg>
 							</div>
 							<div>
-								<h2 class="text-xl font-bold text-gray-900">{{ __('POS Settings') }}</h2>
+								<h2 class="text-xl font-bold text-gray-900">إعدادات نقاط البيع</h2>
 								<p class="text-sm text-gray-600 flex items-center mt-0.5">
 									<svg class="w-4 h-4 me-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 										<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
 									</svg>
-									{{ __('System-wide policies and stock synchronization') }}
+									الإعدادات التشغيلية والمزامنة للبروفايل الحالي
 								</p>
 							</div>
 						</div>
@@ -40,7 +40,7 @@
 										<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
 									</svg>
 								</template>
-								{{ __('Refresh') }}
+								تحديث
 							</Button>
 							<Button
 								@click="saveSettings"
@@ -53,7 +53,7 @@
 										<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
 									</svg>
 								</template>
-								{{ __('Save Changes') }}
+								حفظ التغييرات
 							</Button>
 							<button
 								@click="handleClose"
@@ -75,9 +75,9 @@
 						</div>
 
 						<!-- Settings Form -->
-						<div v-else-if="settings.pos_profile || posProfile" class="p-6 flex flex-col gap-6">
+						<div v-else-if="settings.pos_profile || posProfile" class="p-4 md:p-6 flex flex-col gap-5" dir="rtl">
 							<div class="p-4 rounded-lg bg-indigo-50 border border-indigo-200 text-sm text-indigo-900" dir="auto">
-                                {{ __('Branch-specific pricing, discounts, sales permissions, warehouse and printer preferences are not edited here. They retain their existing values until the POS Profile and cashier preferences screens are updated.') }}
+                                صلاحيات الأسعار والخصومات والصرف وقوالب الفواتير تُدار من بروفايل نقطة البيع. إعدادات QZ Tray والطباعة الصامتة تبقى في تفضيلات الكاشير.
                             </div>
 							<!-- Tabs Navigation -->
 							<div class="flex p-1 bg-gray-200 rounded-lg self-start">
@@ -85,13 +85,13 @@
 									@click="activeTab = 'stock'"
 									:class="['px-4 py-2 text-sm font-medium rounded-md transition-all duration-200', activeTab === 'stock' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-200/50']"
 								>
-									{{ __('Inventory & Synchronization') }}
+									المخزون والمزامنة
 								</button>
 								<button
 									@click="activeTab = 'sales'"
 									:class="['px-4 py-2 text-sm font-medium rounded-md transition-all duration-200', activeTab === 'sales' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-200/50']"
 								>
-									{{ __('General Policies') }}
+									السياسات التشغيلية
 								</button>
 							</div>
 
@@ -106,7 +106,7 @@
 												</svg>
 											</div>
 											<div>
-												<h3 class="text-lg font-bold text-gray-900">{{ __('Stock Management') }}</h3>
+												<h3 class="text-lg font-bold text-gray-900">إدارة المخزون</h3>
 												<p class="text-xs text-gray-600 mt-0.5">{{ __('Configure warehouse and inventory settings') }}</p>
 											</div>
 										</div>
@@ -274,7 +274,7 @@
 												</svg>
 											</div>
 											<div>
-												<h3 class="text-lg font-bold text-gray-900">{{ __('Sales Management') }}</h3>
+												<h3 class="text-lg font-bold text-gray-900">سياسات البيع</h3>
 												<p class="text-xs text-gray-600 mt-0.5">{{ __('Configure pricing, discounts, and sales operations') }}</p>
 											</div>
 										</div>
@@ -293,14 +293,10 @@
 											<svg :class="pricingSubsectionClasses.icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 												<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" :d="icons.tag"/>
 											</svg>
-											<h4 class="text-sm font-semibold text-gray-900">{{ __('Pricing & Discounts') }}</h4>
+											<h4 class="text-sm font-semibold text-gray-900">الضرائب والحساب</h4>
 										</div>
 										<div class="flex flex-col gap-3">
-											<CheckboxField
-												v-model="settings.tax_inclusive"
-												:label="__('Tax Inclusive')"
-												:description="__('When enabled, displayed prices include tax. When disabled, tax is calculated separately. Changes apply immediately to your cart when you save.')"
-											/>
+											<p class="text-sm text-gray-600">يتم تحديد شمول الضريبة من بروفايل نقطة البيع لكل فرع.</p>
 											<NumberField
 												v-if="false"
 												v-model="settings.max_discount_allowed"
@@ -558,22 +554,6 @@
 
 
 									</div>
-									<!-- Customer Settings -->
-									<div :class="customerSubsectionClasses.container">
-										<div class="flex items-center gap-2 mb-4">
-											<svg :class="customerSubsectionClasses.icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-												<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" :d="icons.checkCircle"/>
-											</svg>
-											<h4 class="text-sm font-semibold text-gray-900">{{ __('Customer Settings') }}</h4>
-										</div>
-										<SelectField
-											v-model="settings.default_customer_group"
-											:label="__('Default Customer Group')"
-											:options="customerGroupOptions"
-											:description="__('Default group for new customers. You can change it while creating the customer.')"
-										/>
-									</div>
-								</div>
 							</div>
 
 						</div>
@@ -651,8 +631,7 @@ const settings = ref({
 	allow_negative_stock: 0,
 	_global_allow_negative_stock: 0,
 	tax_inclusive: 0,
-	default_customer_group: "",
-})
+	})
 
 // Stock Sync Settings (localStorage persisted)
 const stockSyncEnabled = ref(false)
@@ -827,8 +806,6 @@ async function loadSettings() {
 	selectedWarehouse.value = props.currentWarehouse || ""
 
 	try {
-		// Load selectable customer groups for the default customer group setting.
-		customerGroupsResource.reload()
 
 		// Load warehouses first using call API directly
 		const warehousesData = await call(
@@ -860,7 +837,7 @@ async function saveSettings() {
 	saving.value = true
 	const oldWarehouse = props.currentWarehouse
 	const warehouseChanged = selectedWarehouse.value !== oldWarehouse
-	const taxInclusiveChanged = originalTaxInclusive.value !== null && originalTaxInclusive.value !== settings.value.tax_inclusive
+	const taxInclusiveChanged = false
 
 	// Capture old settings for change detection
 	const oldSettings = {
@@ -869,16 +846,19 @@ async function saveSettings() {
 	}
 
 	try {
-		// Save POS Settings (without warehouse)
+		// Send only fields editable in this screen. Never write back the
+		// effective permissions or read-only ERPNext stock mirror returned by GET.
+		const editableSettings = {}
 		const result = await call(
 			"pos_next.pos_next.doctype.pos_settings.pos_settings.update_pos_settings",
 			{
 				pos_profile: props.posProfile,
-				settings: settings.value,
+				settings: editableSettings,
 			},
 		)
 
 		if (result) {
+			// GET returns effective permissions; reload authoritative values after SAVE.
 			Object.assign(settings.value, result)
 			settings.value.pos_profile = props.posProfile
 			// Update original values after successful save

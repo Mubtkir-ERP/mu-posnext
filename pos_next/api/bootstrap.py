@@ -228,6 +228,9 @@ def _get_pos_settings(pos_profile_doc):
 			pos_profile_doc.write_off_account and (pos_profile_doc.write_off_limit or 0) > 0
 		) else 0
 		settings["disable_rounded_total"] = pos_profile_doc.disable_rounded_total or 0
+		# Per-branch customer group and tax mode override legacy POS Settings values.
+		settings["default_customer_group"] = pos_profile_doc.get("mu_default_customer_group") or ""
+		settings["tax_inclusive"] = cint(pos_profile_doc.get("mu_tax_inclusive") or 0)
 
 		# Get allow_rate_change from POS Profile
 		allow_rate_change = pos_profile_doc.get("allow_rate_change")

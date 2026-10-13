@@ -22,6 +22,10 @@
         <p class="text-xs text-gray-500">{{ __('This preference is saved on this cashier device and does not change the POS Profile.') }}</p>
       </div>
       <div class="border-t pt-4 space-y-3">
+        <label class="flex items-center gap-2"><input type="checkbox" :checked="showItemCode" @change="setShowItemCode($event.target.checked)" /> {{ __('Show Item Code in Product List') }}</label>
+        <p class="text-xs text-gray-500">{{ __('The preference is limited to display; barcode and item identifiers remain unchanged.') }}</p>
+      </div>
+      <div class="border-t pt-4 space-y-3">
         <h3 class="font-bold">{{ __('QZ Tray & Silent Printing') }}</h3>
         <label class="flex items-center gap-2"><input type="checkbox" :checked="posSettings.silentPrint" @change="posSettings.setLocalSilentPrint($event.target.checked)" /> {{ __('Silent Print via QZ Tray') }}</label>
         <p class="text-xs text-gray-500">{{ __('QZ Tray connection, printer choice and certificate setup remain on this cashier device.') }}</p>
@@ -56,6 +60,12 @@ import { useLocale } from '@/composables/useLocale'
 const { locale, supportedLocales, changeLocale } = useLocale()
 const posSettings = usePOSSettingsStore()
 const displayMode = ref(localStorage.getItem('pos_cashier_product_view') === 'list' ? 'list' : 'grid')
+const showItemCode = ref(localStorage.getItem('pos_cashier_show_item_code') !== '0')
+function setShowItemCode(value) {
+  showItemCode.value = Boolean(value)
+  localStorage.setItem('pos_cashier_show_item_code', value ? '1' : '0')
+  window.dispatchEvent(new CustomEvent('pos-cashier-show-item-code', { detail: Boolean(value) }))
+}
 function setDisplayMode(value) {
   displayMode.value = value === 'list' ? 'list' : 'grid'
   localStorage.setItem('pos_cashier_product_view', displayMode.value)

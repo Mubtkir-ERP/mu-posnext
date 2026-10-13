@@ -204,6 +204,11 @@ def get_pos_settings(pos_profile):
 	)
 	settings["allow_negative_stock"] = global_allow_negative
 	settings["_global_allow_negative_stock"] = global_allow_negative
+	# Read branch-specific values from POS Profile (legacy POS Settings fields
+	# are retained only for compatibility with existing integrations).
+	profile = frappe.get_cached_doc("POS Profile", pos_profile)
+	settings["tax_inclusive"] = cint(profile.get("mu_tax_inclusive") or 0)
+	settings["default_customer_group"] = profile.get("mu_default_customer_group") or ""
 
 	return settings
 
@@ -226,6 +231,20 @@ def update_pos_settings(pos_profile, settings):
 
 	if isinstance(settings, str):
 		settings = json.loads(settings)
+	if not isinstance(settings, dict):
+		frappe.throw(_("Invalid settings payload"))
+	# Never permit the caller to overwrite identity, derived values or
+	# framework-owned bookkeeping fields through this generic endpoint.
+	for protected in ("name", "pos_profile", "doctype", "owner", "creation",
+		"modified", "modified_by", "docstatus", "idx", "allow_rate_change"):
+		settings.pop(protected, None)
+
+	# POSNext Settings dialog may change its operational tax mode only.
+	# Per-branch pricing, customers, printing and cash controls belong to POS Profile.
+	allowed = set()
+	unexpected = set(settings) - allowed
+	if unexpected:
+		frappe.throw(_("These settings must be changed in POS Profile: {0}").format(", ".join(sorted(unexpected))))
 
 	# Negative stock is controlled by ERPNext Stock Settings / Item, never by
 	# caller-supplied POS Settings.  Ignore the legacy mirror field on writes.
@@ -233,6 +252,12 @@ def update_pos_settings(pos_profile, settings):
 	settings.pop("_global_allow_negative_stock", None)
 
 	require_pos_profile_access(pos_profile)
+	# Updating policy values requires configuration permission, not merely
+	# permission to operate a cashier session. The modal only sends two
+	# operational fields, but this endpoint also serves administrative clients.
+	require_pos_profile_config_access(pos_profile, ptype="write")
+	if not settings:
+		return get_pos_settings(pos_profile)
 
 	# Sensitive cash-disbursement fields are separately protected in
 	# validate_cash_disbursement_write_access(), including generic DocType saves.
