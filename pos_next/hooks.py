@@ -87,7 +87,7 @@ _asset_version = get_build_version()
 # Fixtures
 # --------
 fixtures = [
-    {"dt": "Custom Field", "filters": [["name", "in", ['POS Profile-mu_posnext_tab', 'POS Profile-mu_posnext_sales_section', 'POS Profile-mu_allow_item_discount', 'POS Profile-mu_allow_additional_discount', 'POS Profile-mu_max_discount_percent', 'POS Profile-mu_posnext_print_section', 'POS Profile-mu_thermal_print_format', 'POS Profile-mu_allow_a4_print', 'POS Profile-mu_a4_print_format', 'POS Profile-mu_posnext_communications_section', 'POS Profile-mu_allow_whatsapp_invoice', 'POS Profile-mu_posnext_cash_section', 'POS Profile-mu_allow_cash_expense', 'POS Profile-mu_cash_expense_limit', 'POS Profile-mu_cash_expense_account', 'POS Profile-mu_default_customer_group', 'POS Profile-mu_tax_inclusive']]]},
+    {"dt": "Custom Field", "filters": [["name", "in", ['POS Profile-mu_posnext_tab', 'POS Profile-mu_posnext_sales_section', 'POS Profile-mu_allow_item_discount', 'POS Profile-mu_allow_additional_discount', 'POS Profile-mu_max_discount_percent', 'POS Profile-mu_use_percentage_discount', 'POS Profile-mu_posnext_print_section', 'POS Profile-mu_thermal_print_format', 'POS Profile-mu_allow_a4_print', 'POS Profile-mu_a4_print_format', 'POS Profile-mu_posnext_communications_section', 'POS Profile-mu_allow_whatsapp_invoice', 'POS Profile-mu_posnext_cash_section', 'POS Profile-mu_allow_cash_expense', 'POS Profile-mu_cash_expense_limit', 'POS Profile-mu_cash_expense_account']]]},
 	{
 		"dt": "Print Format",
 		"filters": [

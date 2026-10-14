@@ -789,10 +789,9 @@ const {
 
 // Local state
 const viewMode = ref(localStorage.getItem("pos_cashier_product_view") === "list" ? "list" : "grid")
-const showCashierItemCode = ref(localStorage.getItem('pos_cashier_show_item_code') !== '0')
-function onCashierItemCodePreference(event) {
-  showCashierItemCode.value = Boolean(event.detail)
-}
+// عرض كود المنتج يتبع إعداد Display Item Code في شاشة الإعدادات
+// (أُزيلت شاشة التفضيلات الموازية بقرار الجرد).
+const showCashierItemCode = computed(() => settingsStore.displayItemCode)
 const itemThreshold = ref(50) // Threshold for auto-switching to list view
 const userManuallySetView = ref(false) // Track if user manually changed view mode
 const lastAutoSwitchCount = ref(0)
@@ -1010,14 +1009,7 @@ function handleScroll(event) {
 	handleScrollRAF(event)
 }
 
-function onCashierViewPreference(event) {
-  const next = event.detail === 'list' ? 'list' : 'grid'
-  viewMode.value = next
-  userManuallySetView.value = true
-}
 onMounted(() => {
-  window.addEventListener('pos-cashier-product-view', onCashierViewPreference)
-  window.addEventListener('pos-cashier-show-item-code', onCashierItemCodePreference)
 	// Items are now loaded automatically by setPosProfile() in the watcher
 	// This ensures item group filters are loaded BEFORE fetching items
 
@@ -1046,8 +1038,6 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
-  window.removeEventListener('pos-cashier-product-view', onCashierViewPreference)
-  window.removeEventListener('pos-cashier-show-item-code', onCashierItemCodePreference)
 	// Cleanup background sync when component unmounts
 	itemStore.cleanup()
 

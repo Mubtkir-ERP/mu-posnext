@@ -32,9 +32,10 @@ def get_pos_profiles():
 
 PROFILE_FEATURE_FIELDS = (
     "mu_allow_item_discount", "mu_allow_additional_discount", "mu_max_discount_percent",
+    "mu_use_percentage_discount",
     "mu_thermal_print_format", "mu_allow_a4_print", "mu_a4_print_format",
     "mu_allow_whatsapp_invoice", "mu_allow_cash_expense", "mu_cash_expense_limit",
-    "mu_cash_expense_account", "mu_default_customer_group", "mu_tax_inclusive",
+    "mu_cash_expense_account",
 )
 
 
@@ -68,7 +69,10 @@ def get_pos_profile_data(pos_profile):
 		"pos_settings": pos_settings,
 		"item_groups_hierarchy": item_groups_with_hierarchy,  # NEW: includes child_groups
 		"print_settings": {
-			"auto_print": profile_doc.get("print_receipt_on_order_complete", 0),
+			# POS Settings owns auto-print; fall back to the legacy profile field.
+			"auto_print": pos_settings.get("print_receipt_on_order_complete")
+				if pos_settings.get("print_receipt_on_order_complete") is not None
+				else profile_doc.get("print_receipt_on_order_complete", 0),
 			"print_format": profile_doc.get("mu_thermal_print_format") or profile_doc.get("print_format"),
 			"a4_print_format": profile_doc.get("mu_a4_print_format"),
 			"allow_a4_print": cint(profile_doc.get("mu_allow_a4_print") or 0),
@@ -82,7 +86,11 @@ def get_pos_profile_data(pos_profile):
 def get_pos_settings(pos_profile):
 	"""Get POS Settings for a given POS Profile"""
 	require_pos_profile_access(pos_profile)
-	from pos_next.api.constants import POS_SETTINGS_FIELDS, DEFAULT_POS_SETTINGS
+	from pos_next.api.constants import (
+		POS_SETTINGS_FIELDS,
+		DEFAULT_POS_SETTINGS,
+		apply_profile_discount_policy,
+	)
 
 	if not pos_profile:
 		return DEFAULT_POS_SETTINGS.copy()
@@ -102,8 +110,7 @@ def get_pos_settings(pos_profile):
 			# Never let a disabled policy record grant sensitive permissions.
 			pos_settings = dict(pos_settings)
 			if not cint(pos_settings.get("enabled")):
-				for field in ("allow_user_to_edit_rate", "allow_user_to_edit_item_discount", "allow_user_to_edit_additional_discount", "allow_cash_disbursement"):
-					pos_settings[field] = 0
+				pos_settings["allow_cash_disbursement"] = 0
 
 		global_allow_negative = cint(
 			frappe.db.get_single_value("Stock Settings", "allow_negative_stock") or 0
@@ -111,30 +118,9 @@ def get_pos_settings(pos_profile):
 		pos_settings["allow_negative_stock"] = global_allow_negative
 		pos_settings["_global_allow_negative_stock"] = global_allow_negative
 
-		# Get allow_rate_change from POS Profile
-		allow_rate_change = frappe.db.get_value("POS Profile", pos_profile, "allow_rate_change")
-		pos_settings["allow_rate_change"] = cint(allow_rate_change or 0)
-		# Same effective permission used in invoice validation and the cashier UI.
-		pos_settings["allow_user_to_edit_rate"] = (
-			cint(pos_settings.get("enabled"))
-			and cint(pos_settings.get("allow_user_to_edit_rate"))
-			and cint(pos_settings["allow_rate_change"])
-		)
-
+		# Discount / rate-editing policy is owned by the POS Profile only.
 		profile = frappe.get_cached_doc("POS Profile", pos_profile)
-		# The POS Profile owns per-branch tax display/calculation mode.
-		pos_settings["tax_inclusive"] = cint(profile.get("mu_tax_inclusive") or 0)
-		pos_settings["default_customer_group"] = profile.get("mu_default_customer_group") or ""
-		if not cint(profile.get("mu_allow_item_discount")):
-			pos_settings["allow_user_to_edit_item_discount"] = 0
-		if not cint(profile.get("mu_allow_additional_discount")):
-			pos_settings["allow_user_to_edit_additional_discount"] = 0
-		# Zero means no additional branch ceiling, not unlimited globally.
-		from frappe.utils import flt
-		branch_limit = flt(profile.get("mu_max_discount_percent") or 0)
-		global_limit = flt(pos_settings.get("max_discount_allowed") or 0)
-		if branch_limit > 0:
-			pos_settings["max_discount_allowed"] = min(branch_limit, global_limit) if global_limit > 0 else branch_limit
+		apply_profile_discount_policy(pos_settings, profile)
 		return pos_settings
 	except Exception:
 		frappe.log_error(frappe.get_traceback(), "Get POS Settings Error")

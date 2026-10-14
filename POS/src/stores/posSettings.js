@@ -58,6 +58,14 @@ export const usePOSSettingsStore = defineStore("posSettings", () => {
 		// Printing
 		allow_print_last_invoice: 0,
 		silent_print: 0,
+		print_receipt_on_order_complete: 0,
+		// Product Settings
+		hide_unavailable_items: 0,
+		// Operations
+		allow_delete_draft_invoices: 0,
+		// Stock Sync (stored in POS Settings)
+		enable_auto_stock_sync: 0,
+		stock_sync_interval: 60,
 		// Delivery
 		use_delivery_charges: 0,
 		auto_set_delivery_charges: 0,
@@ -112,11 +120,13 @@ export const usePOSSettingsStore = defineStore("posSettings", () => {
 	const allowItemDiscount = computed(() =>
 		Boolean(settings.value.allow_user_to_edit_item_discount),
 	)
+	// Rate editing is governed by the POS Profile only (قرار الجرد):
+	// the server already returns the effective value from allow_rate_change.
 	const allowRateChange = computed(() =>
-		Boolean(settings.value.enabled) && Boolean(settings.value.allow_rate_change) && Boolean(settings.value.allow_user_to_edit_rate),
+		Boolean(settings.value.allow_rate_change) || Boolean(settings.value.allow_user_to_edit_rate),
 	)
 	const allowUserToEditRate = computed(() =>
-		Boolean(settings.value.enabled) && Boolean(settings.value.allow_user_to_edit_rate) && Boolean(settings.value.allow_rate_change),
+		Boolean(settings.value.allow_user_to_edit_rate) || Boolean(settings.value.allow_rate_change),
 	)
 	const disableRoundedTotal = computed(() =>
 		Boolean(settings.value.disable_rounded_total),
@@ -206,17 +216,12 @@ export const usePOSSettingsStore = defineStore("posSettings", () => {
 	const allowPrintLastInvoice = computed(() =>
 		Boolean(settings.value.allow_print_last_invoice),
 	)
-	// Per-device preference; null means preserve the existing POS setting until a cashier chooses.
-	const localSilentPrint = ref(null)
-	try {
-		const saved = localStorage.getItem("pos_next_cashier_silent_print")
-		if (saved === "1" || saved === "0") localSilentPrint.value = saved === "1"
-	} catch (_) { /* Storage may be disabled in private browsing. */ }
-	const silentPrint = computed(() => localSilentPrint.value ?? Boolean(settings.value.silent_print))
-	function setLocalSilentPrint(enabled) {
-		localSilentPrint.value = Boolean(enabled)
-		try { localStorage.setItem("pos_next_cashier_silent_print", enabled ? "1" : "0") } catch (_) {}
-	}
+	// Silent print follows the POS Settings value (قرار الجرد: إدارة الطباعة
+	// الصامتة من شاشة الإعدادات الأصلية؛ أُزيلت شاشة التفضيلات الموازية).
+	const silentPrint = computed(() => Boolean(settings.value.silent_print))
+	const printReceiptOnOrderComplete = computed(() =>
+		Boolean(settings.value.print_receipt_on_order_complete),
+	)
 
 	// Computed - Delivery
 	const useDeliveryCharges = computed(() =>
@@ -393,6 +398,11 @@ export const usePOSSettingsStore = defineStore("posSettings", () => {
 			fetch_coupon: 0,
 			allow_print_last_invoice: 0,
 			silent_print: 0,
+			print_receipt_on_order_complete: 0,
+			hide_unavailable_items: 0,
+			allow_delete_draft_invoices: 0,
+			enable_auto_stock_sync: 0,
+			stock_sync_interval: 60,
 			use_delivery_charges: 0,
 			auto_set_delivery_charges: 0,
 			use_limit_search: 0,
@@ -417,8 +427,9 @@ export const usePOSSettingsStore = defineStore("posSettings", () => {
 	 * @returns {boolean} - True if discount is allowed, false otherwise
 	 */
 	function validateDiscount(discountPercentage) {
-		if (!isEnabled.value || maxDiscountAllowed.value === 0) {
-			return true // No restriction if settings disabled or max = 0
+		// Branch ceiling comes from POS Profile (mu_max_discount_percent); 0 = unlimited.
+		if (maxDiscountAllowed.value === 0) {
+			return true
 		}
 
 		return discountPercentage <= maxDiscountAllowed.value
@@ -524,7 +535,7 @@ export const usePOSSettingsStore = defineStore("posSettings", () => {
 		cashDisbursementAccount,
 		allowPrintLastInvoice,
 		silentPrint,
-		setLocalSilentPrint,
+		printReceiptOnOrderComplete,
 
 		// Computed - Delivery
 		useDeliveryCharges,

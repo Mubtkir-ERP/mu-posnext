@@ -666,13 +666,10 @@
 				@promotion-saved="handlePromotionSaved"
 			/>
 
-			<!-- Cashier device settings (QZ Tray remains on the cashier screen). -->
-			<CashierPreferences v-model="showCashierPreferences" @open-admin-settings="showPOSSettings = true" />
-			<!-- POS Settings -->
+			<!-- POS Settings (الشاشة الأصلية؛ تضم الطباعة الصامتة وQZ Tray بقرار الجرد) -->
 			<POSSettings
 				v-model="showPOSSettings"
 				:pos-profile="shiftStore.profileName"
-				:current-warehouse="shiftStore.profileWarehouse"
 			/>
 
 			<!-- Stock Lookup Dialog (Products Menu) -->
@@ -1056,7 +1053,6 @@ import PromotionManagement from "@/components/sale/PromotionManagement.vue";
 import ReturnInvoiceDialog from "@/components/sale/ReturnInvoiceDialog.vue";
 import WarehouseAvailabilityDialog from "@/components/sale/WarehouseAvailabilityDialog.vue";
 import POSSettings from "@/components/settings/POSSettings.vue";
-import CashierPreferences from "@/components/settings/CashierPreferences.vue";
 import InvoiceManagement from "@/components/invoices/InvoiceManagement.vue";
 import InvoiceDetailDialog from "@/components/invoices/InvoiceDetailDialog.vue";
 import { useRealtimeStock } from "@/composables/useRealtimeStock";
@@ -1167,7 +1163,6 @@ const showPromotionManagement = ref(false);
 
 // Settings dialog
 const showPOSSettings = ref(false);
-const showCashierPreferences = ref(false);
 // Print options are resolved per active branch, not from global POS Settings.
 const profilePrintOptions = ref({ allowA4: false, allowWhatsApp: false, allowCashExpense: false });
 watch(() => shiftStore.profileName, async (profileName) => {
@@ -1688,19 +1683,25 @@ onUnmounted(() => {
  */
 async function setupPeriodicStockSync(warehouse) {
 	try {
-		// Check if user has enabled stock sync in settings
+		// Stock sync configuration lives in POS Settings (قرار الجرد);
+		// localStorage is only a fallback for offline startup.
 		let syncEnabled = false;
 		let syncIntervalMs = 60000; // Default 60 seconds
 
-		try {
-			const savedSettings = localStorage.getItem("pos_stock_sync_settings");
-			if (savedSettings) {
-				const parsed = JSON.parse(savedSettings);
-				syncEnabled = parsed.enabled ?? false;
-				syncIntervalMs = (parsed.intervalSeconds ?? 60) * 1000;
+		if (posSettingsStore.isLoaded) {
+			syncEnabled = Boolean(Number(posSettingsStore.settings.enable_auto_stock_sync || 0));
+			syncIntervalMs = (Number(posSettingsStore.settings.stock_sync_interval) || 60) * 1000;
+		} else {
+			try {
+				const savedSettings = localStorage.getItem("pos_stock_sync_settings");
+				if (savedSettings) {
+					const parsed = JSON.parse(savedSettings);
+					syncEnabled = parsed.enabled ?? false;
+					syncIntervalMs = (parsed.intervalSeconds ?? 60) * 1000;
+				}
+			} catch (error) {
+				log.error("Failed to load stock sync settings:", error);
 			}
-		} catch (error) {
-			log.error("Failed to load stock sync settings:", error);
 		}
 
 		// Get all currently loaded item codes from the item store
@@ -2160,7 +2161,7 @@ async function handlePaymentCompleted(paymentData) {
 				);
 
 
-				if (shiftStore.autoPrintEnabled || posSettingsStore.silentPrint) {
+				if (shiftStore.autoPrintEnabled || posSettingsStore.printReceiptOnOrderComplete || posSettingsStore.silentPrint) {
 					try {
 						await handlePrintInvoice({ name: invoiceName });
 						showSuccess(__("Invoice {0} created and sent to printer", [invoiceName]));
@@ -2781,7 +2782,8 @@ function handleManagementMenuClick(menuItem) {
 	if (menuItem === "promotions") {
 		showPromotionManagement.value = true;
 	} else if (menuItem === "settings") {
-		showCashierPreferences.value = true;
+		// شاشة الإعدادات الأصلية مباشرة (أُزيلت شاشة التفضيلات الموازية بقرار الجرد)
+		showPOSSettings.value = true;
 	} else if (menuItem === "invoices") {
 		// Invoice Management loads paginated data on demand. Avoid preloading
 		// hundreds of invoices before opening the screen.

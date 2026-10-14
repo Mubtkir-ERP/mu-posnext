@@ -169,7 +169,13 @@ class POSClosingShift(Document):
         )
 
     def delete_draft_invoices(self):
-        if frappe.get_value("POS Profile", self.pos_profile, "posa_allow_delete"):
+        # POS Settings owns this policy (قرار الجرد: نُقل من البروفايل إلى
+        # شاشة الإعدادات - مجموعة العمليات).
+        if frappe.db.get_value(
+            "POS Settings",
+            {"pos_profile": self.pos_profile, "enabled": 1},
+            "allow_delete_draft_invoices",
+        ):
             doctype = "Sales Invoice"
             data = frappe.db.sql(
                 f"""

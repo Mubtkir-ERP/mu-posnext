@@ -119,62 +119,8 @@
 									</div>
 								</div>
 								<div class="p-6 flex flex-col gap-6">
-									<!-- Warehouse selection is owned by POS Profile, not global settings -->
-									<div v-if="false">
-									<!-- Warehouse Selection -->
-									<div :class="warehouseSubsectionClasses.container">
-										<div class="flex items-center gap-2 mb-4">
-											<svg :class="warehouseSubsectionClasses.icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-												<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" :d="icons.location"/>
-											</svg>
-											<h4 class="text-sm font-semibold text-gray-900">{{ __('Warehouse Selection') }}</h4>
-										</div>
-										<div v-if="warehouseOptions.length === 0" class="flex items-center p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
-											<svg class="w-5 h-5 text-yellow-600 me-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-												<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" :d="icons.warning"/>
-											</svg>
-											<p class="text-sm text-yellow-800 font-medium">{{ __('Loading warehouses...') }}</p>
-										</div>
-										<SelectField
-											v-else
-											v-model="selectedWarehouse"
-											:label="__('Active Warehouse')"
-											:options="warehouseOptions"
-											:description="__('All stock operations will use this warehouse. Stock quantities will refresh after saving.')"
-										/>
-									</div>
-
-									</div>
-									<!-- Stock Policy Settings -->
-									<div :class="stockPolicySubsectionClasses.container">
-										<div class="flex items-center gap-2 mb-4">
-											<svg :class="stockPolicySubsectionClasses.icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-												<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" :d="icons.clipboard"/>
-											</svg>
-											<h4 class="text-sm font-semibold text-gray-900">{{ __('Stock Validation Policy') }}</h4>
-										</div>
-										<div class="flex flex-col gap-3">
-											<CheckboxField
-												v-model="settings.allow_negative_stock"
-												:label="__('Allow Negative Stock')"
-												:description="__('Controlled by ERPNext Stock Settings. Individual products can also allow negative stock from the Item record.')"
-												disabled
-											/>
-											<div class="mt-3 p-3 bg-blue-100 rounded-md">
-												<div class="flex items-start gap-2">
-													<svg class="w-4 h-4 text-blue-600 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-														<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" :d="icons.info"/>
-													</svg>
-													<TranslatedHTML 
-														:tag="'p'"
-														class="text-xs text-blue-800 leading-relaxed" 
-														:inner="__('&lt;strong&gt;Note:&lt;/strong&gt; This value mirrors ERPNext. POSNext does not change the global stock policy. Product-level exceptions are read from the Item record.')"
-													/>
-												</div>
-											</div>
-										</div>
-									</div>
-
+									<!-- Warehouse selection is owned by POS Profile (قرار الجرد). -->
+									<!-- Negative-stock policy is shown in the POS Settings doctype screen (قرار الجرد: حذف التكرار هنا). -->
 									<!-- Background Stock Sync Settings -->
 									<div :class="stockSyncSubsectionClasses.container">
 										<div class="flex items-center gap-2 mb-4">
@@ -296,78 +242,19 @@
 											<h4 class="text-sm font-semibold text-gray-900">الضرائب والحساب</h4>
 										</div>
 										<div class="flex flex-col gap-3">
-											<p class="text-sm text-gray-600">يتم تحديد شمول الضريبة من بروفايل نقطة البيع لكل فرع.</p>
-											<NumberField
-												v-if="false"
-												v-model="settings.max_discount_allowed"
-												:label="__('Max Discount (%)')"
-												:description="__('Maximum discount per item')"
-												:min="0"
-												:max="100"
-											/>
-											<CheckboxField
-												v-if="false"
-												v-model="settings.use_percentage_discount"
-												:label="__('Use Percentage Discount')"
-												:description="__('Show discounts as percentages')"
-											/>
-											<CheckboxField
-												v-if="false"
-												v-model="settings.allow_user_to_edit_additional_discount"
-												:label="__('Allow Additional Discount')"
-												:description="__('Enable invoice-level discount')"
-											/>
-											<CheckboxField
-												v-if="false"
-												v-model="settings.allow_user_to_edit_item_discount"
-												:label="__('Allow Item Discount')"
-												:description="__('Enable item-level discount in edit dialog')"
-											/>
-											<CheckboxField
-												v-if="false"
-												v-model="settings.allow_user_to_edit_rate"
-												:label="__('Allow User To Edit Rate')"
-												:description="__('Allow editing item rate in cart. Disabled when offers are applied.')"
-											/>
-											<CheckboxField
-												v-model="settings.disable_rounded_total"
-												:label="__('Disable Rounded Total')"
-												:description="__('Show exact totals without rounding')"
-											/>
+											<p class="text-sm text-gray-600">تُدار صلاحيات الخصومات وتعديل الأسعار وشمول الضريبة من بروفايل نقطة البيع وشاشة إعدادات POS (قرار الجرد).</p>
 										</div>
 									</div>
 
-									<!-- Operations vary per profile; controls retained for migration but not shown here -->
-									<div v-if="false">
-									<!-- Sales Operations -->
+									<!-- Printing: Silent Print and QZ printer stay in this original screen (قرار الجرد) -->
 									<div :class="operationsSubsectionClasses.container">
 										<div class="flex items-center gap-2 mb-4">
 											<svg :class="operationsSubsectionClasses.icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 												<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" :d="icons.checkCircle"/>
 											</svg>
-											<h4 class="text-sm font-semibold text-gray-900">{{ __('Sales Operations') }}</h4>
+											<h4 class="text-sm font-semibold text-gray-900">{{ __('Printing') }}</h4>
 										</div>
 										<div class="flex flex-col gap-3">
-											<CheckboxField
-												v-model="settings.allow_credit_sale"
-												:label="__('Allow Credit Sale')"
-												:description="__('Enable sales on credit')"
-											/>
-											<CheckboxField
-												v-model="settings.allow_return"
-												:label="__('Allow Return')"
-												:description="__('Enable product returns')"
-											/>
-											<CheckboxField
-												v-model="settings.allow_write_off_change"
-												:label="__('Allow Write Off Change')"
-												:description="__('Write off small change amounts')"
-											/>
-											<CheckboxField
-												v-model="settings.allow_partial_payment"
-												:label="__('Allow Partial Payment')"
-												:description="__('Enable partial payment for invoices')"
-											/>
 											<CheckboxField
 												v-model="settings.silent_print"
 												:label="__('Silent Print')"
@@ -551,8 +438,6 @@
 											</div>
 										</div>
 									</div>
-
-									</div>
 								</div>
 							</div>
 						</div>
@@ -598,7 +483,6 @@ const { showSuccess, showError } = useToast()
 const props = defineProps({
 	modelValue: Boolean,
 	posProfile: String,
-	currentWarehouse: String,
 })
 
 const emit = defineEmits(["update:modelValue"])
@@ -609,30 +493,18 @@ const show = ref(props.modelValue)
 const activeTab = ref('stock')
 const loading = ref(true)
 const saving = ref(false)
-const warehousesList = ref([])
-const customerGroupsList = ref([])
-const selectedWarehouse = ref(props.currentWarehouse || "")
 const settings = ref({
 	pos_profile: props.posProfile || "",
 	enabled: 1,
-	// Core Settings
-	max_discount_allowed: 0,
-	use_percentage_discount: 0,
-	allow_user_to_edit_additional_discount: 0,
-	allow_user_to_edit_item_discount: 1,
-	allow_user_to_edit_rate: 0,
-	disable_rounded_total: 1,
-	allow_credit_sale: 0,
-	allow_return: 0,
-	allow_write_off_change: 0,
-	allow_partial_payment: 0,
 	silent_print: 0,
 	allow_negative_stock: 0,
 	_global_allow_negative_stock: 0,
 	tax_inclusive: 0,
+	enable_auto_stock_sync: 0,
+	stock_sync_interval: 60,
 	})
 
-// Stock Sync Settings (localStorage persisted)
+// Stock Sync Settings (stored in POS Settings; mirrored to localStorage for app startup)
 const stockSyncEnabled = ref(false)
 const stockSyncIntervalSeconds = ref(60) // Default 60 seconds
 const stockSyncStatus = ref({
@@ -661,70 +533,14 @@ const {
 	downloadCertificate: handleDownloadQzCertificate,
 } = useQzTray()
 
-// Warehouse options
-const warehouseOptions = computed(() => {
-	if (warehousesList.value.length === 0) return []
-	return warehousesList.value.map((w) => ({
-		label: w.warehouse_name || w.name,
-		value: w.name,
-	}))
-})
-
-const customerGroupOptions = computed(() =>
-	customerGroupsList.value.map((name) => ({ label: name, value: name })),
-)
-
 // Dynamic classes using configuration helpers (DRY principle)
 const stockSectionClasses = computed(() => getSectionHeaderClasses("purple"))
 const salesSectionClasses = computed(() => getSectionHeaderClasses("green"))
-const warehouseSubsectionClasses = computed(() => getSubsectionClasses("gray"))
-const stockPolicySubsectionClasses = computed(() =>
-	getSubsectionClasses("blue"),
-)
 const stockSyncSubsectionClasses = computed(() => getSubsectionClasses("indigo"))
 const pricingSubsectionClasses = computed(() => getSubsectionClasses("emerald"))
 const operationsSubsectionClasses = computed(() => getSubsectionClasses("teal"))
-const customerSubsectionClasses = computed(() => getSubsectionClasses("blue"))
 
 // Resources
-const warehousesResource = createResource({
-	url: "pos_next.api.pos_profile.get_warehouses",
-	makeParams() {
-		return {
-			pos_profile: props.posProfile,
-		}
-	},
-	auto: false,
-	onSuccess(data) {
-		const warehouses = data?.message || data || []
-		warehousesList.value = warehouses
-	},
-	onError(error) {
-		warehousesList.value = []
-	},
-})
-
-const customerGroupsResource = createResource({
-	url: "frappe.client.get_list",
-	makeParams() {
-		return {
-			doctype: "Customer Group",
-			fields: ["name"],
-			filters: { is_group: 0 },
-			order_by: "name asc",
-			limit_page_length: 500,
-		}
-	},
-	auto: false,
-	onSuccess(data) {
-		const groups = data?.message || data || []
-		customerGroupsList.value = groups.map((group) => group.name)
-	},
-	onError() {
-		customerGroupsList.value = []
-	},
-})
-
 const settingsResource = createResource({
 	url: "pos_next.pos_next.doctype.pos_settings.pos_settings.get_pos_settings",
 	makeParams() {
@@ -736,6 +552,9 @@ const settingsResource = createResource({
 		if (data) {
 			Object.assign(settings.value, data)
 			settings.value.pos_profile = props.posProfile
+			// Stock sync is stored in POS Settings (قرار الجرد)
+			stockSyncEnabled.value = Boolean(Number(data.enable_auto_stock_sync || 0))
+			stockSyncIntervalSeconds.value = Number(data.stock_sync_interval) || 60
 			// Update event system snapshot
 			updateSettingsSnapshot(settings.value)
 		}
@@ -761,17 +580,6 @@ watch(
 watch(show, (val) => {
 	emit("update:modelValue", val)
 })
-
-// Watch for currentWarehouse prop changes and always sync
-watch(
-	() => props.currentWarehouse,
-	(newWarehouse) => {
-		if (newWarehouse) {
-			selectedWarehouse.value = newWarehouse
-		}
-	},
-	{ immediate: true },
-)
 
 // Watch for tax_inclusive changes to provide immediate feedback
 const originalTaxInclusive = ref(null)
@@ -800,31 +608,7 @@ async function loadSettings() {
 	if (!props.posProfile) return
 	loading.value = true
 	settings.value.pos_profile = props.posProfile
-
-	// Always set the current warehouse from props (from current shift/profile)
-	selectedWarehouse.value = props.currentWarehouse || ""
-
-	try {
-
-		// Load warehouses first using call API directly
-		const warehousesData = await call(
-			"pos_next.api.pos_profile.get_warehouses",
-			{
-				pos_profile: props.posProfile,
-			},
-		)
-
-		// Handle frappe-ui call response format { message: [...] }
-		warehousesList.value = warehousesData?.message || warehousesData || []
-
-		// Load settings
-		settingsResource.reload()
-	} catch (error) {
-		log.error("Error loading warehouses:", error)
-		warehousesList.value = []
-		// Still load settings even if warehouses fail
-		settingsResource.reload()
-	}
+	settingsResource.reload()
 }
 
 async function saveSettings() {
@@ -834,20 +618,18 @@ async function saveSettings() {
 	}
 
 	saving.value = true
-	const oldWarehouse = props.currentWarehouse
-	const warehouseChanged = selectedWarehouse.value !== oldWarehouse
-	const taxInclusiveChanged = false
 
 	// Capture old settings for change detection
-	const oldSettings = {
-		...settings.value,
-		warehouse: oldWarehouse // Include warehouse in change detection
-	}
+	const oldSettings = { ...settings.value }
 
 	try {
 		// Send only fields editable in this screen. Never write back the
 		// effective permissions or read-only ERPNext stock mirror returned by GET.
-		const editableSettings = {}
+		const editableSettings = {
+			silent_print: settings.value.silent_print ? 1 : 0,
+			enable_auto_stock_sync: stockSyncEnabled.value ? 1 : 0,
+			stock_sync_interval: Number(stockSyncIntervalSeconds.value) || 60,
+		}
 		const result = await call(
 			"pos_next.pos_next.doctype.pos_settings.pos_settings.update_pos_settings",
 			{
@@ -864,41 +646,14 @@ async function saveSettings() {
 			originalTaxInclusive.value = result.tax_inclusive
 		}
 
-		// Update warehouse in POS Profile if changed
-		if (warehouseChanged && selectedWarehouse.value) {
-			const warehouseResult = await call(
-				"pos_next.api.pos_profile.update_warehouse",
-				{
-					pos_profile: props.posProfile,
-					warehouse: selectedWarehouse.value,
-				},
-			)
-
-			if (warehouseResult && warehouseResult.success) {
-				// Add warehouse to new settings for change detection
-				// (detectSettingsChanges below will emit settings:warehouse-changed via event bus)
-				settings.value.warehouse = selectedWarehouse.value
-			}
-		}
+		// Apply the persisted stock-sync configuration on this device
+		await applyStockSyncConfig()
 
 		// Detect and emit settings changes through event system
 		// This will notify all listeners (POSSale, stock store, cart store, etc.)
 		detectSettingsChanges(settings.value, oldSettings)
 
-
-		// Show success toast for other changes
-		let successMessage = __("Settings saved successfully")
-		if (warehouseChanged && taxInclusiveChanged) {
-			successMessage = __("Settings saved, warehouse updated, and tax mode changed. Cart will be recalculated.")
-		} else if (warehouseChanged) {
-			successMessage = __("Settings saved and warehouse updated. Reloading stock...")
-		} else if (taxInclusiveChanged) {
-			successMessage = settings.value.tax_inclusive
-				? __('Settings saved. Tax mode is now "inclusive". Cart will be recalculated.')
-				: __('Settings saved. Tax mode is now "exclusive". Cart will be recalculated.')
-		}
-
-		showSuccess(successMessage)
+		showSuccess(__("Settings saved successfully"))
 	} catch (error) {
 		log.error("Error saving settings:", error)
 		showError(error.message || __("Failed to save settings"))

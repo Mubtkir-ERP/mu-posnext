@@ -22,7 +22,11 @@ export const usePOSShiftStore = defineStore("posShift", () => {
 	const profileCompany = computed(() => currentProfile.value?.company)
 	const profileCustomer = computed(() => currentProfile.value?.customer)
 	const autoPrintEnabled = computed(
-		() => currentProfile.value?.print_receipt_on_order_complete,
+		// Bootstrap exposes the effective value as auto_print (POS Settings first,
+		// legacy profile field as fallback).
+		() =>
+			currentProfile.value?.auto_print ??
+			currentProfile.value?.print_receipt_on_order_complete,
 	)
 	const writeOffAccount = computed(() => currentProfile.value?.write_off_account)
 	const writeOffCostCenter = computed(() => currentProfile.value?.write_off_cost_center)

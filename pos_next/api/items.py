@@ -794,6 +794,23 @@ def _global_negative_stock_allowed():
 	return bool(cint(frappe.db.get_single_value("Stock Settings", "allow_negative_stock") or 0))
 
 
+def _hide_unavailable_items(pos_profile_doc):
+	"""Return the hide-unavailable-items policy for a profile.
+
+	POS Settings owns this flag (قرار الجرد: مجموعة إعدادات المنتجات في شاشة
+	الإعدادات); the legacy POS Profile field is kept as a fallback for sites
+	that have not migrated yet.
+	"""
+	value = frappe.db.get_value(
+		"POS Settings",
+		{"pos_profile": pos_profile_doc.name, "enabled": 1},
+		"hide_unavailable_items",
+	)
+	if value is not None:
+		return cint(value)
+	return cint(getattr(pos_profile_doc, "hide_unavailable_items", 0) or 0)
+
+
 def _negative_stock_allowed_items(item_codes):
 	"""Return item codes that ERPNext permits to go negative at item level."""
 	if not item_codes or not frappe.get_meta("Item").has_field("allow_negative_stock"):
@@ -1247,7 +1264,7 @@ def get_items(pos_profile, search_term=None, item_group=None, start=0, limit=20,
 		else:
 			exclude_variants = not int(include_variants)
 			exclude_templates = False
-		hide_unavailable = getattr(pos_profile_doc, "hide_unavailable_items", 0)
+		hide_unavailable = _hide_unavailable_items(pos_profile_doc)
 		conditions, params, extra_joins = _build_item_base_conditions(
 			pos_profile_doc, item_group, brand, exclude_variants=exclude_variants,
 			exclude_templates=exclude_templates,
@@ -1606,7 +1623,7 @@ def get_items_bulk(pos_profile, item_groups=None, start=0, limit=2000, include_v
 		else:
 			exclude_variants = not int(include_variants)
 			exclude_templates = False
-		hide_unavailable = getattr(pos_profile_doc, "hide_unavailable_items", 0)
+		hide_unavailable = _hide_unavailable_items(pos_profile_doc)
 		conditions, params, extra_joins = _build_item_base_conditions(
 			pos_profile_doc, exclude_variants=exclude_variants,
 			exclude_templates=exclude_templates,
@@ -1795,7 +1812,7 @@ def get_items_count(pos_profile, item_group=None, brand=None, include_variants=0
 		else:
 			exclude_variants = not int(include_variants)
 			exclude_templates = False
-		hide_unavailable = getattr(pos_profile_doc, "hide_unavailable_items", 0)
+		hide_unavailable = _hide_unavailable_items(pos_profile_doc)
 		conditions, params, extra_joins = _build_item_base_conditions(
 			pos_profile_doc, item_group, brand, exclude_variants=exclude_variants,
 			exclude_templates=exclude_templates,

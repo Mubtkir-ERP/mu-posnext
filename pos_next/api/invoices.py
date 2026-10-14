@@ -134,7 +134,14 @@ def get_payment_account(mode_of_payment, company, pos_profile=None):
 
 
 def _get_pos_discount_settings(pos_profile):
-    """Return server-side discount policy for a POS Profile."""
+    """Return server-side discount policy for a POS Profile.
+
+    Policy is owned by the POS Profile only (قرار الجرد: الخصومات وتعديل
+    السعر تُدار من البروفايل فقط):
+    - mu_allow_item_discount / mu_allow_additional_discount: feature switches
+    - mu_max_discount_percent: the only discount ceiling (0 = unlimited)
+    - allow_rate_change (standard ERPNext field): rate editing switch
+    """
     defaults = frappe._dict(
         {
             "enabled": 1,
@@ -148,38 +155,13 @@ def _get_pos_discount_settings(pos_profile):
     if not pos_profile:
         return defaults
 
-    row = frappe.db.get_value(
-        "POS Settings",
-        {"pos_profile": pos_profile},
-        [
-            "enabled",
-            "allow_user_to_edit_additional_discount",
-            "allow_user_to_edit_item_discount",
-            "allow_user_to_edit_rate",
-            "max_discount_allowed",
-        ],
-        as_dict=True,
-    )
-    if row:
-        defaults.update(row)
-        # Disabled settings must not silently grant sensitive permissions.
-        if not cint(row.get("enabled")):
-            defaults.allow_user_to_edit_additional_discount = 0
-            defaults.allow_user_to_edit_item_discount = 0
-            defaults.allow_user_to_edit_rate = 0
-        # Both ERPNext POS Profile and POSNext must authorize rate editing.
-    profile_rate = cint(frappe.db.get_value("POS Profile", pos_profile, "allow_rate_change") or 0)
-    defaults.allow_user_to_edit_rate = cint(defaults.allow_user_to_edit_rate) and profile_rate
-    # Branch policy narrows global POSNext permissions; it never grants extras.
     profile = frappe.get_cached_doc("POS Profile", pos_profile)
-    if not cint(profile.get("mu_allow_item_discount")):
-        defaults.allow_user_to_edit_item_discount = 0
-    if not cint(profile.get("mu_allow_additional_discount")):
-        defaults.allow_user_to_edit_additional_discount = 0
-    branch_limit = flt(profile.get("mu_max_discount_percent") or 0)
-    global_limit = flt(defaults.max_discount_allowed or 0)
-    if branch_limit > 0:
-        defaults.max_discount_allowed = min(global_limit, branch_limit) if global_limit > 0 else branch_limit
+    defaults.allow_user_to_edit_item_discount = cint(profile.get("mu_allow_item_discount") or 0)
+    defaults.allow_user_to_edit_additional_discount = cint(
+        profile.get("mu_allow_additional_discount") or 0
+    )
+    defaults.allow_user_to_edit_rate = cint(profile.get("allow_rate_change") or 0)
+    defaults.max_discount_allowed = flt(profile.get("mu_max_discount_percent") or 0)
     return defaults
 
 

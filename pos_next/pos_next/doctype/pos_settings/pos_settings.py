@@ -21,10 +21,10 @@ class POSSettings(Document):
 			frappe.db.get_single_value("Stock Settings", "allow_negative_stock") or 0
 		)
 
-		# Guard against None values and validate discount percentage
-		max_discount = flt(self.max_discount_allowed)
-		if max_discount < 0 or max_discount > 100:
-			frappe.throw("Max Discount Allowed must be between 0 and 100")
+		# Guard against invalid stock-sync interval
+		if cint(self.get("enable_auto_stock_sync")):
+			if cint(self.get("stock_sync_interval")) < 10:
+				frappe.throw("Stock Sync Interval must be at least 10 seconds")
 
 		# Default customer group must be a selectable leaf group.
 		default_customer_group = self.get("default_customer_group")
@@ -183,20 +183,6 @@ def get_pos_settings(pos_profile):
 	if not settings:
 		settings = create_default_settings(pos_profile)
 
-	# Get allow_rate_change from POS Profile
-	allow_rate_change = frappe.db.get_value("POS Profile", pos_profile, "allow_rate_change")
-	if allow_rate_change is not None:
-		settings["allow_rate_change"] = cint(allow_rate_change)
-	else:
-		settings["allow_rate_change"] = 0
-
-	# One effective rule across ERPNext and POSNext; never elevate permissions.
-	settings["allow_user_to_edit_rate"] = int(
-		bool(cint(settings.get("enabled")))
-		and bool(cint(settings.get("allow_user_to_edit_rate")))
-		and bool(cint(settings["allow_rate_change"]))
-	)
-
 	# ERPNext Stock Settings is the global source of truth.  Keep the legacy
 	# POSSettings field as a read-only mirror for frontend compatibility.
 	global_allow_negative = cint(
@@ -204,11 +190,12 @@ def get_pos_settings(pos_profile):
 	)
 	settings["allow_negative_stock"] = global_allow_negative
 	settings["_global_allow_negative_stock"] = global_allow_negative
-	# Read branch-specific values from POS Profile (legacy POS Settings fields
-	# are retained only for compatibility with existing integrations).
+
+	# Discount / rate-editing policy is owned by the POS Profile only
+	# (قرار الجرد: الخصومات وتعديل السعر من البروفايل فقط).
+	from pos_next.api.constants import apply_profile_discount_policy
 	profile = frappe.get_cached_doc("POS Profile", pos_profile)
-	settings["tax_inclusive"] = cint(profile.get("mu_tax_inclusive") or 0)
-	settings["default_customer_group"] = profile.get("mu_default_customer_group") or ""
+	apply_profile_discount_policy(settings, profile)
 
 	return settings
 
@@ -239,9 +226,9 @@ def update_pos_settings(pos_profile, settings):
 		"modified", "modified_by", "docstatus", "idx", "allow_rate_change"):
 		settings.pop(protected, None)
 
-	# POSNext Settings dialog may change its operational tax mode only.
-	# Per-branch pricing, customers, printing and cash controls belong to POS Profile.
-	allowed = set()
+	# POSNext manager dialog may change operational fields only.
+	# Per-branch discount/rate/printing-template and cash controls belong to POS Profile.
+	allowed = {"silent_print", "enable_auto_stock_sync", "stock_sync_interval"}
 	unexpected = set(settings) - allowed
 	if unexpected:
 		frappe.throw(_("These settings must be changed in POS Profile: {0}").format(", ".join(sorted(unexpected))))

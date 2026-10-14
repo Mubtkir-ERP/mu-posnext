@@ -88,6 +88,8 @@ def get_initial_data():
 		"status": shift["status"],
 	}
 
+	result["pos_settings"] = _get_pos_settings(pos_profile)
+
 	result["pos_profile"] = {
 		"name": pos_profile.name,
 		"company": pos_profile.company,
@@ -99,12 +101,13 @@ def get_initial_data():
 		"write_off_cost_center": pos_profile.write_off_cost_center,
 		"write_off_limit": pos_profile.write_off_limit or 0,
 		"print_format": pos_profile.get("print_format"),
-		"auto_print": pos_profile.get("print_receipt_on_order_complete", 0),
+		# POS Settings owns auto-print; fall back to the legacy profile field.
+		"auto_print": result["pos_settings"].get("print_receipt_on_order_complete")
+			if result["pos_settings"].get("print_receipt_on_order_complete") is not None
+			else pos_profile.get("print_receipt_on_order_complete", 0),
 		"country": pos_profile.get("country"),
 		"ignore_pricing_rule": pos_profile.ignore_pricing_rule or 0,
 	}
-
-	result["pos_settings"] = _get_pos_settings(pos_profile)
 	result["payment_methods"] = _get_payment_methods(pos_profile_name)
 
 	return result
@@ -228,16 +231,10 @@ def _get_pos_settings(pos_profile_doc):
 			pos_profile_doc.write_off_account and (pos_profile_doc.write_off_limit or 0) > 0
 		) else 0
 		settings["disable_rounded_total"] = pos_profile_doc.disable_rounded_total or 0
-		# Per-branch customer group and tax mode override legacy POS Settings values.
-		settings["default_customer_group"] = pos_profile_doc.get("mu_default_customer_group") or ""
-		settings["tax_inclusive"] = cint(pos_profile_doc.get("mu_tax_inclusive") or 0)
 
-		# Get allow_rate_change from POS Profile
-		allow_rate_change = pos_profile_doc.get("allow_rate_change")
-		if allow_rate_change is not None:
-			settings["allow_rate_change"] = cint(allow_rate_change)
-		else:
-			settings["allow_rate_change"] = 0
+		# Discount / rate-editing policy is owned by the POS Profile only.
+		from pos_next.api.constants import apply_profile_discount_policy
+		apply_profile_discount_policy(settings, pos_profile_doc)
 
 		return settings
 	except Exception:
