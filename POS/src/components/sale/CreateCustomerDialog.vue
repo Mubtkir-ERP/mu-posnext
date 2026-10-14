@@ -525,58 +525,71 @@ watch(
 	(name) => name && (customerData.value.customer_name = name)
 )
 
+/** Make sure a value is present in an options list so the <select> can show it. */
+const ensureOption = (list, value) => {
+	if (value && !list.value.includes(value)) list.value = [...list.value, value]
+}
+
+/** Prefill the form from a customer object (edit mode). Safe to call on every open. */
+const applyCustomerToForm = async (customer) => {
+	if (!customer?.name) return
+	customerData.value.customer_name = customer.customer_name || ""
+	customerData.value.email_id = customer.email_id || ""
+	customerData.value.customer_group = customer.customer_group || ""
+	customerData.value.tax_id = customer.tax_id || ""
+	customerData.value.territory = customer.territory || ""
+	// Handle mobile_no with country code immediately
+	if (customer.mobile_no) {
+		customerData.value.mobile_no = customer.mobile_no
+		if (customer.mobile_no.includes("-")) {
+			const [code, ...rest] = customer.mobile_no.split("-")
+			selectedCountryCode.value = code
+			phoneNumber.value = rest.join("-")
+		} else {
+			phoneNumber.value = customer.mobile_no
+		}
+	}
+
+	// Fetch full customer details. NEVER overwrite an existing value with an
+	// empty one — otherwise a partial response would wipe the customer group.
+	try {
+		const response = await call("pos_next.api.customers.get_customer_details", {
+			customer: customer.name,
+			pos_profile: props.posProfile,
+		});
+		const details = response?.message || response;
+		if (details) {
+			customerData.value.customer_group = details.customer_group || customerData.value.customer_group || "";
+			customerData.value.territory = details.territory || customerData.value.territory || "";
+			customerData.value.tax_id = details.tax_id || customerData.value.tax_id || "";
+			customerData.value.email_id = details.email_id || customerData.value.email_id || customer.email_id || "";
+
+			// Update mobile if better data found
+			if (details.mobile_no && !customer.mobile_no) {
+				customerData.value.mobile_no = details.mobile_no;
+				if (details.mobile_no.includes("-")) {
+					const [code, ...rest] = details.mobile_no.split("-");
+					selectedCountryCode.value = code;
+					phoneNumber.value = rest.join("-");
+				} else {
+					phoneNumber.value = details.mobile_no;
+				}
+			}
+		}
+	} catch (e) {
+		log.warn("Could not fetch full customer details for edit", e);
+	}
+
+	// Guarantee the current group/territory appear as options even if they are
+	// outside the loaded lists (e.g. a group node or beyond the page limit).
+	ensureOption(customerGroups, customerData.value.customer_group)
+	ensureOption(territories, customerData.value.territory)
+}
+
 // Pre-fill form when customer prop changes (edit mode)
 watch(
 	() => props.customer,
-	async (customer) => {
-		if (customer?.name) {
-			customerData.value.customer_name = customer.customer_name || ""
-			customerData.value.email_id = customer.email_id || ""
-			customerData.value.customer_group = customer.customer_group || ""
-			customerData.value.tax_id = customer.tax_id || ""
-			customerData.value.territory = customer.territory || ""
-			// Handle mobile_no with country code immediately
-			if (customer.mobile_no) {
-				customerData.value.mobile_no = customer.mobile_no
-				if (customer.mobile_no.includes("-")) {
-					const [code, ...rest] = customer.mobile_no.split("-")
-					selectedCountryCode.value = code
-					phoneNumber.value = rest.join("-")
-				} else {
-					phoneNumber.value = customer.mobile_no
-				}
-			}
-			
-			// Fetch full customer details to prevent overwriting missing data
-			try {
-				const response = await call("pos_next.api.customers.get_customer_details", {
-					customer: customer.name,
-					pos_profile: props.posProfile,
-				});
-				const details = response?.message || response;
-				if (details) {
-					customerData.value.customer_group = details.customer_group || "";
-					customerData.value.territory = details.territory || "";
-					customerData.value.tax_id = details.tax_id || "";
-					customerData.value.email_id = details.email_id || customer.email_id || "";
-					
-					// Update mobile if better data found
-					if (details.mobile_no && !customer.mobile_no) {
-						customerData.value.mobile_no = details.mobile_no;
-						if (details.mobile_no.includes("-")) {
-							const [code, ...rest] = details.mobile_no.split("-");
-							selectedCountryCode.value = code;
-							phoneNumber.value = rest.join("-");
-						} else {
-							phoneNumber.value = details.mobile_no;
-						}
-					}
-				}
-			} catch (e) {
-				log.warn("Could not fetch full customer details for edit", e);
-			}
-		}
-	},
+	(customer) => { if (customer?.name) applyCustomerToForm(customer) },
 	{ immediate: true }
 )
 
@@ -607,7 +620,17 @@ watch(
 	() => props.modelValue,
 	async (isOpen) => {
 		show.value = isOpen
-		isOpen ? await loadDialogData() : resetForm()
+		if (isOpen) {
+			await loadDialogData()
+			// Re-apply the customer on every open: the prop watch does not fire
+			// when re-editing the same customer, so without this the name (cleared
+			// by resetForm on close) would stay empty.
+			if (isEditMode.value && props.customer?.name) {
+				await applyCustomerToForm(props.customer)
+			}
+		} else {
+			resetForm()
+		}
 	}
 )
 

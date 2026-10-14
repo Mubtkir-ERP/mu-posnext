@@ -167,7 +167,7 @@ def update_pos_settings(pos_profile, settings):
 
 	# POSNext manager dialog may change operational fields only.
 	# Per-branch discount/rate/printing-template and cash controls belong to POS Profile.
-	allowed = {"silent_print", "enable_auto_stock_sync", "stock_sync_interval"}
+	allowed = {"silent_print", "enable_auto_stock_sync", "stock_sync_interval", "mu_enable_order_status"}
 	unexpected = set(settings) - allowed
 	if unexpected:
 		frappe.throw(_("These settings must be changed in POS Profile: {0}").format(", ".join(sorted(unexpected))))

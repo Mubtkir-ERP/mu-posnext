@@ -318,31 +318,30 @@
 								</div>
 
 								<!-- Invoices Grid - 2 columns on large screens -->
-								<div v-else class="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
+								<div v-else class="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
 									<div
 										v-for="invoice in filteredHistoryInvoices"
 										:key="invoice.name"
-										class="bg-white border border-gray-200 rounded-xl shadow-sm hover:shadow-lg transition-all overflow-hidden"
+										class="bg-white border border-gray-200 rounded-xl shadow-sm hover:shadow-md transition-all overflow-hidden flex flex-col"
 									>
 										<!-- Card Header with gradient -->
-										<div class="bg-gradient-to-r from-indigo-50 to-blue-50 px-5 py-4 border-b border-gray-200">
-											<div class="flex items-start justify-between mb-2">
-												<div class="flex-1">
-													<h3 class="text-base font-bold text-gray-900">{{ invoice.name }}</h3>
-													<div class="flex items-center gap-2 mt-1 flex-wrap">
+										<div class="bg-gradient-to-r from-indigo-50 to-blue-50 px-3 py-2.5 border-b border-gray-200">
+											<div class="flex items-start justify-between gap-2">
+												<div class="flex-1 min-w-0">
+													<h3 class="text-sm font-bold text-gray-900 truncate">{{ invoice.name }}</h3>
+													<div class="flex items-center gap-1 mt-1 flex-wrap">
 														<span
 															:class="[
-																'text-xs px-2.5 py-1 rounded-full font-semibold',
+																'text-[10px] px-2 py-0.5 rounded-full font-semibold',
 																getInvoiceStatusColor(invoice)
 															]"
 														>
 															{{ __(invoice.status) }}
 														</span>
-														
 														<span
 															v-if="invoice.pos_status"
 															:class="[
-																'text-xs px-2.5 py-1 rounded-full font-semibold',
+																'text-[10px] px-2 py-0.5 rounded-full font-semibold',
 																getPosStatusColor(invoice.pos_status)
 															]"
 														>
@@ -350,9 +349,9 @@
 														</span>
 													</div>
 												</div>
-												<div class="text-end ms-3">
-													<div class="text-xs text-gray-500 mb-1">{{ __('Total') }}</div>
-													<div class="text-lg font-bold text-indigo-600">
+												<div class="text-end flex-shrink-0">
+													<div class="text-[10px] text-gray-500">{{ __('Total') }}</div>
+													<div class="text-base font-bold text-indigo-600 whitespace-nowrap">
 														{{ formatCurrency(invoice.grand_total) }}
 													</div>
 												</div>
@@ -360,73 +359,51 @@
 										</div>
 
 										<!-- Card Body -->
-										<div class="px-5 py-4 flex flex-col gap-3">
+										<div class="px-3 py-2.5 flex flex-col gap-2 flex-1">
 											<!-- Customer Info -->
-											<div class="flex items-start">
-												<svg class="w-5 h-5 text-gray-400 me-2 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+											<div class="flex items-center gap-2">
+												<svg class="w-4 h-4 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 													<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/>
 												</svg>
-												<div class="flex-1">
-													<div class="text-xs text-gray-500">{{ __('Customer') }}</div>
-													<div class="text-sm font-semibold text-gray-900">{{ invoice.customer_name || invoice.customer }}</div>
+												<div class="min-w-0">
+													<div class="text-[10px] text-gray-500 leading-none">{{ __('Customer') }}</div>
+													<div class="text-xs font-semibold text-gray-900 truncate">{{ invoice.customer_name || invoice.customer }}</div>
 												</div>
 											</div>
 
-											<!-- Date & Time -->
-											<div class="flex items-start">
-												<svg class="w-5 h-5 text-gray-400 me-2 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-													<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
-												</svg>
-												<div class="flex-1">
-													<div class="text-xs text-gray-500">{{ __('Date & Time') }}</div>
-													<div class="text-sm font-medium text-gray-900">{{ formatDate(invoice.posting_date) }} {{ formatTime(invoice.posting_time) }}</div>
+											<!-- Date & Time + Order Status side by side -->
+											<div class="grid gap-2" :class="showOrderStatus ? 'grid-cols-2' : 'grid-cols-1'">
+												<div>
+													<div class="text-[10px] text-gray-500 mb-0.5">{{ __('Date & Time') }}</div>
+													<div class="text-xs font-medium text-gray-900">{{ formatDate(invoice.posting_date) }} {{ formatTime(invoice.posting_time) }}</div>
 												</div>
-											</div>
-
-											<!-- POS Status Update -->
-											<div class="flex items-start">
-												<svg class="w-5 h-5 text-gray-400 me-2 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-													<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/>
-												</svg>
-												<div class="flex-1">
-													<div class="text-xs text-gray-500 mb-1">{{ __('POS Status') }}</div>
+												<div v-if="showOrderStatus">
+													<div class="text-[10px] text-gray-500 mb-0.5">{{ __('Order Status') }}</div>
 													<select
 														:value="invoice.pos_status || ''"
 														@change="updatePosStatus(invoice.name, $event.target.value)"
 														:disabled="updatingStatus[invoice.name]"
-														class="text-sm w-full px-2 py-1.5 border border-gray-300 rounded-lg
+														class="text-xs w-full px-1.5 py-1 border border-gray-300 rounded-lg
 																focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500
 																disabled:opacity-50 disabled:cursor-not-allowed"
-														>
+													>
 														<option value="">{{ __('Select Status') }}</option>
 														<option v-for="status in posStatusOptions" :key="status" :value="status">
 															{{ __(status) }}
 														</option>
-														</select>
-												</div>
-											</div>
-
-											<!-- Payment Details -->
-											<div class="grid grid-cols-2 gap-3 pt-2 border-t border-gray-100">
-												<div>
-													<div class="text-xs text-gray-500 mb-1">{{ __('Paid Amount') }}</div>
-													<div class="text-sm font-semibold text-green-600">{{ formatCurrency(invoice.paid_amount || 0) }}</div>
-												</div>
-												<div>
-													<div class="text-xs text-gray-500 mb-1">{{ __('Outstanding') }}</div>
-													<div class="text-sm font-semibold text-orange-600">{{ formatCurrency(invoice.outstanding_amount || 0) }}</div>
+													</select>
 												</div>
 											</div>
 										</div>
 
-										<!-- Card Footer with Actions -->
-										<div class="px-5 py-3 bg-gray-50 border-t border-gray-200 flex items-center justify-end gap-2">
+										<!-- Card Footer with Actions (icon + text) -->
+										<div class="px-2.5 py-2 bg-gray-50 border-t border-gray-200 flex items-center justify-end gap-1.5 flex-wrap">
 											<button
 												@click="$emit('view-invoice', invoice)"
-												class="px-3 py-2 text-xs font-semibold text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors flex items-center gap-1"
+												class="px-2 py-1.5 text-[11px] font-semibold text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors flex items-center gap-1"
 												:title="__('View Details')"
 											>
-												<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+												<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 													<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
 													<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
 												</svg>
@@ -434,13 +411,35 @@
 											</button>
 											<button
 												@click="$emit('print-invoice', invoice)"
-												class="px-3 py-2 text-xs font-semibold text-green-600 bg-green-50 hover:bg-green-100 rounded-lg transition-colors flex items-center gap-1"
+												class="px-2 py-1.5 text-[11px] font-semibold text-green-600 bg-green-50 hover:bg-green-100 rounded-lg transition-colors flex items-center gap-1"
 												:title="__('Print')"
 											>
-												<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+												<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 													<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"/>
 												</svg>
 												<span>{{ __('Print') }}</span>
+											</button>
+											<button
+												v-if="allowA4"
+												@click="$emit('print-a4', invoice)"
+												class="px-2 py-1.5 text-[11px] font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors flex items-center gap-1"
+												:title="__('Print A4')"
+											>
+												<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+													<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+												</svg>
+												<span>A4</span>
+											</button>
+											<button
+												v-if="allowWhatsApp"
+												@click="$emit('whatsapp-invoice', invoice)"
+												class="px-2 py-1.5 text-[11px] font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded-lg transition-colors flex items-center gap-1"
+												:title="__('Send via WhatsApp')"
+											>
+												<svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
+													<path d="M12.04 2c-5.46 0-9.91 4.45-9.91 9.91 0 1.75.46 3.45 1.32 4.95L2 22l5.25-1.38c1.45.79 3.08 1.21 4.79 1.21 5.46 0 9.91-4.45 9.91-9.91S17.5 2 12.04 2zm5.8 14.01c-.24.68-1.42 1.3-1.95 1.34-.5.04-.97.23-3.27-.68-2.77-1.09-4.55-3.92-4.69-4.1-.14-.18-1.13-1.5-1.13-2.86 0-1.36.71-2.03.96-2.31.25-.28.55-.35.73-.35.18 0 .37 0 .53.01.17.01.4-.06.62.47.24.57.81 1.96.88 2.1.07.14.12.3.02.48-.09.18-.14.3-.28.46-.14.16-.29.37-.42.5-.14.14-.28.29-.12.57.16.28.71 1.17 1.53 1.9 1.05.94 1.94 1.23 2.22 1.37.28.14.44.12.6-.07.16-.18.69-.8.87-1.08.18-.28.37-.23.62-.14.25.09 1.6.75 1.87.89.28.14.46.21.53.32.07.12.07.66-.17 1.34z"/>
+												</svg>
+												<span>{{ __('WhatsApp') }}</span>
 											</button>
 										</div>
 									</div>
@@ -643,6 +642,8 @@ const props = defineProps({
 		default: DEFAULT_CURRENCY,
 	},
 	allowA4: { type: Boolean, default: false },
+	allowWhatsApp: { type: Boolean, default: false },
+	showOrderStatus: { type: Boolean, default: true },
 	draftInvoices: {
 		type: Array,
 		default: () => [],
@@ -654,6 +655,7 @@ const emit = defineEmits([
 	"view-invoice",
 	"print-invoice",
 	"print-a4",
+	"whatsapp-invoice",
 	"load-draft",
 	"delete-draft",
 ])

@@ -694,7 +694,10 @@
 				@view-invoice="handleViewInvoice"
 				@print-invoice="handlePrintInvoice"
 				@print-a4="(invoice) => handlePrintInvoice(invoice, 'a4')"
+				@whatsapp-invoice="handleWhatsappInvoice"
 				:allow-a4="profilePrintOptions.allowA4"
+				:allow-whats-app="profilePrintOptions.allowWhatsApp"
+				:show-order-status="posSettingsStore.enableOrderStatus"
 				@load-draft="handleLoadDraftFromManagement"
 				@delete-draft="handleDeleteDraft"
 			/>
@@ -2896,6 +2899,21 @@ async function handlePrintInvoice(invoiceData, paper = "thermal") {
 			message: "Failed to print invoice",
 			indicator: "red",
 		});
+	}
+}
+
+// Send an invoice summary to the customer over WhatsApp (best-effort).
+async function handleWhatsappInvoice(invoiceData) {
+	const name = invoiceData?.name;
+	if (!name) return;
+	try {
+		await call("pos_next.api.whatsapp_invoice.send_invoice_whatsapp", {
+			invoice: name,
+			pos_profile: shiftStore.profileName,
+		});
+		showSuccess(__("تم إرسال الفاتورة عبر واتساب"));
+	} catch (e) {
+		showError(e?.messages?.[0] || e?.message || __("تعذّر إرسال الفاتورة عبر واتساب"));
 	}
 }
 

@@ -63,7 +63,7 @@
 					<!-- Printer - Go Home -->
 					<button
 						@click="$emit('go-home')"
-						class="p-1.5 sm:p-2 hover:bg-gray-100 active:bg-gray-200 rounded-lg transition-colors relative group touch-manipulation"
+						class="order-1 p-1.5 sm:p-2 hover:bg-gray-100 active:bg-gray-200 rounded-lg transition-colors relative group touch-manipulation"
 						:aria-label="__('Go Home')"
 						:icon="homeIcon"
 					>
@@ -84,7 +84,7 @@
 					<button
 						@click="$emit('sync-click')"
 						:class="[
-							'p-1.5 sm:p-2 hover:bg-gray-100 active:bg-gray-200 rounded-lg transition-colors relative group touch-manipulation',
+							'order-2 p-1.5 sm:p-2 hover:bg-gray-100 active:bg-gray-200 rounded-lg transition-colors relative group touch-manipulation',
 							isSyncing ? 'animate-pulse' : ''
 						]"
 						:title="isOffline ? __('Offline ({0} pending)', [pendingInvoicesCount]) : __('Online - Click to sync')"
@@ -119,7 +119,7 @@
 					<button
 						v-if="showVoucherRedeem"
 						@click="$emit('voucher-redeem-click')"
-						class="p-1.5 sm:p-2 hover:bg-indigo-50 active:bg-indigo-100 rounded-lg transition-colors relative group touch-manipulation"
+						class="order-6 p-1.5 sm:p-2 hover:bg-indigo-50 active:bg-indigo-100 rounded-lg transition-colors relative group touch-manipulation"
 						:title="__('استبدال قسيمة')"
 						:aria-label="__('استبدال قسيمة')"
 					>
@@ -147,7 +147,7 @@
 					<button
 						v-if="showCashDisbursement"
 						@click="$emit('cash-disbursement-click')"
-						class="p-1.5 sm:p-2 hover:bg-amber-50 active:bg-amber-100 rounded-lg transition-colors relative group touch-manipulation"
+						class="order-7 p-1.5 sm:p-2 hover:bg-amber-50 active:bg-amber-100 rounded-lg transition-colors relative group touch-manipulation"
 						:title="__('Cash Disbursement')"
 						:aria-label="__('Cash Disbursement')"
 					>
@@ -167,7 +167,7 @@
 					</button>
 
 					<!-- Cache Status Indicator -->
-					<div class="relative">
+					<div class="relative order-3">
 						<button
 							@click="showCacheTooltip = !showCacheTooltip"
 							@blur="handleBlur"
@@ -286,7 +286,7 @@
 					</div>
 
 					<!-- Printer - Visible only while shift is open -->
-					<div v-if="hasOpenShift" class="hidden md:block relative">
+					<div v-if="hasOpenShift" class="hidden md:block relative order-5">
 						<ActionButton
 							:icon="printerIcon"
 							:title="silentPrintEnabled ? (qzConnected ? __('Silent Print: Connected') : __('Silent Print: Disconnected')) : __('Print Invoice')"
@@ -305,23 +305,24 @@
 						:title="isRefreshing ? __('Refreshing...') : __('Refresh')"
 						@click="$emit('refresh-click')"
 						:class="[
-							'touch-manipulation p-1 sm:p-2',
+							'order-4 touch-manipulation p-1 sm:p-2',
 							isRefreshing ? 'animate-spin' : ''
 						]"
 						:aria-label="isRefreshing ? __('Refreshing...') : __('Refresh items and customers')"
 					/>
 
-					<div class="w-px h-4 sm:h-6 bg-gray-200 hidden md:block"></div>
+					<div class="w-px h-4 sm:h-6 bg-gray-200 hidden md:block order-8"></div>
 
 					<!-- Language Switcher - Hidden on mobile, shown in UserMenu instead -->
-					<div class="hidden md:block">
+					<div class="hidden md:block order-9">
 						<LanguageSwitcher />
 					</div>
 
-					<div class="w-px h-4 sm:h-6 bg-gray-200"></div>
+					<div class="w-px h-4 sm:h-6 bg-gray-200 order-10"></div>
 
 					<!-- User Menu -->
 					<UserMenu
+						class="order-11"
 						:user-name="userName"
 						:profile-name="profileName"
 						:profile-image="userImage"

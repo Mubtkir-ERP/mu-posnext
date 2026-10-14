@@ -246,6 +246,23 @@
 										</div>
 									</div>
 
+									<!-- Orders: show/hide the order-status selector on invoice cards -->
+									<div :class="operationsSubsectionClasses.container">
+										<div class="flex items-center gap-2 mb-4">
+											<svg :class="operationsSubsectionClasses.icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+												<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" :d="icons.checkCircle"/>
+											</svg>
+											<h4 class="text-sm font-semibold text-gray-900">{{ __('Orders') }}</h4>
+										</div>
+										<div class="flex flex-col gap-3">
+											<CheckboxField
+												v-model="settings.mu_enable_order_status"
+												:label="__('Enable Order Status')"
+												:description="__('إظهار محدِّد حالة الطلب على بطاقات الفواتير')"
+											/>
+										</div>
+									</div>
+
 									<!-- Printing: Silent Print and QZ printer stay in this original screen (قرار الجرد) -->
 									<div :class="operationsSubsectionClasses.container">
 										<div class="flex items-center gap-2 mb-4">
@@ -502,6 +519,7 @@ const settings = ref({
 	tax_inclusive: 0,
 	enable_auto_stock_sync: 0,
 	stock_sync_interval: 60,
+	mu_enable_order_status: 1,
 	})
 
 // Stock Sync Settings (stored in POS Settings; mirrored to localStorage for app startup)
@@ -629,6 +647,7 @@ async function saveSettings() {
 			silent_print: settings.value.silent_print ? 1 : 0,
 			enable_auto_stock_sync: stockSyncEnabled.value ? 1 : 0,
 			stock_sync_interval: Number(stockSyncIntervalSeconds.value) || 60,
+			mu_enable_order_status: settings.value.mu_enable_order_status ? 1 : 0,
 		}
 		const result = await call(
 			"pos_next.pos_next.doctype.pos_settings.pos_settings.update_pos_settings",

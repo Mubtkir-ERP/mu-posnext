@@ -187,6 +187,13 @@ export const usePOSSettingsStore = defineStore("posSettings", () => {
 	const allowPrintDraftInvoices = computed(() =>
 		Boolean(settings.value.allow_print_draft_invoices),
 	)
+	// Order-status feature toggle (shown on invoice cards). Defaults ON when the
+	// field is absent so existing setups keep their current behaviour.
+	const enableOrderStatus = computed(() =>
+		settings.value.mu_enable_order_status === undefined
+			? true
+			: Boolean(settings.value.mu_enable_order_status),
+	)
 
 	// Computed - Pricing & Display
 	const decimalPrecision = computed(
@@ -513,6 +520,7 @@ export const usePOSSettingsStore = defineStore("posSettings", () => {
 		allowSelectSalesOrder,
 		createOnlySalesOrder,
 		allowReturnWithoutInvoice,
+		enableOrderStatus,
 		allowFreeBatchReturn,
 		allowPrintDraftInvoices,
 

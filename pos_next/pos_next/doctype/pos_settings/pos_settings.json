@@ -57,6 +57,7 @@
   "column_break_ops_3",
   "allow_delete_offline_invoice",
   "allow_change_posting_date",
+  "mu_enable_order_status",
   "section_break_pricing",
   "decimal_precision",
   "column_break_pricing",
@@ -436,6 +437,13 @@
    "fieldname": "allow_change_posting_date",
    "fieldtype": "Check",
    "label": "Allow Change Posting Date"
+  },
+  {
+   "default": "1",
+   "description": "Show the order-status selector on invoice cards",
+   "fieldname": "mu_enable_order_status",
+   "fieldtype": "Check",
+   "label": "Enable Order Status"
   },
   {
    "collapsible": 1,
