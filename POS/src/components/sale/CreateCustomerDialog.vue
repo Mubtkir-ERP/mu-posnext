@@ -109,7 +109,7 @@
 						class="w-full px-8 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
 					>
 						<option value="">{{ __("Select Customer Group") }}</option>
-						<option v-for="group in customerGroups" :key="group" :value="group">
+						<option v-for="group in groupOptions" :key="group" :value="group">
 							{{ group }}
 						</option>
 					</select>
@@ -137,7 +137,7 @@
 						class="w-full px-8 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
 					>
 						<option value="">{{ __("Select Territory") }}</option>
-						<option v-for="territory in territories" :key="territory" :value="territory">
+						<option v-for="territory in territoryOptions" :key="territory" :value="territory">
 							{{ territory }}
 						</option>
 					</select>
@@ -281,6 +281,25 @@ const show = computed({
 })
 
 const isEditMode = computed(() => !!props.customer?.name)
+
+// Always include the customer's current group/territory in the dropdown, even
+// if it is not in the loaded options list (e.g. a non-leaf group like
+// "All Customer Groups", a value whose display differs by UI language, or a
+// list that has not finished loading). Without this the stored value renders
+// as an empty select on the edit dialog even though it IS set in the form.
+const groupOptions = computed(() => {
+	const list = Array.isArray(customerGroups.value) ? [...customerGroups.value] : []
+	const current = customerData.value.customer_group
+	if (current && !list.includes(current)) list.unshift(current)
+	return list
+})
+
+const territoryOptions = computed(() => {
+	const list = Array.isArray(territories.value) ? [...territories.value] : []
+	const current = customerData.value.territory
+	if (current && !list.includes(current)) list.unshift(current)
+	return list
+})
 
 const currentCountryCode = computed(() => {
 	const country = countriesStore.countries.find((c) => c.isd === selectedCountryCode.value)

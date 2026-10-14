@@ -72,6 +72,27 @@
 								<svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clip-rule="evenodd"/></svg>
 								{{ __("المبلغ يتجاوز الحد المسموح للصرف ({0})", [formatCurrency(cashLimit)]) }}
 							</p>
+							<p v-else-if="overAvailable && !noCash" class="text-xs text-red-600 font-semibold flex items-center gap-1">
+								<svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clip-rule="evenodd"/></svg>
+								{{ __("المبلغ أكبر من النقد المتاح في الدرج ({0})", [formatCurrency(availableCash)]) }}
+							</p>
+
+							<!-- Available cash in drawer -->
+							<div
+								class="mt-1 flex items-center justify-between rounded-xl px-3 py-2 text-xs font-semibold border"
+								:class="noCash ? 'bg-red-50 border-red-100 text-red-600' : 'bg-emerald-50 border-emerald-100 text-emerald-700'"
+							>
+								<span class="flex items-center gap-1.5">
+									<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z"/></svg>
+									{{ __("النقد المتاح في الدرج") }}
+								</span>
+								<span v-if="loadingCash" class="w-3.5 h-3.5 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin"/>
+								<span v-else>{{ formatCurrency(availableCash) }}</span>
+							</div>
+							<p v-if="noCash && !loadingCash" class="text-xs text-red-600 font-semibold flex items-center gap-1">
+								<svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clip-rule="evenodd"/></svg>
+								{{ __("لا يوجد نقد في الدرج حاليًا — لا يمكن تنفيذ الصرف.") }}
+							</p>
 						</div>
 
 						<!-- Reason -->
@@ -144,8 +165,8 @@
 						</button>
 						<button
 							class="flex-1 py-3 rounded-xl text-sm font-bold text-white transition-all flex items-center justify-center gap-2 shadow-sm"
-							:class="(submitting || overLimit) ? 'bg-amber-300 cursor-not-allowed' : 'bg-amber-500 hover:bg-amber-600 active:scale-95'"
-							:disabled="submitting || overLimit"
+							:class="(submitting || blockSubmit) ? 'bg-amber-300 cursor-not-allowed' : 'bg-amber-500 hover:bg-amber-600 active:scale-95'"
+							:disabled="submitting || blockSubmit"
 							@click="submitDisbursement"
 						>
 							<svg v-if="!submitting" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -191,6 +212,8 @@ const submitting = ref(false)
 const cancellingId = ref(null)
 const disbursementAccounts = ref([])
 const history = ref([])
+const availableCash = ref(0)
+const loadingCash = ref(false)
 
 const form = reactive({
 	amount: null,
@@ -211,6 +234,17 @@ const totalDisbursed = computed(() =>
 const overLimit = computed(() =>
 	Number(props.cashLimit) > 0 && Number(form.amount || 0) > Number(props.cashLimit)
 )
+
+// Drawer is empty → no disbursement possible at all.
+const noCash = computed(() => Number(availableCash.value) <= 0)
+
+// Requested amount exceeds the cash physically in the drawer.
+const overAvailable = computed(() =>
+	Number(form.amount || 0) > Number(availableCash.value || 0)
+)
+
+// Any instant reason the confirm button must stay disabled (server re-checks).
+const blockSubmit = computed(() => overLimit.value || noCash.value || overAvailable.value)
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 function formatCurrency(amount) {
@@ -235,6 +269,12 @@ function validate() {
 	} else if (Number(props.cashLimit) > 0 && Number(form.amount) > Number(props.cashLimit)) {
 		errors.amount = __("المبلغ يتجاوز الحد المسموح للصرف ({0})", [formatCurrency(props.cashLimit)])
 		valid = false
+	} else if (Number(availableCash.value) <= 0) {
+		errors.amount = __("لا يوجد نقد في الدرج حاليًا — لا يمكن تنفيذ الصرف.")
+		valid = false
+	} else if (Number(form.amount) > Number(availableCash.value)) {
+		errors.amount = __("المبلغ أكبر من النقد المتاح في الدرج ({0})", [formatCurrency(availableCash.value)])
+		valid = false
 	}
 	if (!form.reason || !form.reason.trim()) {
 		errors.reason = __("Please provide a reason for the disbursement.")
@@ -255,6 +295,24 @@ async function loadHistory() {
 		history.value = data?.message || data || []
 	} catch (err) {
 		log.warn("Could not load disbursement history:", err?.message)
+	}
+}
+
+async function loadAvailableCash() {
+	if (!props.shiftName) return
+	loadingCash.value = true
+	try {
+		const data = await call(
+			"pos_next.api.cash_disbursement.get_available_cash",
+			{ shift_name: props.shiftName }
+		)
+		const value = data?.message ?? data
+		availableCash.value = Number(value || 0)
+	} catch (err) {
+		log.warn("Could not load available cash:", err?.message)
+		availableCash.value = 0
+	} finally {
+		loadingCash.value = false
 	}
 }
 
@@ -326,6 +384,7 @@ async function cancelDisbursement(item) {
 			{ journal_entry_name: item.name }
 		)
 		history.value = history.value.filter(d => d.name !== item.name)
+		loadAvailableCash()
 		emit("disbursed", { cancelled: true, name: item.name, amount: -item.amount })
 		window.frappe?.show_alert?.({
 			message: __("Disbursement cancelled"),
@@ -354,7 +413,7 @@ watch(
 	async (visible) => {
 		if (visible) {
 			resetForm()
-			await Promise.all([loadHistory()])
+			await Promise.all([loadHistory(), loadAvailableCash()])
 			await nextTick()
 			amountInput.value?.focus()
 		}

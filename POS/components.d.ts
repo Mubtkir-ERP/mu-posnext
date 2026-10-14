@@ -12,6 +12,7 @@ declare module 'vue' {
     AutocompleteSelect: typeof import('./src/components/common/AutocompleteSelect.vue')['default']
     BatchSerialDialog: typeof import('./src/components/sale/BatchSerialDialog.vue')['default']
     CashDisbursementDialog: typeof import('./src/components/cash/CashDisbursementDialog.vue')['default']
+    CashierPreferences: typeof import('./src/components/settings/CashierPreferences.vue')['default']
     CheckboxField: typeof import('./src/components/settings/CheckboxField.vue')['default']
     ClearCacheOverlay: typeof import('./src/components/common/ClearCacheOverlay.vue')['default']
     CountryCodeSelector: typeof import('./src/components/common/CountryCodeSelector.vue')['default']
@@ -56,6 +57,7 @@ declare module 'vue' {
     Toast: typeof import('./src/components/common/Toast.vue')['default']
     TranslatedHTML: typeof import('./src/components/common/TranslatedHTML.vue')['default']
     UserMenu: typeof import('./src/components/common/UserMenu.vue')['default']
+    VoucherRedeemDialog: typeof import('./src/components/voucher/VoucherRedeemDialog.vue')['default']
     WarehouseAvailabilityDialog: typeof import('./src/components/sale/WarehouseAvailabilityDialog.vue')['default']
   }
 }

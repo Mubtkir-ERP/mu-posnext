@@ -144,10 +144,19 @@ def _voucher_settings(pos_profile):
 	row = frappe.db.get_value(
 		"POS Profile", pos_profile,
 		["mu_voucher_enabled", "mu_voucher_redeem_item", "mu_voucher_warehouse",
-		 "mu_voucher_low_balance_threshold", "mu_voucher_daily_limit", "company"],
+		 "mu_voucher_low_balance_threshold", "company"],
 		as_dict=True,
-	)
-	return row or frappe._dict()
+	) or frappe._dict()
+	# Daily limit is a newer custom field. Fetch it defensively so redemption
+	# still works even if `bench migrate` has not yet added the DB column
+	# (otherwise reading a missing column raises OperationalError).
+	try:
+		row["mu_voucher_daily_limit"] = frappe.db.get_value(
+			"POS Profile", pos_profile, "mu_voucher_daily_limit"
+		)
+	except Exception:
+		row["mu_voucher_daily_limit"] = 0
+	return row
 
 
 def _redeemed_today(customer):
@@ -241,22 +250,37 @@ def redeem_voucher(pos_profile, customer, pos_opening_shift, qty=1):
 			).format(daily_limit, remaining_today), frappe.ValidationError)
 
 	# Physical hand-over first; if stock fails, nothing is decremented.
-	stock_entry = _make_material_issue(
-		cfg.get("mu_voucher_redeem_item"), cfg.get("mu_voucher_warehouse"),
-		company, customer, qty=qty,
-	)
+	# Any unexpected failure here (missing stock, account/cost-center config,
+	# a validation deep inside Stock Entry) would otherwise surface to the
+	# cashier as an opaque error. Capture the REAL reason: log the full
+	# traceback to the Error Log (viewable in the desk UI, no SSH) and re-throw
+	# the actual message so the POS toast shows what truly went wrong.
+	try:
+		stock_entry = _make_material_issue(
+			cfg.get("mu_voucher_redeem_item"), cfg.get("mu_voucher_warehouse"),
+			company, customer, qty=qty,
+		)
 
-	bal.total_redeemed = cint(bal.total_redeemed) + qty
-	bal.last_redeemed_on = now_datetime()
-	bal.save(ignore_permissions=True)
-	remaining = cint(bal.current_balance)
+		bal.total_redeemed = cint(bal.total_redeemed) + qty
+		bal.last_redeemed_on = now_datetime()
+		bal.save(ignore_permissions=True)
+		remaining = cint(bal.current_balance)
 
-	_record_transaction(
-		customer, -qty, "Redeem", remaining, company=company, pos_profile=pos_profile,
-		pos_opening_shift=pos_opening_shift, reference_doctype="Stock Entry",
-		reference_name=stock_entry, stock_entry=stock_entry,
-		remarks=_("Voucher redemption ({0})").format(qty),
-	)
+		_record_transaction(
+			customer, -qty, "Redeem", remaining, company=company, pos_profile=pos_profile,
+			pos_opening_shift=pos_opening_shift, reference_doctype="Stock Entry",
+			reference_name=stock_entry, stock_entry=stock_entry,
+			remarks=_("Voucher redemption ({0})").format(qty),
+		)
+	except frappe.ValidationError:
+		# Clean, user-facing validation messages pass through unchanged.
+		raise
+	except Exception as e:
+		frappe.log_error(frappe.get_traceback(), "Voucher Redemption Failed")
+		frappe.throw(
+			_("تعذّر استبدال القسيمة: {0}").format(str(e)),
+			title=_("فشل الاستبدال"),
+		)
 
 	# --- WhatsApp (best-effort) ---
 	cust_name = frappe.db.get_value("Customer", customer, "customer_name") or customer

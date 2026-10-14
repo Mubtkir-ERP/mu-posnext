@@ -160,6 +160,71 @@ def _get_disbursement_account(pos_profile, company, cash_account=None):
     return account_name
 
 
+def _available_cash(shift_name, pos_profile, company):
+    """Physical cash currently in the drawer for an OPEN shift.
+
+    opening float + cash collected on invoices + cash received via Payment
+    Entries - change given back to customers - cash already disbursed. This
+    mirrors the cash math the closing screen uses, so the disbursement guard
+    matches exactly what the cashier will have to reconcile at close.
+    """
+    cash_mode = _get_cash_mode(pos_profile)
+
+    opening = frappe.db.sql(
+        """select coalesce(sum(amount), 0)
+           from `tabPOS Opening Shift Detail`
+           where parent = %s and mode_of_payment = %s""",
+        (shift_name, cash_mode),
+    )[0][0]
+
+    inv_cash = frappe.db.sql(
+        """select coalesce(sum(sip.amount), 0)
+           from `tabSales Invoice Payment` sip
+           join `tabSales Invoice` si on si.name = sip.parent
+           where si.docstatus = 1
+             and si.posa_pos_opening_shift = %s
+             and sip.mode_of_payment = %s""",
+        (shift_name, cash_mode),
+    )[0][0]
+
+    change_back = frappe.db.sql(
+        """select coalesce(sum(change_amount), 0)
+           from `tabSales Invoice`
+           where docstatus = 1 and posa_pos_opening_shift = %s""",
+        (shift_name,),
+    )[0][0]
+
+    pe_cash = frappe.db.sql(
+        """select coalesce(sum(paid_amount), 0)
+           from `tabPayment Entry`
+           where docstatus = 1 and payment_type = 'Receive'
+             and reference_no = %s and mode_of_payment = %s""",
+        (shift_name, cash_mode),
+    )[0][0]
+
+    disbursed = frappe.db.sql(
+        """select coalesce(sum(total_debit), 0)
+           from `tabJournal Entry`
+           where docstatus = 1 and user_remark like %s""",
+        (f"{_MARKER}|{shift_name}|%",),
+    )[0][0]
+
+    return flt(opening) + flt(inv_cash) + flt(pe_cash) - flt(change_back) - flt(disbursed)
+
+
+@frappe.whitelist()
+def get_available_cash(shift_name):
+    """Public: cash currently available in the drawer for the open shift.
+
+    The dialog uses this to show the balance and warn/block before the cashier
+    even presses confirm.
+    """
+    if not shift_name:
+        return 0.0
+    shift = require_shift_access(shift_name, require_open=True)
+    return flt(_available_cash(shift.name, shift.pos_profile, shift.company))
+
+
 def _remark(shift_name, reason):
     return f"{_MARKER}|{shift_name}|{reason}"
 
@@ -260,6 +325,25 @@ def create_cash_disbursement(
             _("Disbursement amount {0} exceeds the allowed limit {1} for this POS Profile.").format(amount, branch_limit),
             frappe.PermissionError,
         )
+
+    # Never pay out more cash than is physically in the drawer. If the drawer is
+    # empty (e.g. opening float was zero and no cash sale has happened yet) no
+    # disbursement is allowed at all.
+    available = _available_cash(shift_name, pos_profile, company)
+    if available <= 0:
+        frappe.throw(
+            _("لا يوجد نقد في الدرج حاليًا، لا يمكن تنفيذ الصرف النقدي."),
+            frappe.ValidationError,
+        )
+    if amount > available:
+        frappe.throw(
+            _("المبلغ المطلوب صرفه ({0}) أكبر من النقد المتاح في الدرج ({1}).").format(
+                frappe.utils.fmt_money(amount, currency=frappe.get_cached_value("Company", company, "default_currency")),
+                frappe.utils.fmt_money(available, currency=frappe.get_cached_value("Company", company, "default_currency")),
+            ),
+            frappe.ValidationError,
+        )
+
     _get_disbursement_settings(pos_profile)
     cash_account, cash_mode = _get_cash_account(pos_profile, company)
     configured_debit_account = _get_disbursement_account(

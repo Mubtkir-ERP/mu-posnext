@@ -95,6 +95,30 @@ const qty = ref(1)
 const loading = ref(false)
 const redeeming = ref(false)
 
+/**
+ * Pull the REAL server message out of a Frappe/frappe-ui error instead of the
+ * generic fallback. Frappe returns thrown messages in `_server_messages`
+ * (a JSON array of stringified {message}) or in `messages`; strip any HTML.
+ */
+function serverError(e, fallback) {
+  const strip = (s) => String(s || "").replace(/<[^>]*>?/gm, "").trim()
+  try {
+    if (e?._server_messages) {
+      const arr = JSON.parse(e._server_messages)
+      const parts = arr.map((m) => {
+        try { const o = JSON.parse(m); return o?.message ?? o } catch { return m }
+      })
+      const msg = strip(parts.filter(Boolean).join(" — "))
+      if (msg) return msg
+    }
+  } catch (_) { /* ignore */ }
+  if (Array.isArray(e?.messages) && e.messages.length) {
+    const msg = strip(e.messages.join(" — "))
+    if (msg) return msg
+  }
+  return strip(e?.message) || fallback
+}
+
 const customerName = computed(() => {
   const c = props.customer
   if (!c) return ""
@@ -125,7 +149,7 @@ async function loadBalance() {
     qty.value = balance.value > 0 ? 1 : 0
   } catch (e) {
     balance.value = 0
-    showError(e?.message || __("تعذّر جلب رصيد القسائم"))
+    showError(serverError(e, __("تعذّر جلب رصيد القسائم")))
   } finally {
     loading.value = false
   }
@@ -149,7 +173,7 @@ async function doRedeem() {
     emit("redeemed", data)
     if (balance.value <= 0) close()
   } catch (e) {
-    showError(e?.message || __("تعذّر استبدال القسيمة"))
+    showError(serverError(e, __("تعذّر استبدال القسيمة")))
   } finally {
     redeeming.value = false
   }

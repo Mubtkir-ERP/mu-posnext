@@ -373,8 +373,9 @@ def update_customer(
     if not customer:
         frappe.throw(_("Customer is required"))
 
-    if pos_profile:
-        require_customer_read(customer, pos_profile=pos_profile)
+    # Plain read check (not the profile-group-restricted one) so editing a
+    # customer outside the profile's customer group is not blocked.
+    require_customer_read(customer)
 
     if not frappe.has_permission("Customer", "write", customer):
         frappe.throw(_("You don't have permission to update customers"), frappe.PermissionError)
@@ -465,5 +466,19 @@ def update_customer(
         if email_id is not None:
             doc.email_id = email_id
 
-    doc.save()
+    try:
+        doc.save()
+    except frappe.exceptions.ValidationError:
+        # Clean, user-facing validation messages (mandatory field, duplicate,
+        # tax-id format, etc.) are shown to the cashier as-is.
+        raise
+    except Exception as e:
+        # Anything else would otherwise surface as an opaque "Internal Server
+        # Error". Log the full traceback and return the real reason so the POS
+        # can display it instead of a generic 500.
+        frappe.log_error(frappe.get_traceback(), "POS update_customer failed")
+        frappe.throw(
+            _("تعذّر حفظ بيانات العميل: {0}").format(str(e)),
+            title=_("Save Failed"),
+        )
     return doc.as_dict()
