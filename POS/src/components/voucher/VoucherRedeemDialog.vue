@@ -51,14 +51,23 @@
           </div>
         </div>
 
-        <button
-          class="w-full py-3 rounded-lg text-white font-semibold transition-colors"
-          :class="canRedeem ? 'bg-blue-600 hover:bg-blue-700' : 'bg-gray-300 cursor-not-allowed'"
-          :disabled="!canRedeem"
-          @click="doRedeem"
-        >
-          {{ redeeming ? __('جارٍ الاستبدال…') : __('تأكيد استبدال {0} قسيمة', [qty]) }}
-        </button>
+        <div class="flex gap-2">
+          <button
+            class="flex-1 py-3 rounded-lg text-white font-semibold transition-colors"
+            :class="canRedeem ? 'bg-blue-600 hover:bg-blue-700' : 'bg-gray-300 cursor-not-allowed'"
+            :disabled="!canRedeem"
+            @click="doRedeem"
+          >
+            {{ redeeming ? __('جارٍ الاستبدال…') : __('تأكيد استبدال {0} قسيمة', [qty]) }}
+          </button>
+          <button
+            class="px-5 py-3 rounded-lg font-semibold text-gray-700 bg-gray-100 hover:bg-gray-200 transition-colors"
+            :disabled="redeeming"
+            @click="close"
+          >
+            {{ __('إلغاء') }}
+          </button>
+        </div>
         <p class="text-[11px] text-gray-400 text-center">
           {{ __('لا تصدر فاتورة ضريبية عند الاستبدال؛ الضريبة حُصّلت عند شراء الدفتر.') }}
         </p>

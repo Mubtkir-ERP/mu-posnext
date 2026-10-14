@@ -52,6 +52,18 @@
 			</div>
 		</button>
 
+		<!-- Customer Orders (مشتريات العميل) -->
+		<button
+			@click="handleMenuClick('customer-orders')"
+			class="w-12 h-12 rounded-lg flex items-center justify-center transition-all relative group text-purple-600 hover:bg-purple-50"
+			:title="__('مشتريات العميل')"
+		>
+			<FeatherIcon name="clipboard" class="w-5 h-5" />
+			<div class="absolute start-full ms-2 px-2 py-1 bg-gray-900 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-50">
+				{{ __('مشتريات العميل') }}
+			</div>
+		</button>
+
 		<!-- Prepaid Voucher Redemption (استبدال قسيمة) -->
 		<button
 			v-if="showVoucher"

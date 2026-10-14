@@ -7,3 +7,4 @@
 pos_next.patches.v1_7_0.reinstall_workspace
 pos_next.patches.v1_8_0.move_settings_fields
 pos_next.patches.v1_9_0.move_cash_and_kitchen
+pos_next.patches.v1_9_0.fix_profile_print_cycle

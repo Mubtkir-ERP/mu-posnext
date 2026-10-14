@@ -115,29 +115,6 @@
 						</span>
 					</button>
 
-					<!-- Customer Orders (مشتريات العميل) -->
-					<button
-						v-if="showCustomerOrders"
-						@click="$emit('customer-orders-click')"
-						class="order-6 p-1.5 sm:p-2 hover:bg-purple-50 active:bg-purple-100 rounded-lg transition-colors relative group touch-manipulation"
-						:title="__('مشتريات العميل')"
-						:aria-label="__('مشتريات العميل')"
-					>
-						<svg
-							class="w-4 h-4 sm:w-5 sm:h-5 text-purple-600"
-							fill="none"
-							stroke="currentColor"
-							viewBox="0 0 24 24"
-						>
-							<path
-								stroke-linecap="round"
-								stroke-linejoin="round"
-								stroke-width="2"
-								d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"
-							/>
-						</svg>
-					</button>
-
 					<!-- Cache Status Indicator -->
 					<div class="relative order-3">
 						<button

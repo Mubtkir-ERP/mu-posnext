@@ -51,6 +51,13 @@
                 <div class="text-green-600 text-xs">{{ __('After returns') }}</div>
               </div>
 
+              <!-- Cash Disbursements (صرف نقدي) — already deducted from expected cash -->
+              <div v-if="(closingData.total_disbursed || 0) > 0" class="text-start bg-amber-50 border border-amber-200 rounded-lg p-3 md:p-4">
+                <div class="text-amber-600 text-xs uppercase font-medium mb-1">{{ __('Cash Disbursed') }}</div>
+                <div class="text-lg md:text-2xl font-bold text-amber-700 mb-0.5 md:mb-1 truncate">-{{ formatCurrency(closingData.total_disbursed) }}</div>
+                <div class="text-amber-600 text-xs">{{ __('Deducted from drawer') }}</div>
+              </div>
+
               <!-- Tax Collected -->
               <div class="text-start bg-gray-50 border border-gray-200 rounded-lg p-3 md:p-4">
                 <div class="text-gray-600 text-xs uppercase font-medium mb-1">{{ __('Tax Collected') }}</div>

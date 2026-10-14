@@ -294,18 +294,15 @@ async function submitDisbursement() {
 		// Notify parent
 		emit("disbursed", { amount: data.amount, reason: data.reason, name: data.name })
 
-		// Reset form for next entry (don't close — user may want to add more)
-		resetForm()
-
 		// Show success toast using frappe
 		window.frappe?.show_alert?.({
 			message: `${__("Cash disbursement recorded")}: ${formatCurrency(data.amount)}`,
 			indicator: "green",
 		})
 
-		// Re-focus amount input
-		await nextTick()
-		amountInput.value?.focus()
+		// Reset and close automatically after a successful disbursement.
+		resetForm()
+		emit("update:show", false)
 
 	} catch (err) {
 		log.error("Disbursement failed:", err?.message)

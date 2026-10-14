@@ -301,6 +301,50 @@ def get_customer_details(customer, pos_profile=None):
 
 
 @frappe.whitelist()
+def get_customer_ordered_items(customer, pos_profile=None, limit=200):
+    """Return the items a customer has ordered: item, qty and order date.
+
+    One row per submitted (non-return) Sales Invoice line, newest first.
+    """
+    if not customer:
+        frappe.throw(_("Customer is required"))
+
+    # Read-only lookup for display: use the plain customer read check (NOT the
+    # profile-group-restricted one) so a cashier can view any customer's past
+    # orders without hitting the "outside customer group" restriction.
+    require_customer_read(customer)
+
+    try:
+        limit = int(limit)
+    except (TypeError, ValueError):
+        limit = 200
+    limit = max(1, min(limit, 500))
+
+    rows = frappe.db.sql(
+        """
+        SELECT
+            sii.item_code,
+            sii.item_name,
+            sii.qty,
+            sii.uom,
+            si.name AS invoice,
+            si.posting_date,
+            si.posting_time
+        FROM `tabSales Invoice Item` sii
+        INNER JOIN `tabSales Invoice` si ON si.name = sii.parent
+        WHERE si.customer = %(customer)s
+          AND si.docstatus = 1
+          AND IFNULL(si.is_return, 0) = 0
+        ORDER BY si.posting_date DESC, si.posting_time DESC, sii.idx ASC
+        LIMIT %(limit)s
+        """,
+        {"customer": customer, "limit": limit},
+        as_dict=True,
+    )
+    return rows
+
+
+@frappe.whitelist()
 def update_customer(
     customer,
     customer_name=None,

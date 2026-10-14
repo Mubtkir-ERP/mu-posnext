@@ -550,12 +550,13 @@ const applyCustomerToForm = async (customer) => {
 		}
 	}
 
-	// Fetch full customer details. NEVER overwrite an existing value with an
-	// empty one — otherwise a partial response would wipe the customer group.
+	// Fetch the full customer document (reliable, standard permissions). NEVER
+	// overwrite an existing value with an empty one — a partial response would
+	// otherwise wipe the customer group.
 	try {
-		const response = await call("pos_next.api.customers.get_customer_details", {
-			customer: customer.name,
-			pos_profile: props.posProfile,
+		const response = await call("frappe.client.get", {
+			doctype: "Customer",
+			name: customer.name,
 		});
 		const details = response?.message || response;
 		if (details) {

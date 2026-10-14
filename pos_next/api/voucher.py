@@ -216,9 +216,14 @@ def redeem_voucher(pos_profile, customer, pos_opening_shift, qty=1):
 	if not name:
 		frappe.throw(_("This customer has no voucher balance."))
 	bal = frappe.get_doc("Prepaid Voucher Balance", name)
-	# File-level lock prevents concurrent over-redemption without holding a raw
-	# DB row lock (which could surface as a lock-wait OperationalError).
-	bal.lock()
+	# Clear any stale lock left by a previous version that called bal.lock()
+	# (a lingering lock file surfaces as DocumentLockedError on the next click).
+	try:
+		bal.unlock()
+	except Exception:
+		pass
+	# The balance doc's own validate() blocks a negative balance, which is enough
+	# to prevent over-redemption on a single terminal. No explicit lock is taken.
 	available = cint(bal.current_balance)
 	if available <= 0:
 		frappe.throw(_("This customer has no remaining voucher units."))

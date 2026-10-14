@@ -29,8 +29,6 @@
 				:show-cash-disbursement="profilePrintOptions.allowCashExpense && shiftStore.hasOpenShift && canAccessShiftActions"
 				:show-voucher-redeem="profilePrintOptions.voucherEnabled && shiftStore.hasOpenShift && canAccessShiftActions"
 				:voucher-balance="voucherBalance"
-				:show-customer-orders="shiftStore.hasOpenShift && canAccessShiftActions"
-				@customer-orders-click="showCustomerOrders = true"
 				@sync-click="handleSyncClick"
 				@cash-disbursement-click="handleOpenCashDisbursement"
 				@voucher-redeem-click="showVoucherRedeem = true"
@@ -738,11 +736,10 @@
 				@redeemed="onVoucherRedeemed"
 			/>
 
-			<!-- Customer Ordered Items -->
+			<!-- Customer Ordered Items (self-contained customer search) -->
 			<CustomerOrdersDialog
 				v-model="showCustomerOrders"
 				:pos-profile="shiftStore.profileName || ''"
-				:customer="cartStore.customer"
 			/>
 
 			<!-- Clear Cart Confirmation Dialog -->
@@ -2865,6 +2862,8 @@ function handleManagementMenuClick(menuItem) {
 		showVoucherRedeem.value = true;
 	} else if (menuItem === "cash") {
 		handleOpenCashDisbursement();
+	} else if (menuItem === "customer-orders") {
+		showCustomerOrders.value = true;
 	}
 }
 
