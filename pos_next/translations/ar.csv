@@ -1687,3 +1687,6 @@ Hide items with no available stock in the selected warehouse,إخفاء المن
 Automatically print the receipt when the order is completed,طباعة الإيصال تلقائيًا عند إكمال الطلب,
 Stock Sync Interval must be at least 10 seconds,يجب ألا تقل فترة مزامنة المخزون عن 10 ثوانٍ,
 These settings must be changed in POS Profile: {0},هذه الإعدادات تُعدَّل من بروفايل نقطة البيع: {0},
+طابعات المطبخ,طابعات المطبخ,
+اربط كل منطقة مطبخ (المحددة في مجموعة المنتجات) بطابعتها.,اربط كل منطقة مطبخ (المحددة في مجموعة المنتجات) بطابعتها.,
+Please enable cash expense and set an expense account in the POS Profile first.,يرجى تفعيل الصرف النقدي وتحديد حساب المصروف في بروفايل نقطة البيع أولًا.,

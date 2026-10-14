@@ -8,13 +8,6 @@
   "enabled",
   "column_break_top",
   "allowed_locales",
-  "section_break_wallet",
-  "enable_loyalty_program",
-  "default_loyalty_program",
-  "wallet_account",
-  "column_break_wallet",
-  "auto_create_wallet",
-  "loyalty_to_wallet",
   "section_break_general",
   "allow_credit_sale",
   "allow_customer_credit_payment",
@@ -29,27 +22,39 @@
   "allow_negative_stock",
   "enable_auto_stock_sync",
   "stock_sync_interval",
+  "section_break_wallet",
+  "enable_loyalty_program",
+  "default_loyalty_program",
+  "wallet_account",
+  "column_break_wallet",
+  "auto_create_wallet",
+  "loyalty_to_wallet",
   "section_break_display",
   "default_card_view",
   "display_item_code",
-  "show_customer_balance",
-  "hide_expected_amount",
+  "show_variants_as_items",
   "column_break_display",
   "display_discount_percentage",
   "display_discount_amount",
-  "show_variants_as_items",
+  "column_break_prod_2",
+  "show_customer_balance",
+  "hide_expected_amount",
+  "column_break_prod_3",
   "hide_unavailable_items",
   "return_validity_days",
+  "section_break_barcode",
   "barcode_rules",
   "section_break_operations",
   "allow_sales_order",
+  "allow_select_sales_order",
   "create_only_sales_order",
+  "column_break_operations",
+  "allow_return_without_invoice",
   "allow_free_batch_return",
+  "column_break_ops_2",
   "allow_customer_purchase_order",
   "allow_delete_draft_invoices",
-  "column_break_operations",
-  "allow_select_sales_order",
-  "allow_return_without_invoice",
+  "column_break_ops_3",
   "allow_delete_offline_invoice",
   "allow_change_posting_date",
   "section_break_pricing",
@@ -58,20 +63,18 @@
   "tax_inclusive",
   "section_break_customer",
   "default_customer_group",
-  "allow_duplicate_customer_names",
   "column_break_customer",
+  "allow_duplicate_customer_names",
+  "column_break_cust_2",
   "fetch_coupon",
-  "section_break_cash_disbursement",
-  "allow_cash_disbursement",
-  "column_break_cash_disbursement",
-  "cash_disbursement_account",
   "section_break_printing",
   "allow_print_last_invoice",
-  "allow_print_draft_invoices",
   "column_break_printing",
+  "allow_print_draft_invoices",
+  "column_break_print_2",
   "silent_print",
+  "column_break_print_3",
   "print_receipt_on_order_complete",
-  "kitchen_printers",
   "section_break_delivery",
   "use_delivery_charges",
   "column_break_delivery",
@@ -109,58 +112,6 @@
    "fieldtype": "Table MultiSelect",
    "label": "Allowed Languages",
    "options": "POS Allowed Locale"
-  },
-  {
-   "fieldname": "section_break_wallet",
-   "fieldtype": "Section Break",
-   "label": "Wallet & Loyalty"
-  },
-  {
-   "default": "0",
-   "description": "Enable loyalty program features for this POS profile",
-   "fieldname": "enable_loyalty_program",
-   "fieldtype": "Check",
-   "label": "Enable Loyalty Program"
-  },
-  {
-   "depends_on": "enable_loyalty_program",
-   "description": "Loyalty program for this POS profile",
-   "fieldname": "default_loyalty_program",
-   "fieldtype": "Link",
-   "label": "Loyalty Program",
-   "mandatory_depends_on": "enable_loyalty_program",
-   "options": "Loyalty Program"
-  },
-  {
-   "depends_on": "enable_loyalty_program",
-   "description": "Receivable account for customer wallets",
-   "fieldname": "wallet_account",
-   "fieldtype": "Link",
-   "label": "Wallet Account",
-   "mandatory_depends_on": "enable_loyalty_program",
-   "options": "Account"
-  },
-  {
-   "fieldname": "column_break_wallet",
-   "fieldtype": "Column Break"
-  },
-  {
-   "default": "1",
-   "depends_on": "enable_loyalty_program",
-   "description": "Automatically create wallet for new customers (always enabled when loyalty program is active)",
-   "fieldname": "auto_create_wallet",
-   "fieldtype": "Check",
-   "label": "Auto Create Wallet",
-   "read_only_depends_on": "enable_loyalty_program"
-  },
-  {
-   "default": "1",
-   "depends_on": "enable_loyalty_program",
-   "description": "Automatically convert earned loyalty points to wallet balance. Uses Conversion Factor from Loyalty Program (always enabled when loyalty program is active)",
-   "fieldname": "loyalty_to_wallet",
-   "fieldtype": "Check",
-   "label": "Convert Loyalty Points to Wallet",
-   "read_only_depends_on": "enable_loyalty_program"
   },
   {
    "fieldname": "section_break_general",
@@ -260,6 +211,59 @@
    "label": "Stock Sync Interval (seconds)"
   },
   {
+   "fieldname": "section_break_wallet",
+   "fieldtype": "Section Break",
+   "label": "Wallet & Loyalty",
+   "collapsible": 1
+  },
+  {
+   "default": "0",
+   "description": "Enable loyalty program features for this POS profile",
+   "fieldname": "enable_loyalty_program",
+   "fieldtype": "Check",
+   "label": "Enable Loyalty Program"
+  },
+  {
+   "depends_on": "enable_loyalty_program",
+   "description": "Loyalty program for this POS profile",
+   "fieldname": "default_loyalty_program",
+   "fieldtype": "Link",
+   "label": "Loyalty Program",
+   "mandatory_depends_on": "enable_loyalty_program",
+   "options": "Loyalty Program"
+  },
+  {
+   "depends_on": "enable_loyalty_program",
+   "description": "Receivable account for customer wallets",
+   "fieldname": "wallet_account",
+   "fieldtype": "Link",
+   "label": "Wallet Account",
+   "mandatory_depends_on": "enable_loyalty_program",
+   "options": "Account"
+  },
+  {
+   "fieldname": "column_break_wallet",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "1",
+   "depends_on": "enable_loyalty_program",
+   "description": "Automatically create wallet for new customers (always enabled when loyalty program is active)",
+   "fieldname": "auto_create_wallet",
+   "fieldtype": "Check",
+   "label": "Auto Create Wallet",
+   "read_only_depends_on": "enable_loyalty_program"
+  },
+  {
+   "default": "1",
+   "depends_on": "enable_loyalty_program",
+   "description": "Automatically convert earned loyalty points to wallet balance. Uses Conversion Factor from Loyalty Program (always enabled when loyalty program is active)",
+   "fieldname": "loyalty_to_wallet",
+   "fieldtype": "Check",
+   "label": "Convert Loyalty Points to Wallet",
+   "read_only_depends_on": "enable_loyalty_program"
+  },
+  {
    "collapsible": 1,
    "fieldname": "section_break_display",
    "fieldtype": "Section Break",
@@ -281,17 +285,10 @@
   },
   {
    "default": "0",
-   "description": "Display customer balance on screen",
-   "fieldname": "show_customer_balance",
+   "description": "Show item variants directly in the item grid instead of their template items. When disabled, template items are shown and variants are selected via a variant selector.",
+   "fieldname": "show_variants_as_items",
    "fieldtype": "Check",
-   "label": "Show Customer Balance"
-  },
-  {
-   "default": "0",
-   "description": "Hide expected cash amount in closing",
-   "fieldname": "hide_expected_amount",
-   "fieldtype": "Check",
-   "label": "Hide Expected Amount"
+   "label": "Show Variants as Items"
   },
   {
    "fieldname": "column_break_display",
@@ -312,11 +309,26 @@
    "label": "Display Discount Amount"
   },
   {
+   "fieldname": "column_break_prod_2",
+   "fieldtype": "Column Break"
+  },
+  {
    "default": "0",
-   "description": "Show item variants directly in the item grid instead of their template items. When disabled, template items are shown and variants are selected via a variant selector.",
-   "fieldname": "show_variants_as_items",
+   "description": "Display customer balance on screen",
+   "fieldname": "show_customer_balance",
    "fieldtype": "Check",
-   "label": "Show Variants as Items"
+   "label": "Show Customer Balance"
+  },
+  {
+   "default": "0",
+   "description": "Hide expected cash amount in closing",
+   "fieldname": "hide_expected_amount",
+   "fieldtype": "Check",
+   "label": "Hide Expected Amount"
+  },
+  {
+   "fieldname": "column_break_prod_3",
+   "fieldtype": "Column Break"
   },
   {
    "default": "0",
@@ -332,6 +344,12 @@
    "label": "Return Validity Days",
    "description": "Number of days allowed for invoice returns. Set to 0 for unlimited returns.",
    "depends_on": "allow_return"
+  },
+  {
+   "collapsible": 1,
+   "fieldname": "section_break_barcode",
+   "fieldtype": "Section Break",
+   "label": "Barcode"
   },
   {
    "fieldname": "barcode_rules",
@@ -354,16 +372,38 @@
   },
   {
    "default": "0",
+   "description": "Select from existing sales orders",
+   "fieldname": "allow_select_sales_order",
+   "fieldtype": "Check",
+   "label": "Allow Select Sales Order"
+  },
+  {
+   "default": "0",
    "description": "Don't create invoices, only orders",
    "fieldname": "create_only_sales_order",
    "fieldtype": "Check",
    "label": "Create Only Sales Order"
   },
   {
+   "fieldname": "column_break_operations",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "0",
+   "description": "Process returns without invoice reference",
+   "fieldname": "allow_return_without_invoice",
+   "fieldtype": "Check",
+   "label": "Allow Return Without Invoice"
+  },
+  {
    "default": "0",
    "fieldname": "allow_free_batch_return",
    "fieldtype": "Check",
    "label": "Allow Free Batch Return"
+  },
+  {
+   "fieldname": "column_break_ops_2",
+   "fieldtype": "Column Break"
   },
   {
    "default": "0",
@@ -380,22 +420,8 @@
    "label": "Allow Delete Draft Invoices"
   },
   {
-   "fieldname": "column_break_operations",
+   "fieldname": "column_break_ops_3",
    "fieldtype": "Column Break"
-  },
-  {
-   "default": "0",
-   "description": "Select from existing sales orders",
-   "fieldname": "allow_select_sales_order",
-   "fieldtype": "Check",
-   "label": "Allow Select Sales Order"
-  },
-  {
-   "default": "0",
-   "description": "Process returns without invoice reference",
-   "fieldname": "allow_return_without_invoice",
-   "fieldtype": "Check",
-   "label": "Allow Return Without Invoice"
   },
   {
    "default": "0",
@@ -450,6 +476,10 @@
    "options": "Customer Group"
   },
   {
+   "fieldname": "column_break_customer",
+   "fieldtype": "Column Break"
+  },
+  {
    "default": "0",
    "description": "Permit duplicate customer names",
    "fieldname": "allow_duplicate_customer_names",
@@ -457,7 +487,7 @@
    "label": "Allow Duplicate Customer Names"
   },
   {
-   "fieldname": "column_break_customer",
+   "fieldname": "column_break_cust_2",
    "fieldtype": "Column Break"
   },
   {
@@ -466,30 +496,6 @@
    "fieldname": "fetch_coupon",
    "fieldtype": "Check",
    "label": "Auto Fetch Coupon Gifts"
-  },
-  {
-   "collapsible": 1,
-   "fieldname": "section_break_cash_disbursement",
-   "fieldtype": "Section Break",
-   "label": "Cash Disbursement"
-  },
-  {
-   "default": "0",
-   "description": "Show the Cash Disbursement (صرف نقدي) button in the POS terminal.",
-   "fieldname": "allow_cash_disbursement",
-   "fieldtype": "Check",
-   "label": "Allow Cash Disbursement"
-  },
-  {
-   "fieldname": "column_break_cash_disbursement",
-   "fieldtype": "Column Break"
-  },
-  {
-   "description": "GL account to debit when cashier disburses cash (e.g. employee advances, petty expenses). This account will be debited and the cash account will be credited.",
-   "fieldname": "cash_disbursement_account",
-   "fieldtype": "Link",
-   "label": "Cash Disbursement Account",
-   "options": "Account"
   },
   {
    "collapsible": 1,
@@ -505,6 +511,10 @@
    "label": "Allow Print Last Invoice"
   },
   {
+   "fieldname": "column_break_printing",
+   "fieldtype": "Column Break"
+  },
+  {
    "default": "0",
    "description": "Print invoices before submission",
    "fieldname": "allow_print_draft_invoices",
@@ -512,7 +522,7 @@
    "label": "Allow Print Draft Invoices"
   },
   {
-   "fieldname": "column_break_printing",
+   "fieldname": "column_break_print_2",
    "fieldtype": "Column Break"
   },
   {
@@ -523,18 +533,15 @@
    "label": "Enable Silent Print"
   },
   {
+   "fieldname": "column_break_print_3",
+   "fieldtype": "Column Break"
+  },
+  {
    "default": "0",
    "description": "Automatically print the receipt when the order is completed",
    "fieldname": "print_receipt_on_order_complete",
    "fieldtype": "Check",
    "label": "Print Receipt on Order Completion"
-  },
-  {
-   "description": "Map each kitchen station (set on Item Group) to its printer. Items are grouped by station and printed to the matching printer.",
-   "fieldname": "kitchen_printers",
-   "fieldtype": "Table",
-   "label": "Kitchen Printers",
-   "options": "POS Kitchen Printer"
   },
   {
    "collapsible": 1,
@@ -595,7 +602,7 @@
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-10-13 18:30:00.000000",
+ "modified": "2026-10-14 13:00:00.000000",
  "modified_by": "Administrator",
  "module": "POS Next",
  "name": "POS Settings",

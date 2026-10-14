@@ -115,6 +115,29 @@
 						</span>
 					</button>
 
+					<!-- Cash Disbursement (صرف نقدي) — next to the sync icon -->
+					<button
+						v-if="showCashDisbursement"
+						@click="$emit('cash-disbursement-click')"
+						class="p-1.5 sm:p-2 hover:bg-amber-50 active:bg-amber-100 rounded-lg transition-colors relative group touch-manipulation"
+						:title="__('Cash Disbursement')"
+						:aria-label="__('Cash Disbursement')"
+					>
+						<svg
+							class="w-4 h-4 sm:w-5 sm:h-5 text-amber-600"
+							fill="none"
+							stroke="currentColor"
+							viewBox="0 0 24 24"
+						>
+							<path
+								stroke-linecap="round"
+								stroke-linejoin="round"
+								stroke-width="2"
+								d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z"
+							/>
+						</svg>
+					</button>
+
 					<!-- Cache Status Indicator -->
 					<div class="relative">
 						<button
@@ -305,6 +328,7 @@ const appVersion = version
 
 const emit = defineEmits([
 	"sync-click",
+	"cash-disbursement-click",
 	"printer-click",
 	"go-home",
 	"refresh-click",
@@ -391,6 +415,10 @@ const props = defineProps({
 		default: false,
 	},
 	qzConnected: {
+		type: Boolean,
+		default: false,
+	},
+	showCashDisbursement: {
 		type: Boolean,
 		default: false,
 	},

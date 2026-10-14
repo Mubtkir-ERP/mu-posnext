@@ -26,7 +26,9 @@
 				:is-refreshing="stockStore.refreshing"
 				:silent-print-enabled="posSettingsStore.silentPrint"
 				:qz-connected="qzConnected"
+				:show-cash-disbursement="profilePrintOptions.allowCashExpense && shiftStore.hasOpenShift && canAccessShiftActions"
 				@sync-click="handleSyncClick"
+				@cash-disbursement-click="handleOpenCashDisbursement"
 				@printer-click="openHistoryDialog"
 				@go-home="goHome"
 				@refresh-click="handleRefresh"
@@ -190,7 +192,7 @@
 					</button>
 					<!-- Cash Disbursement -->
 					<button
-						v-if="posSettingsStore.allowCashDisbursement && profilePrintOptions.allowCashExpense && shiftStore.hasOpenShift && canAccessShiftActions"
+						v-if="profilePrintOptions.allowCashExpense && shiftStore.hasOpenShift && canAccessShiftActions"
 						@click="handleOpenCashDisbursement"
 						class="w-full text-start px-4 py-2.5 text-sm text-gray-700 hover:bg-amber-50 flex items-center gap-3 transition-colors"
 					>
@@ -2801,12 +2803,15 @@ function handleViewInvoice(invoice) {
 	showInvoiceDetail.value = true;
 }
 
-// Handle opening cash disbursement
+// Handle opening cash disbursement.
+// Policy and account are owned by the POS Profile (mu_allow_cash_expense +
+// mu_cash_expense_account); profilePrintOptions.allowCashExpense already
+// reflects both, so the button only shows when the branch is configured.
 function handleOpenCashDisbursement() {
-	if (!posSettingsStore.cashDisbursementAccount) {
+	if (!profilePrintOptions.value.allowCashExpense) {
 		window.frappe?.msgprint?.({
 			title: __("Missing Disbursement Account"),
-			message: __("Please configure Cash Disbursement Account in POS Settings first."),
+			message: __("Please enable cash expense and set an expense account in the POS Profile first."),
 			indicator: "orange",
 		});
 		return;

@@ -107,10 +107,7 @@ def get_pos_settings(pos_profile):
 		if not pos_settings:
 			pos_settings = DEFAULT_POS_SETTINGS.copy()
 		else:
-			# Never let a disabled policy record grant sensitive permissions.
 			pos_settings = dict(pos_settings)
-			if not cint(pos_settings.get("enabled")):
-				pos_settings["allow_cash_disbursement"] = 0
 
 		global_allow_negative = cint(
 			frappe.db.get_single_value("Stock Settings", "allow_negative_stock") or 0

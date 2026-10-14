@@ -58,13 +58,17 @@ def get_kitchen_tickets(pos_profile, items, invoice_name=None, order_note=None):
 
 
 def _get_station_printer_map(pos_profile):
-	"""station name -> printer name, from POS Settings.kitchen_printers."""
-	settings_name = frappe.db.get_value("POS Settings", {"pos_profile": pos_profile}, "name")
-	if not settings_name:
+	"""station name -> printer name, from POS Profile.mu_kitchen_printers.
+
+	Kitchen printers were moved from POS Settings to the POS Profile so the
+	station/printer map is managed per branch alongside the print config.
+	"""
+	if not pos_profile:
 		return {}
 	rows = frappe.get_all(
 		"POS Kitchen Printer",
-		filters={"parent": settings_name, "parenttype": "POS Settings"},
+		filters={"parent": pos_profile, "parenttype": "POS Profile",
+			"parentfield": "mu_kitchen_printers"},
 		fields=["kitchen_station", "printer_name"],
 	)
 	return {r.kitchen_station: r.printer_name for r in rows if r.kitchen_station and r.printer_name}
