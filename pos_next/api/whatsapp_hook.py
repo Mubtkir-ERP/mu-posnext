@@ -11,9 +11,9 @@ This is a thin, dependency-free seam. It tries, in order:
 If neither is available the message is logged and silently skipped, so the
 voucher flow never fails because WhatsApp is not wired yet.
 
-To connect it later, either add to the WhatsApp app's hooks.py:
-    mu_send_whatsapp = ["mu_wats_api.api.send_text"]
-or implement `send_text(mobile_no, message)` in that app.
+To connect it later, add to the WhatsApp app's (frappe_whatsapp) hooks.py:
+    mu_send_whatsapp = ["frappe_whatsapp.api.send_text"]
+where that app exposes `send_text(mobile_no=..., message=...)`.
 """
 
 import frappe
@@ -32,9 +32,9 @@ def send_whatsapp(mobile_no, message):
 			except Exception:
 				frappe.log_error(frappe.get_traceback(), "mu_send_whatsapp hook failed")
 
-		# 2) Try the MUBTKIR WhatsApp app directly, if present.
+		# 2) Try the WhatsApp app (frappe_whatsapp) directly, if present.
 		try:
-			from mu_wats_api.api import send_text  # type: ignore
+			from frappe_whatsapp.api import send_text  # type: ignore
 
 			send_text(mobile_no=mobile_no, message=message)
 			return True
