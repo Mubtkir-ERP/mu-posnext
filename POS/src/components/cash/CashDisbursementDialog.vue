@@ -68,6 +68,10 @@
 								<svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clip-rule="evenodd"/></svg>
 								{{ errors.amount }}
 							</p>
+							<p v-else-if="overLimit" class="text-xs text-red-600 font-semibold flex items-center gap-1">
+								<svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clip-rule="evenodd"/></svg>
+								{{ __("المبلغ يتجاوز الحد المسموح للصرف ({0})", [formatCurrency(cashLimit)]) }}
+							</p>
 						</div>
 
 						<!-- Reason -->
@@ -140,8 +144,8 @@
 						</button>
 						<button
 							class="flex-1 py-3 rounded-xl text-sm font-bold text-white transition-all flex items-center justify-center gap-2 shadow-sm"
-							:class="submitting ? 'bg-amber-300 cursor-not-allowed' : 'bg-amber-500 hover:bg-amber-600 active:scale-95'"
-							:disabled="submitting"
+							:class="(submitting || overLimit) ? 'bg-amber-300 cursor-not-allowed' : 'bg-amber-500 hover:bg-amber-600 active:scale-95'"
+							:disabled="submitting || overLimit"
 							@click="submitDisbursement"
 						>
 							<svg v-if="!submitting" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -176,6 +180,7 @@ const props = defineProps({
 	posProfile: { type: String, required: true },
 	company: { type: String, required: true },
 	currency: { type: String, default: "SAR" },
+	cashLimit: { type: Number, default: 0 },
 })
 
 const emit = defineEmits(["update:show", "disbursed"])
@@ -202,6 +207,11 @@ const totalDisbursed = computed(() =>
 	history.value.reduce((sum, d) => sum + (d.amount || 0), 0)
 )
 
+// Instant over-limit guard (server also blocks as the final authority).
+const overLimit = computed(() =>
+	Number(props.cashLimit) > 0 && Number(form.amount || 0) > Number(props.cashLimit)
+)
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 function formatCurrency(amount) {
 	return `${Number(amount || 0).toFixed(2)} ${props.currency}`
@@ -221,6 +231,9 @@ function validate() {
 
 	if (!form.amount || Number(form.amount) <= 0) {
 		errors.amount = __("Please enter a valid amount greater than zero.")
+		valid = false
+	} else if (Number(props.cashLimit) > 0 && Number(form.amount) > Number(props.cashLimit)) {
+		errors.amount = __("المبلغ يتجاوز الحد المسموح للصرف ({0})", [formatCurrency(props.cashLimit)])
 		valid = false
 	}
 	if (!form.reason || !form.reason.trim()) {

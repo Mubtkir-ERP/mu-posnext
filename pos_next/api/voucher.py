@@ -144,21 +144,36 @@ def _voucher_settings(pos_profile):
 	row = frappe.db.get_value(
 		"POS Profile", pos_profile,
 		["mu_voucher_enabled", "mu_voucher_redeem_item", "mu_voucher_warehouse",
-		 "mu_voucher_low_balance_threshold", "company"],
+		 "mu_voucher_low_balance_threshold", "mu_voucher_daily_limit", "company"],
 		as_dict=True,
 	)
 	return row or frappe._dict()
 
 
-def _make_material_issue(item_code, warehouse, company, customer, cost_center=None):
-	"""Issue one physical unit from stock for a redemption (no sales/VAT doc)."""
+def _redeemed_today(customer):
+	"""Total voucher units already redeemed for a customer since local midnight."""
+	today = frappe.utils.getdate()
+	val = frappe.db.sql(
+		"""
+		select coalesce(sum(-quantity), 0)
+		from `tabPrepaid Voucher Transaction`
+		where customer = %s and transaction_type = 'Redeem'
+		  and date(posting_datetime) = %s
+		""",
+		(customer, today),
+	)
+	return cint(val[0][0]) if val else 0
+
+
+def _make_material_issue(item_code, warehouse, company, customer, qty=1, cost_center=None):
+	"""Issue the physical units from stock for a redemption (no sales/VAT doc)."""
 	se = frappe.new_doc("Stock Entry")
 	se.stock_entry_type = "Material Issue"
 	se.purpose = "Material Issue"
 	se.company = company
 	se.append("items", {
 		"item_code": item_code,
-		"qty": 1,
+		"qty": cint(qty) or 1,
 		"s_warehouse": warehouse,
 		"cost_center": cost_center,
 		"allow_zero_valuation_rate": 1,
@@ -170,13 +185,17 @@ def _make_material_issue(item_code, warehouse, company, customer, cost_center=No
 
 
 @frappe.whitelist()
-def redeem_voucher(pos_profile, customer, pos_opening_shift):
-	"""Redeem ONE voucher unit for the current customer.
+def redeem_voucher(pos_profile, customer, pos_opening_shift, qty=1):
+	"""Redeem one or more voucher units for the current customer.
 
-	Decrements the balance, issues one physical item from stock, records a
-	transaction bound to the open shift, and fires best-effort WhatsApp. No tax
-	invoice is created — VAT was already collected at voucher-book purchase.
+	Decrements the balance by ``qty``, issues ``qty`` physical items from stock
+	in a single Stock Entry, records a transaction bound to the open shift, and
+	fires best-effort WhatsApp. No tax invoice is created — VAT was already
+	collected at voucher-book purchase.
 	"""
+	qty = cint(qty) or 1
+	if qty <= 0:
+		frappe.throw(_("Redemption quantity must be at least one."))
 	if not customer:
 		frappe.throw(_("Please select a customer before redeeming a voucher."))
 
@@ -193,40 +212,52 @@ def redeem_voucher(pos_profile, customer, pos_opening_shift):
 
 	company = cfg.get("company") or shift.company
 
-	# Lock the balance row to prevent concurrent over-redemption.
 	name = frappe.db.exists("Prepaid Voucher Balance", {"customer": customer})
 	if not name:
 		frappe.throw(_("This customer has no voucher balance."))
 	bal = frappe.get_doc("Prepaid Voucher Balance", name)
-	frappe.db.sql(
-		"select name from `tabPrepaid Voucher Balance` where name=%s for update", bal.name
-	)
-	if cint(bal.current_balance) <= 0:
+	# File-level lock prevents concurrent over-redemption without holding a raw
+	# DB row lock (which could surface as a lock-wait OperationalError).
+	bal.lock()
+	available = cint(bal.current_balance)
+	if available <= 0:
 		frappe.throw(_("This customer has no remaining voucher units."))
+	if qty > available:
+		frappe.throw(_("Requested {0} vouchers but only {1} remain.").format(qty, available))
+
+	# Anti-abuse: cap how many units one customer may redeem per day (0 = no cap).
+	daily_limit = cint(cfg.get("mu_voucher_daily_limit"))
+	if daily_limit > 0:
+		used_today = _redeemed_today(customer)
+		if used_today + qty > daily_limit:
+			remaining_today = max(0, daily_limit - used_today)
+			frappe.throw(_(
+				"تجاوز الحد اليومي للاستبدال ({0} قسيمة). المتبقي المسموح اليوم: {1}."
+			).format(daily_limit, remaining_today), frappe.ValidationError)
 
 	# Physical hand-over first; if stock fails, nothing is decremented.
 	stock_entry = _make_material_issue(
 		cfg.get("mu_voucher_redeem_item"), cfg.get("mu_voucher_warehouse"),
-		company, customer,
+		company, customer, qty=qty,
 	)
 
-	bal.total_redeemed = cint(bal.total_redeemed) + 1
+	bal.total_redeemed = cint(bal.total_redeemed) + qty
 	bal.last_redeemed_on = now_datetime()
 	bal.save(ignore_permissions=True)
 	remaining = cint(bal.current_balance)
 
 	_record_transaction(
-		customer, -1, "Redeem", remaining, company=company, pos_profile=pos_profile,
+		customer, -qty, "Redeem", remaining, company=company, pos_profile=pos_profile,
 		pos_opening_shift=pos_opening_shift, reference_doctype="Stock Entry",
 		reference_name=stock_entry, stock_entry=stock_entry,
-		remarks=_("Voucher redemption"),
+		remarks=_("Voucher redemption ({0})").format(qty),
 	)
 
 	# --- WhatsApp (best-effort) ---
 	cust_name = frappe.db.get_value("Customer", customer, "customer_name") or customer
 	notify_customer(customer, _(
-		"عزيزنا {0}، تم استخدام قسيمة واحدة. رصيدك المتبقي: {1} قسيمة."
-	).format(cust_name, remaining))
+		"عزيزنا {0}، تم استخدام {1} قسيمة. رصيدك المتبقي: {2} قسيمة."
+	).format(cust_name, qty, remaining))
 
 	threshold = cint(cfg.get("mu_voucher_low_balance_threshold"))
 	low_alert = False
@@ -237,5 +268,5 @@ def redeem_voucher(pos_profile, customer, pos_opening_shift):
 		bal.db_set("low_balance_notified", 1)
 		low_alert = True
 
-	return {"customer": customer, "balance": remaining, "stock_entry": stock_entry,
-		"low_balance_alert": low_alert}
+	return {"customer": customer, "balance": remaining, "quantity": qty,
+		"stock_entry": stock_entry, "low_balance_alert": low_alert}

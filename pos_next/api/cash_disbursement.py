@@ -35,35 +35,28 @@ _MARKER = "pos_cash_disbursement"
 
 
 def _get_disbursement_settings(pos_profile):
-    """Return trusted cash-disbursement configuration for a POS Profile."""
-    settings = frappe.db.get_value(
-        "POS Settings",
-        {"pos_profile": pos_profile, "enabled": 1},
-        ["name", "allow_cash_disbursement", "cash_disbursement_account"],
-        as_dict=True,
-    )
-    if not settings or not cint(settings.allow_cash_disbursement):
-        frappe.throw(
-            _("Cash disbursement is disabled for this POS Profile."),
-            frappe.PermissionError,
-        )
+    """Return trusted cash-disbursement configuration from the POS Profile.
+
+    Cash-disbursement control now lives entirely on the POS Profile
+    (``mu_allow_cash_expense`` / ``mu_cash_expense_account`` / ``mu_cash_expense_limit``);
+    the legacy POS Settings fields were retired in the settings audit.
+    """
     profile = frappe.db.get_value(
         "POS Profile", pos_profile,
         ["mu_allow_cash_expense", "mu_cash_expense_limit", "mu_cash_expense_account"],
         as_dict=True,
     )
     if not profile or not cint(profile.mu_allow_cash_expense):
-        frappe.throw(_("Cash disbursement is not allowed for this POS Profile."), frappe.PermissionError)
-    # The branch's configured expense account is required, while the global
-    # POS Settings switch remains an additional safety gate.
-    if not profile.mu_cash_expense_account:
-        frappe.throw(_("Configure the expense account in POS Profile first."))
-    if not settings.cash_disbursement_account:
         frappe.throw(
-            _("Please configure Cash Disbursement Account in POS Settings first."),
+            _("Cash disbursement is not allowed for this POS Profile."),
+            frappe.PermissionError,
+        )
+    if not profile.mu_cash_expense_account:
+        frappe.throw(
+            _("Configure the cash expense account in the POS Profile first."),
             title=_("Missing Disbursement Account"),
         )
-    return settings
+    return profile
 
 
 def _get_cash_mode(pos_profile):
@@ -160,9 +153,9 @@ def _validate_disbursement_account(account_name, company, cash_account=None):
 
 
 def _get_disbursement_account(pos_profile, company, cash_account=None):
-    """Return the trusted debit account from enabled POS Settings."""
-    settings = _get_disbursement_settings(pos_profile)
-    account_name = frappe.db.get_value("POS Profile", pos_profile, "mu_cash_expense_account")
+    """Return the trusted debit account from the POS Profile."""
+    profile = _get_disbursement_settings(pos_profile)
+    account_name = profile.mu_cash_expense_account
     _validate_disbursement_account(account_name, company, cash_account=cash_account)
     return account_name
 
@@ -261,8 +254,12 @@ def create_cash_disbursement(
         "POS Profile", pos_profile,
         ["mu_cash_expense_limit", "mu_cash_expense_account"], as_dict=True,
     )
-    if flt(branch.mu_cash_expense_limit) > 0 and amount > flt(branch.mu_cash_expense_limit):
-        frappe.throw(_("Disbursement exceeds the configured POS Profile limit."), frappe.PermissionError)
+    branch_limit = flt(branch.mu_cash_expense_limit)
+    if branch_limit > 0 and amount > branch_limit:
+        frappe.throw(
+            _("Disbursement amount {0} exceeds the allowed limit {1} for this POS Profile.").format(amount, branch_limit),
+            frappe.PermissionError,
+        )
     _get_disbursement_settings(pos_profile)
     cash_account, cash_mode = _get_cash_account(pos_profile, company)
     configured_debit_account = _get_disbursement_account(

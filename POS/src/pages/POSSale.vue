@@ -28,6 +28,7 @@
 				:qz-connected="qzConnected"
 				:show-cash-disbursement="profilePrintOptions.allowCashExpense && shiftStore.hasOpenShift && canAccessShiftActions"
 				:show-voucher-redeem="profilePrintOptions.voucherEnabled && shiftStore.hasOpenShift && canAccessShiftActions"
+				:voucher-balance="voucherBalance"
 				@sync-click="handleSyncClick"
 				@cash-disbursement-click="handleOpenCashDisbursement"
 				@voucher-redeem-click="showVoucherRedeem = true"
@@ -714,6 +715,7 @@
 				:pos-profile="shiftStore.profileName || ''"
 				:company="shiftStore.profileCompany || ''"
 				:currency="shiftStore.profileCurrency"
+				:cash-limit="profilePrintOptions.cashExpenseLimit"
 				@disbursed="onCashDisbursed"
 			/>
 
@@ -723,6 +725,7 @@
 				:pos-profile="shiftStore.profileName || ''"
 				:opening-shift="shiftStore.currentShift?.name || ''"
 				:customer="cartStore.customer"
+				@redeemed="onVoucherRedeemed"
 			/>
 
 			<!-- Clear Cart Confirmation Dialog -->
@@ -1177,9 +1180,9 @@ const showPromotionManagement = ref(false);
 // Settings dialog
 const showPOSSettings = ref(false);
 // Print options are resolved per active branch, not from global POS Settings.
-const profilePrintOptions = ref({ allowA4: false, allowWhatsApp: false, allowCashExpense: false });
+const profilePrintOptions = ref({ allowA4: false, allowWhatsApp: false, allowCashExpense: false, cashExpenseLimit: 0 });
 watch(() => shiftStore.profileName, async (profileName) => {
-	profilePrintOptions.value = { allowA4: false, allowWhatsApp: false, allowCashExpense: false };
+	profilePrintOptions.value = { allowA4: false, allowWhatsApp: false, allowCashExpense: false, cashExpenseLimit: 0 };
 	if (!profileName) return;
 	try {
 		const profile = await call("frappe.client.get", { doctype: "POS Profile", name: profileName });
@@ -1188,6 +1191,7 @@ watch(() => shiftStore.profileName, async (profileName) => {
 			allowA4: Boolean(Number(profile?.mu_allow_a4_print)) && Boolean(profile?.mu_a4_print_format),
 			allowWhatsApp: Boolean(Number(profile?.mu_allow_whatsapp_invoice)),
             allowCashExpense: Boolean(Number(profile?.mu_allow_cash_expense)) && Boolean(profile?.mu_cash_expense_account),
+            cashExpenseLimit: Number(profile?.mu_cash_expense_limit) || 0,
             voucherEnabled: Boolean(Number(profile?.mu_voucher_enabled)),
 		};
 	} catch (error) {
@@ -1198,6 +1202,35 @@ watch(() => shiftStore.profileName, async (profileName) => {
 // Cash Disbursement dialog
 const showCashDisbursement = ref(false);
 const showVoucherRedeem = ref(false);
+
+// Prepaid voucher balance for the currently selected customer (header badge + alert)
+const voucherBalance = ref(0);
+async function refreshVoucherBalance(announce = false) {
+	const customerId = cartStore.customer?.name || cartStore.customer;
+	if (!profilePrintOptions.value.voucherEnabled || !customerId) {
+		voucherBalance.value = 0;
+		return;
+	}
+	try {
+		const res = await call("pos_next.api.voucher.get_voucher_balance", {
+			customer: customerId,
+			pos_profile: shiftStore.profileName,
+		});
+		const bal = Number((res && (res.message ?? res))?.balance ?? 0);
+		voucherBalance.value = bal;
+		if (announce && bal > 0) {
+			showSuccess(__("هذا العميل لديه {0} قسيمة متبقية", [bal]));
+		}
+	} catch (e) {
+		voucherBalance.value = 0;
+	}
+}
+// Announce on customer change; refresh (silently) when the profile toggles vouchers.
+watch(() => cartStore.customer?.name || cartStore.customer, () => refreshVoucherBalance(true));
+watch(() => profilePrintOptions.value.voucherEnabled, () => refreshVoucherBalance(false));
+function onVoucherRedeemed(data) {
+	voucherBalance.value = Number(data?.balance ?? voucherBalance.value);
+}
 
 // Stock Lookup dialog (Products menu)
 const showStockLookup = ref(false);

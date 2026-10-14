@@ -33,13 +33,31 @@
           {{ __('لا يوجد رصيد قسائم لهذا العميل.') }}
         </p>
 
+        <!-- Quantity stepper -->
+        <div v-if="!loading && balance > 0" class="flex items-center justify-between p-3 rounded-lg border border-gray-200 bg-white">
+          <span class="text-sm text-gray-600">{{ __('عدد القسائم المراد استبدالها') }}</span>
+          <div class="flex items-center gap-3">
+            <button
+              class="w-9 h-9 rounded-lg border border-gray-300 text-xl font-bold text-gray-700 flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed"
+              :disabled="qty <= 1 || redeeming"
+              @click="qty = Math.max(1, qty - 1)"
+            >−</button>
+            <span class="w-10 text-center text-2xl font-bold text-gray-900">{{ qty }}</span>
+            <button
+              class="w-9 h-9 rounded-lg border border-gray-300 text-xl font-bold text-gray-700 flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed"
+              :disabled="qty >= balance || redeeming"
+              @click="qty = Math.min(balance, qty + 1)"
+            >+</button>
+          </div>
+        </div>
+
         <button
           class="w-full py-3 rounded-lg text-white font-semibold transition-colors"
           :class="canRedeem ? 'bg-blue-600 hover:bg-blue-700' : 'bg-gray-300 cursor-not-allowed'"
           :disabled="!canRedeem"
           @click="doRedeem"
         >
-          {{ redeeming ? __('جارٍ الاستبدال…') : __('تأكيد استبدال قسيمة واحدة') }}
+          {{ redeeming ? __('جارٍ الاستبدال…') : __('تأكيد استبدال {0} قسيمة', [qty]) }}
         </button>
         <p class="text-[11px] text-gray-400 text-center">
           {{ __('لا تصدر فاتورة ضريبية عند الاستبدال؛ الضريبة حُصّلت عند شراء الدفتر.') }}
@@ -64,6 +82,7 @@ const emit = defineEmits(["update:modelValue", "redeemed"])
 const { showSuccess, showError } = useToast()
 
 const balance = ref(0)
+const qty = ref(1)
 const loading = ref(false)
 const redeeming = ref(false)
 
@@ -77,7 +96,9 @@ const customerId = computed(() => {
   if (!c) return ""
   return typeof c === "string" ? c : (c.name || "")
 })
-const canRedeem = computed(() => !loading.value && !redeeming.value && balance.value > 0)
+const canRedeem = computed(
+  () => !loading.value && !redeeming.value && balance.value > 0 && qty.value >= 1 && qty.value <= balance.value
+)
 
 function close() {
   emit("update:modelValue", false)
@@ -92,6 +113,7 @@ async function loadBalance() {
       pos_profile: props.posProfile,
     })
     balance.value = Number((res && (res.message ?? res))?.balance ?? 0)
+    qty.value = balance.value > 0 ? 1 : 0
   } catch (e) {
     balance.value = 0
     showError(e?.message || __("تعذّر جلب رصيد القسائم"))
@@ -108,10 +130,13 @@ async function doRedeem() {
       pos_profile: props.posProfile,
       customer: customerId.value,
       pos_opening_shift: props.openingShift,
+      qty: qty.value,
     })
     const data = (res && (res.message ?? res)) || {}
+    const used = Number(data.quantity ?? qty.value)
     balance.value = Number(data.balance ?? 0)
-    showSuccess(__("تم استبدال قسيمة. الرصيد المتبقي: {0}", [balance.value]))
+    qty.value = balance.value > 0 ? 1 : 0
+    showSuccess(__("تم استبدال {0} قسيمة. الرصيد المتبقي: {1}", [used, balance.value]))
     emit("redeemed", data)
     if (balance.value <= 0) close()
   } catch (e) {
