@@ -52,6 +52,36 @@
 			</div>
 		</button>
 
+		<!-- Prepaid Voucher Redemption (استبدال قسيمة) -->
+		<button
+			v-if="showVoucher"
+			@click="handleMenuClick('voucher')"
+			class="w-12 h-12 rounded-lg flex items-center justify-center transition-all relative group text-indigo-600 hover:bg-indigo-50"
+			:title="__('استبدال قسيمة')"
+		>
+			<FeatherIcon name="gift" class="w-5 h-5" />
+			<span
+				v-if="voucherBalance > 0"
+				class="absolute -top-0.5 -end-0.5 min-w-[18px] h-[18px] px-1 rounded-full bg-indigo-600 text-white text-[10px] font-bold flex items-center justify-center shadow"
+			>{{ voucherBalance > 99 ? '99+' : voucherBalance }}</span>
+			<div class="absolute start-full ms-2 px-2 py-1 bg-gray-900 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-50">
+				{{ __('استبدال قسيمة') }}
+			</div>
+		</button>
+
+		<!-- Cash Disbursement (صرف نقدي) -->
+		<button
+			v-if="showCash"
+			@click="handleMenuClick('cash')"
+			class="w-12 h-12 rounded-lg flex items-center justify-center transition-all relative group text-amber-600 hover:bg-amber-50"
+			:title="__('Cash Disbursement')"
+		>
+			<FeatherIcon name="dollar-sign" class="w-5 h-5" />
+			<div class="absolute start-full ms-2 px-2 py-1 bg-gray-900 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-50">
+				{{ __('Cash Disbursement') }}
+			</div>
+		</button>
+
 		<!-- Spacer to push settings to bottom -->
 		<div class="flex-1"></div>
 
@@ -80,6 +110,12 @@
 <script setup>
 import { FeatherIcon } from "frappe-ui"
 import { ref } from "vue"
+
+defineProps({
+	showVoucher: { type: Boolean, default: false },
+	showCash: { type: Boolean, default: false },
+	voucherBalance: { type: Number, default: 0 },
+})
 
 const emit = defineEmits(["menu-clicked"])
 

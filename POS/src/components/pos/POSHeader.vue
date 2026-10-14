@@ -115,16 +115,16 @@
 						</span>
 					</button>
 
-					<!-- Prepaid Voucher Redemption (استبدال قسيمة) -->
+					<!-- Customer Orders (مشتريات العميل) -->
 					<button
-						v-if="showVoucherRedeem"
-						@click="$emit('voucher-redeem-click')"
-						class="order-6 p-1.5 sm:p-2 hover:bg-indigo-50 active:bg-indigo-100 rounded-lg transition-colors relative group touch-manipulation"
-						:title="__('استبدال قسيمة')"
-						:aria-label="__('استبدال قسيمة')"
+						v-if="showCustomerOrders"
+						@click="$emit('customer-orders-click')"
+						class="order-6 p-1.5 sm:p-2 hover:bg-purple-50 active:bg-purple-100 rounded-lg transition-colors relative group touch-manipulation"
+						:title="__('مشتريات العميل')"
+						:aria-label="__('مشتريات العميل')"
 					>
 						<svg
-							class="w-4 h-4 sm:w-5 sm:h-5 text-indigo-600"
+							class="w-4 h-4 sm:w-5 sm:h-5 text-purple-600"
 							fill="none"
 							stroke="currentColor"
 							viewBox="0 0 24 24"
@@ -133,35 +133,7 @@
 								stroke-linecap="round"
 								stroke-linejoin="round"
 								stroke-width="2"
-								d="M15 5v2m0 4v2m0 4v2M5 5a2 2 0 00-2 2v3a2 2 0 110 4v3a2 2 0 002 2h14a2 2 0 002-2v-3a2 2 0 110-4V7a2 2 0 00-2-2H5z"
-							/>
-						</svg>
-						<!-- Balance badge: shows the selected customer's remaining vouchers -->
-						<span
-							v-if="voucherBalance > 0"
-							class="absolute -top-1 -end-1 min-w-[18px] h-[18px] px-1 rounded-full bg-indigo-600 text-white text-[10px] font-bold flex items-center justify-center shadow"
-						>{{ voucherBalance > 99 ? '99+' : voucherBalance }}</span>
-					</button>
-
-					<!-- Cash Disbursement (صرف نقدي) — next to the sync icon -->
-					<button
-						v-if="showCashDisbursement"
-						@click="$emit('cash-disbursement-click')"
-						class="order-7 p-1.5 sm:p-2 hover:bg-amber-50 active:bg-amber-100 rounded-lg transition-colors relative group touch-manipulation"
-						:title="__('Cash Disbursement')"
-						:aria-label="__('Cash Disbursement')"
-					>
-						<svg
-							class="w-4 h-4 sm:w-5 sm:h-5 text-amber-600"
-							fill="none"
-							stroke="currentColor"
-							viewBox="0 0 24 24"
-						>
-							<path
-								stroke-linecap="round"
-								stroke-linejoin="round"
-								stroke-width="2"
-								d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z"
+								d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"
 							/>
 						</svg>
 					</button>
@@ -359,6 +331,7 @@ const emit = defineEmits([
 	"sync-click",
 	"cash-disbursement-click",
 	"voucher-redeem-click",
+	"customer-orders-click",
 	"printer-click",
 	"go-home",
 	"refresh-click",
@@ -459,6 +432,10 @@ const props = defineProps({
 	voucherBalance: {
 		type: Number,
 		default: 0,
+	},
+	showCustomerOrders: {
+		type: Boolean,
+		default: false,
 	},
 })
 

@@ -29,6 +29,8 @@
 				:show-cash-disbursement="profilePrintOptions.allowCashExpense && shiftStore.hasOpenShift && canAccessShiftActions"
 				:show-voucher-redeem="profilePrintOptions.voucherEnabled && shiftStore.hasOpenShift && canAccessShiftActions"
 				:voucher-balance="voucherBalance"
+				:show-customer-orders="shiftStore.hasOpenShift && canAccessShiftActions"
+				@customer-orders-click="showCustomerOrders = true"
 				@sync-click="handleSyncClick"
 				@cash-disbursement-click="handleOpenCashDisbursement"
 				@voucher-redeem-click="showVoucherRedeem = true"
@@ -246,7 +248,12 @@
 				style="max-height: calc(100vh - 60px - var(--header-height, 60px))"
 			>
 				<!-- Icon-Only Management Slider - Always Visible -->
-				<ManagementSlider @menu-clicked="handleManagementMenuClick" />
+				<ManagementSlider
+					:show-voucher="profilePrintOptions.voucherEnabled && shiftStore.hasOpenShift && canAccessShiftActions"
+					:show-cash="profilePrintOptions.allowCashExpense && shiftStore.hasOpenShift && canAccessShiftActions"
+					:voucher-balance="voucherBalance"
+					@menu-clicked="handleManagementMenuClick"
+				/>
 
 				<!-- Main Content Container -->
 				<div
@@ -731,6 +738,13 @@
 				@redeemed="onVoucherRedeemed"
 			/>
 
+			<!-- Customer Ordered Items -->
+			<CustomerOrdersDialog
+				v-model="showCustomerOrders"
+				:pos-profile="shiftStore.profileName || ''"
+				:customer="cartStore.customer"
+			/>
+
 			<!-- Clear Cart Confirmation Dialog -->
 			<Dialog
 				v-model="uiStore.showClearCartDialog"
@@ -1058,6 +1072,7 @@ import POSHeader from "@/components/pos/POSHeader.vue";
 import BatchSerialDialog from "@/components/sale/BatchSerialDialog.vue";
 import CouponDialog from "@/components/sale/CouponDialog.vue";
 import CreateCustomerDialog from "@/components/sale/CreateCustomerDialog.vue";
+import CustomerOrdersDialog from "@/components/customer/CustomerOrdersDialog.vue";
 import CustomerDialog from "@/components/sale/CustomerDialog.vue";
 import DraftInvoicesDialog from "@/components/sale/DraftInvoicesDialog.vue";
 import InvoiceCart from "@/components/sale/InvoiceCart.vue";
@@ -1205,6 +1220,7 @@ watch(() => shiftStore.profileName, async (profileName) => {
 // Cash Disbursement dialog
 const showCashDisbursement = ref(false);
 const showVoucherRedeem = ref(false);
+const showCustomerOrders = ref(false);
 
 // Prepaid voucher balance for the currently selected customer (header badge + alert)
 const voucherBalance = ref(0);
@@ -1221,8 +1237,10 @@ async function refreshVoucherBalance(announce = false) {
 		});
 		const bal = Number((res && (res.message ?? res))?.balance ?? 0);
 		voucherBalance.value = bal;
+		// When a customer who owns vouchers is selected, open the redeem dialog
+		// automatically (it has a Cancel button if they'd rather buy other items).
 		if (announce && bal > 0) {
-			showSuccess(__("هذا العميل لديه {0} قسيمة متبقية", [bal]));
+			showVoucherRedeem.value = true;
 		}
 	} catch (e) {
 		voucherBalance.value = 0;
@@ -2843,6 +2861,10 @@ function handleManagementMenuClick(menuItem) {
 	} else if (menuItem === "products") {
 		// Open Stock Lookup dialog in search mode
 		showStockLookup.value = true;
+	} else if (menuItem === "voucher") {
+		showVoucherRedeem.value = true;
+	} else if (menuItem === "cash") {
+		handleOpenCashDisbursement();
 	}
 }
 
