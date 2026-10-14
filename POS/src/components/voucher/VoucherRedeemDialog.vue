@@ -1,0 +1,125 @@
+<template>
+  <div
+    v-if="modelValue"
+    class="fixed inset-0 z-[320] bg-black/50 flex items-center justify-center p-4"
+    @click.self="close"
+  >
+    <div class="w-full max-w-md bg-white rounded-xl shadow-2xl p-5 space-y-4" dir="rtl">
+      <div class="flex items-center justify-between">
+        <h2 class="font-bold text-lg text-gray-900">{{ __('استبدال قسيمة') }}</h2>
+        <button class="text-gray-500 text-2xl leading-none" @click="close">×</button>
+      </div>
+
+      <!-- No customer selected -->
+      <div v-if="!customerName" class="p-4 rounded-lg bg-amber-50 border border-amber-200 text-sm text-amber-800">
+        {{ __('اختر العميل أولًا من شاشة البيع ثم أعد المحاولة.') }}
+      </div>
+
+      <template v-else>
+        <div class="p-3 rounded-lg bg-gray-50 border border-gray-200">
+          <div class="text-xs text-gray-500">{{ __('العميل') }}</div>
+          <div class="font-semibold text-gray-900">{{ customerName }}</div>
+        </div>
+
+        <div class="flex items-center justify-between p-4 rounded-lg border"
+             :class="balance > 0 ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'">
+          <span class="text-sm text-gray-600">{{ __('الرصيد المتبقي') }}</span>
+          <span class="text-3xl font-bold" :class="balance > 0 ? 'text-green-700' : 'text-red-700'">
+            {{ loading ? '…' : balance }}
+          </span>
+        </div>
+
+        <p v-if="!loading && balance <= 0" class="text-sm text-red-600 text-center">
+          {{ __('لا يوجد رصيد قسائم لهذا العميل.') }}
+        </p>
+
+        <button
+          class="w-full py-3 rounded-lg text-white font-semibold transition-colors"
+          :class="canRedeem ? 'bg-blue-600 hover:bg-blue-700' : 'bg-gray-300 cursor-not-allowed'"
+          :disabled="!canRedeem"
+          @click="doRedeem"
+        >
+          {{ redeeming ? __('جارٍ الاستبدال…') : __('تأكيد استبدال قسيمة واحدة') }}
+        </button>
+        <p class="text-[11px] text-gray-400 text-center">
+          {{ __('لا تصدر فاتورة ضريبية عند الاستبدال؛ الضريبة حُصّلت عند شراء الدفتر.') }}
+        </p>
+      </template>
+    </div>
+  </div>
+</template>
+
+<script setup>
+import { computed, ref, watch } from "vue"
+import { call } from "frappe-ui"
+import { useToast } from "@/composables/useToast"
+
+const props = defineProps({
+  modelValue: Boolean,
+  posProfile: String,
+  openingShift: String,
+  customer: [String, Object],
+})
+const emit = defineEmits(["update:modelValue", "redeemed"])
+const { showSuccess, showError } = useToast()
+
+const balance = ref(0)
+const loading = ref(false)
+const redeeming = ref(false)
+
+const customerName = computed(() => {
+  const c = props.customer
+  if (!c) return ""
+  return typeof c === "string" ? c : (c.customer_name || c.name || "")
+})
+const customerId = computed(() => {
+  const c = props.customer
+  if (!c) return ""
+  return typeof c === "string" ? c : (c.name || "")
+})
+const canRedeem = computed(() => !loading.value && !redeeming.value && balance.value > 0)
+
+function close() {
+  emit("update:modelValue", false)
+}
+
+async function loadBalance() {
+  if (!customerId.value) return
+  loading.value = true
+  try {
+    const res = await call("pos_next.api.voucher.get_voucher_balance", {
+      customer: customerId.value,
+      pos_profile: props.posProfile,
+    })
+    balance.value = Number((res && (res.message ?? res))?.balance ?? 0)
+  } catch (e) {
+    balance.value = 0
+    showError(e?.message || __("تعذّر جلب رصيد القسائم"))
+  } finally {
+    loading.value = false
+  }
+}
+
+async function doRedeem() {
+  if (!canRedeem.value) return
+  redeeming.value = true
+  try {
+    const res = await call("pos_next.api.voucher.redeem_voucher", {
+      pos_profile: props.posProfile,
+      customer: customerId.value,
+      pos_opening_shift: props.openingShift,
+    })
+    const data = (res && (res.message ?? res)) || {}
+    balance.value = Number(data.balance ?? 0)
+    showSuccess(__("تم استبدال قسيمة. الرصيد المتبقي: {0}", [balance.value]))
+    emit("redeemed", data)
+    if (balance.value <= 0) close()
+  } catch (e) {
+    showError(e?.message || __("تعذّر استبدال القسيمة"))
+  } finally {
+    redeeming.value = false
+  }
+}
+
+watch(() => props.modelValue, (v) => { if (v) loadBalance() })
+</script>

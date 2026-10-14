@@ -67,6 +67,15 @@ class POSClosingShift(Document):
                 title=_("Invalid Opening Entry"),
             )
         self.update_payment_reconciliation()
+        self.set_vouchers_redeemed()
+
+    def set_vouchers_redeemed(self):
+        """Count prepaid-voucher redemptions made during this shift."""
+        if self.meta.has_field("mu_vouchers_redeemed") and self.pos_opening_shift:
+            self.mu_vouchers_redeemed = frappe.db.count(
+                "Prepaid Voucher Transaction",
+                {"pos_opening_shift": self.pos_opening_shift, "transaction_type": "Redeem"},
+            )
 
     def update_payment_reconciliation(self):
         # update the difference values in Payment Reconciliation child table

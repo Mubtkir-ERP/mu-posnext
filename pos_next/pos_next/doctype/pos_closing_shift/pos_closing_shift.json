@@ -27,6 +27,7 @@
   "payment_reconciliation",
   "section_break_13",
   "grand_total",
+  "mu_vouchers_redeemed",
   "net_total",
   "total_quantity",
   "column_break_16",
@@ -196,6 +197,14 @@
   {
    "fieldname": "section_break_if3m1",
    "fieldtype": "Section Break"
+  },
+  {
+   "default": "0",
+   "fieldname": "mu_vouchers_redeemed",
+   "fieldtype": "Int",
+   "label": "القسائم المستبدلة",
+   "read_only": 1,
+   "description": "عدد القسائم المسبقة المستبدلة خلال هذه الوردية."
   }
  ],
  "is_submittable": 1,

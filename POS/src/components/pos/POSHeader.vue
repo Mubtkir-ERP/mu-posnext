@@ -115,6 +115,29 @@
 						</span>
 					</button>
 
+					<!-- Prepaid Voucher Redemption (استبدال قسيمة) -->
+					<button
+						v-if="showVoucherRedeem"
+						@click="$emit('voucher-redeem-click')"
+						class="p-1.5 sm:p-2 hover:bg-indigo-50 active:bg-indigo-100 rounded-lg transition-colors relative group touch-manipulation"
+						:title="__('استبدال قسيمة')"
+						:aria-label="__('استبدال قسيمة')"
+					>
+						<svg
+							class="w-4 h-4 sm:w-5 sm:h-5 text-indigo-600"
+							fill="none"
+							stroke="currentColor"
+							viewBox="0 0 24 24"
+						>
+							<path
+								stroke-linecap="round"
+								stroke-linejoin="round"
+								stroke-width="2"
+								d="M15 5v2m0 4v2m0 4v2M5 5a2 2 0 00-2 2v3a2 2 0 110 4v3a2 2 0 002 2h14a2 2 0 002-2v-3a2 2 0 110-4V7a2 2 0 00-2-2H5z"
+							/>
+						</svg>
+					</button>
+
 					<!-- Cash Disbursement (صرف نقدي) — next to the sync icon -->
 					<button
 						v-if="showCashDisbursement"
@@ -329,6 +352,7 @@ const appVersion = version
 const emit = defineEmits([
 	"sync-click",
 	"cash-disbursement-click",
+	"voucher-redeem-click",
 	"printer-click",
 	"go-home",
 	"refresh-click",
@@ -419,6 +443,10 @@ const props = defineProps({
 		default: false,
 	},
 	showCashDisbursement: {
+		type: Boolean,
+		default: false,
+	},
+	showVoucherRedeem: {
 		type: Boolean,
 		default: false,
 	},

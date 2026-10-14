@@ -27,8 +27,10 @@
 				:silent-print-enabled="posSettingsStore.silentPrint"
 				:qz-connected="qzConnected"
 				:show-cash-disbursement="profilePrintOptions.allowCashExpense && shiftStore.hasOpenShift && canAccessShiftActions"
+				:show-voucher-redeem="profilePrintOptions.voucherEnabled && shiftStore.hasOpenShift && canAccessShiftActions"
 				@sync-click="handleSyncClick"
 				@cash-disbursement-click="handleOpenCashDisbursement"
+				@voucher-redeem-click="showVoucherRedeem = true"
 				@printer-click="openHistoryDialog"
 				@go-home="goHome"
 				@refresh-click="handleRefresh"
@@ -715,6 +717,14 @@
 				@disbursed="onCashDisbursed"
 			/>
 
+			<!-- Prepaid Voucher Redemption (no tax invoice) -->
+			<VoucherRedeemDialog
+				v-model="showVoucherRedeem"
+				:pos-profile="shiftStore.profileName || ''"
+				:opening-shift="shiftStore.currentShift?.name || ''"
+				:customer="cartStore.customer"
+			/>
+
 			<!-- Clear Cart Confirmation Dialog -->
 			<Dialog
 				v-model="uiStore.showClearCartDialog"
@@ -1070,6 +1080,7 @@ import { printInvoice, printInvoiceByName, printWithSilentFallback } from "@/uti
 import { printKitchenTickets } from "@/utils/printKitchen";
 import { qzConnected, connect as qzConnect, disconnect as qzDisconnect } from "@/utils/qzTray";
 import CashDisbursementDialog from "@/components/cash/CashDisbursementDialog.vue";
+import VoucherRedeemDialog from "@/components/voucher/VoucherRedeemDialog.vue";
 
 import { Button, Dialog, createResource } from "frappe-ui";
 import { call } from "@/utils/apiWrapper";
@@ -1177,6 +1188,7 @@ watch(() => shiftStore.profileName, async (profileName) => {
 			allowA4: Boolean(Number(profile?.mu_allow_a4_print)) && Boolean(profile?.mu_a4_print_format),
 			allowWhatsApp: Boolean(Number(profile?.mu_allow_whatsapp_invoice)),
             allowCashExpense: Boolean(Number(profile?.mu_allow_cash_expense)) && Boolean(profile?.mu_cash_expense_account),
+            voucherEnabled: Boolean(Number(profile?.mu_voucher_enabled)),
 		};
 	} catch (error) {
 		log.warn("Cannot load branch print options", error);
@@ -1185,6 +1197,7 @@ watch(() => shiftStore.profileName, async (profileName) => {
 
 // Cash Disbursement dialog
 const showCashDisbursement = ref(false);
+const showVoucherRedeem = ref(false);
 
 // Stock Lookup dialog (Products menu)
 const showStockLookup = ref(false);

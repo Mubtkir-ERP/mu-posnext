@@ -87,7 +87,7 @@ _asset_version = get_build_version()
 # Fixtures
 # --------
 fixtures = [
-    {"dt": "Custom Field", "filters": [["name", "in", ['POS Profile-mu_allow_item_discount', 'POS Profile-mu_allow_additional_discount', 'POS Profile-mu_max_discount_percent', 'POS Profile-mu_use_percentage_discount', 'POS Profile-mu_posnext_print_section', 'POS Profile-mu_thermal_print_format', 'POS Profile-mu_print_col_right', 'POS Profile-mu_allow_a4_print', 'POS Profile-mu_a4_print_format', 'POS Profile-mu_posnext_communications_section', 'POS Profile-mu_allow_whatsapp_invoice', 'POS Profile-mu_posnext_cash_section', 'POS Profile-mu_allow_cash_expense', 'POS Profile-mu_cash_col_right', 'POS Profile-mu_cash_expense_limit', 'POS Profile-mu_cash_expense_account', 'POS Profile-mu_kitchen_section', 'POS Profile-mu_kitchen_printers', 'POS Profile-mu_customer_section', 'POS Profile-mu_cfg_col_a', 'POS Profile-mu_cfg_col_b']]]},
+    {"dt": "Custom Field", "filters": [["name", "in", ['POS Profile-mu_allow_item_discount', 'POS Profile-mu_allow_additional_discount', 'POS Profile-mu_max_discount_percent', 'POS Profile-mu_use_percentage_discount', 'POS Profile-mu_posnext_print_section', 'POS Profile-mu_thermal_print_format', 'POS Profile-mu_print_col_right', 'POS Profile-mu_allow_a4_print', 'POS Profile-mu_a4_print_format', 'POS Profile-mu_posnext_communications_section', 'POS Profile-mu_allow_whatsapp_invoice', 'POS Profile-mu_posnext_cash_section', 'POS Profile-mu_allow_cash_expense', 'POS Profile-mu_cash_col_right', 'POS Profile-mu_cash_expense_limit', 'POS Profile-mu_cash_expense_account', 'POS Profile-mu_kitchen_section', 'POS Profile-mu_kitchen_printers', 'POS Profile-mu_customer_section', 'POS Profile-mu_cfg_col_a', 'POS Profile-mu_cfg_col_b', 'POS Profile-mu_voucher_section', 'POS Profile-mu_voucher_enabled', 'POS Profile-mu_voucher_redeem_item', 'POS Profile-mu_voucher_col', 'POS Profile-mu_voucher_warehouse', 'POS Profile-mu_voucher_low_balance_threshold', 'Item-mu_is_voucher_item', 'Item-mu_voucher_units']]]},
     {"dt": "Property Setter", "filters": [["name", "in", ['POS Profile-print_format-hidden', 'POS Profile-letter_head-insert_after', 'POS Profile-tc_name-insert_after', 'POS Profile-section_break_14-label', 'POS Profile-section_break_14-collapsible', 'POS Profile-section_break_23-collapsible', 'POS Profile-customer_groups-insert_after', 'POS Profile-section_break_19-collapsible', 'POS Profile-accounting_dimensions_section-collapsible']]]},
 	{
 		"dt": "Print Format",
@@ -203,11 +203,13 @@ doc_events = {
 		"before_cancel": "pos_next.api.sales_invoice_hooks.before_cancel",
 		"on_submit": [
 			"pos_next.realtime_events.emit_stock_update_event",
-			"pos_next.api.wallet.process_loyalty_to_wallet"
+			"pos_next.api.wallet.process_loyalty_to_wallet",
+			"pos_next.api.voucher.on_sales_invoice_submit"
 		],
 		"on_cancel": [
 			"pos_next.realtime_events.emit_stock_update_event",
-			"pos_next.api.sales_invoice_hooks.on_cancel_coupon"
+			"pos_next.api.sales_invoice_hooks.on_cancel_coupon",
+			"pos_next.api.voucher.on_sales_invoice_cancel"
 		],
 		"after_insert": "pos_next.realtime_events.emit_invoice_created_event"
 	},
