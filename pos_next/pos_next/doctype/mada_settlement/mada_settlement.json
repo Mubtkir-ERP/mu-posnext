@@ -1,0 +1,191 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "MST-.#####",
+ "creation": "2026-10-15 15:20:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "settlement_date",
+  "terminal",
+  "column_break_3",
+  "settlement_no",
+  "amount",
+  "source_section",
+  "source",
+  "pos_closing_shift",
+  "column_break_src",
+  "pos_mada_total",
+  "unrecorded_amount",
+  "recon_section",
+  "status",
+  "bank_amount",
+  "column_break_recon",
+  "difference",
+  "bank_matched_on"
+ ],
+ "fields": [
+  {
+   "fieldname": "settlement_date",
+   "fieldtype": "Date",
+   "in_list_view": 1,
+   "label": "Settlement Date",
+   "reqd": 1,
+   "default": "Today"
+  },
+  {
+   "fieldname": "terminal",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Terminal",
+   "options": "Mada Terminal",
+   "reqd": 1
+  },
+  {
+   "fieldname": "column_break_3",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "settlement_no",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Settlement No",
+   "reqd": 1,
+   "description": "رقم الموازنة من ورقة الجهاز"
+  },
+  {
+   "fieldname": "amount",
+   "fieldtype": "Currency",
+   "in_list_view": 1,
+   "label": "Amount",
+   "reqd": 1
+  },
+  {
+   "fieldname": "source_section",
+   "fieldtype": "Section Break",
+   "label": "Source"
+  },
+  {
+   "default": "Standalone",
+   "fieldname": "source",
+   "fieldtype": "Select",
+   "label": "Source",
+   "options": "Standalone\nClosing Shift"
+  },
+  {
+   "depends_on": "eval:doc.source=='Closing Shift'",
+   "fieldname": "pos_closing_shift",
+   "fieldtype": "Link",
+   "label": "POS Closing Shift",
+   "options": "POS Closing Shift",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_src",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "pos_mada_total",
+   "fieldtype": "Currency",
+   "label": "Mada Total in POS",
+   "description": "إجمالي مدى المسجّل في النظام (للمقارنة الرقابية)"
+  },
+  {
+   "fieldname": "unrecorded_amount",
+   "fieldtype": "Currency",
+   "label": "Unrecorded Amount",
+   "read_only": 1,
+   "description": "الفرق = مبلغ الموازنة − إجمالي مدى في POS"
+  },
+  {
+   "fieldname": "recon_section",
+   "fieldtype": "Section Break",
+   "label": "Bank Reconciliation"
+  },
+  {
+   "default": "Pending",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Status",
+   "options": "Pending\nMatched\nNot in Bank\nAmount Mismatch",
+   "read_only": 1
+  },
+  {
+   "fieldname": "bank_amount",
+   "fieldtype": "Currency",
+   "label": "Bank Amount",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_recon",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "difference",
+   "fieldtype": "Currency",
+   "label": "Difference",
+   "read_only": 1
+  },
+  {
+   "fieldname": "bank_matched_on",
+   "fieldtype": "Date",
+   "label": "Matched On",
+   "read_only": 1
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-10-15 15:20:00.000000",
+ "modified_by": "Administrator",
+ "module": "POS Next",
+ "name": "Mada Settlement",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Accounts Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Accounts User",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}
