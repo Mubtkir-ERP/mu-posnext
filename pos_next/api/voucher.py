@@ -156,6 +156,21 @@ def _voucher_settings(pos_profile):
 		)
 	except Exception:
 		row["mu_voucher_daily_limit"] = 0
+	# WhatsApp toggle is also a newer custom field; read it defensively and
+	# default to ENABLED when the column is not there yet (migrate not run),
+	# preserving the previous always-send behaviour.
+	try:
+		val = frappe.db.get_value("POS Profile", pos_profile, "mu_voucher_whatsapp_enabled")
+		row["mu_voucher_whatsapp_enabled"] = 1 if val is None else cint(val)
+	except Exception:
+		row["mu_voucher_whatsapp_enabled"] = 1
+	# OTP gate for redemption (sent to the CUSTOMER). Newer field; read safely.
+	try:
+		row["mu_voucher_otp_enabled"] = cint(
+			frappe.db.get_value("POS Profile", pos_profile, "mu_voucher_otp_enabled")
+		)
+	except Exception:
+		row["mu_voucher_otp_enabled"] = 0
 	return row
 
 
@@ -194,13 +209,18 @@ def _make_material_issue(item_code, warehouse, company, customer, qty=1, cost_ce
 
 
 @frappe.whitelist()
-def redeem_voucher(pos_profile, customer, pos_opening_shift, qty=1):
+def redeem_voucher(pos_profile, customer, pos_opening_shift, qty=1, otp_code=None):
 	"""Redeem one or more voucher units for the current customer.
 
 	Decrements the balance by ``qty``, issues ``qty`` physical items from stock
 	in a single Stock Entry, records a transaction bound to the open shift, and
 	fires best-effort WhatsApp. No tax invoice is created — VAT was already
 	collected at voucher-book purchase.
+
+	When OTP protection is enabled for the profile, the first call (no
+	``otp_code``) sends a code to the CUSTOMER's WhatsApp and returns
+	``{"otp_required": True, ...}`` without redeeming; the second call carries
+	the code, which is verified before anything is decremented.
 	"""
 	qty = cint(qty) or 1
 	if qty <= 0:
@@ -214,9 +234,18 @@ def redeem_voucher(pos_profile, customer, pos_opening_shift, qty=1):
 	cfg = _voucher_settings(pos_profile)
 	if not cint(cfg.get("mu_voucher_enabled")):
 		frappe.throw(_("The voucher system is not enabled for this POS Profile."))
-	if not cfg.get("mu_voucher_redeem_item"):
+	redeem_item = cfg.get("mu_voucher_redeem_item")
+	if not redeem_item:
 		frappe.throw(_("Configure the redemption item in the POS Profile first."))
-	if not cfg.get("mu_voucher_warehouse"):
+
+	# The redemption item may be a SERVICE (e.g. "استبدال اسطوانة غاز") rather
+	# than an inventoried product. A Stock Entry (Material Issue) is only valid
+	# for a stock item, so we issue stock ONLY when the item is a stock item.
+	# For a service item we simply decrement the voucher balance — no stock
+	# movement, no warehouse needed. This is what caused the redemption to fail
+	# with an opaque "Internal Server Error" when the item was a service.
+	is_stock_item = cint(frappe.db.get_value("Item", redeem_item, "is_stock_item"))
+	if is_stock_item and not cfg.get("mu_voucher_warehouse"):
 		frappe.throw(_("Configure the redemption warehouse in the POS Profile first."))
 
 	company = cfg.get("company") or shift.company
@@ -249,6 +278,19 @@ def redeem_voucher(pos_profile, customer, pos_opening_shift, qty=1):
 				"تجاوز الحد اليومي للاستبدال ({0} قسيمة). المتبقي المسموح اليوم: {1}."
 			).format(daily_limit, remaining_today), frappe.ValidationError)
 
+	# WhatsApp OTP gate (sent to the customer). All checks above have passed, so
+	# we only send a code for a redemption that would otherwise succeed.
+	if cint(cfg.get("mu_voucher_otp_enabled")):
+		from pos_next.api import otp
+		from pos_next.api.whatsapp_hook import get_customer_mobile
+		otp_ref = f"{pos_opening_shift}:{customer}"
+		if not otp_code:
+			return otp.generate_and_send(
+				"voucher_redeem", otp_ref, get_customer_mobile(customer),
+				label=_("استبدال القسائم"), digits=5,
+			)
+		otp.verify("voucher_redeem", otp_ref, otp_code)
+
 	# Physical hand-over first; if stock fails, nothing is decremented.
 	# Any unexpected failure here (missing stock, account/cost-center config,
 	# a validation deep inside Stock Entry) would otherwise surface to the
@@ -256,10 +298,13 @@ def redeem_voucher(pos_profile, customer, pos_opening_shift, qty=1):
 	# traceback to the Error Log (viewable in the desk UI, no SSH) and re-throw
 	# the actual message so the POS toast shows what truly went wrong.
 	try:
-		stock_entry = _make_material_issue(
-			cfg.get("mu_voucher_redeem_item"), cfg.get("mu_voucher_warehouse"),
-			company, customer, qty=qty,
-		)
+		# Only move stock for an inventoried item; a service redemption skips it.
+		stock_entry = None
+		if is_stock_item:
+			stock_entry = _make_material_issue(
+				redeem_item, cfg.get("mu_voucher_warehouse"),
+				company, customer, qty=qty,
+			)
 
 		bal.total_redeemed = cint(bal.total_redeemed) + qty
 		bal.last_redeemed_on = now_datetime()
@@ -268,7 +313,8 @@ def redeem_voucher(pos_profile, customer, pos_opening_shift, qty=1):
 
 		_record_transaction(
 			customer, -qty, "Redeem", remaining, company=company, pos_profile=pos_profile,
-			pos_opening_shift=pos_opening_shift, reference_doctype="Stock Entry",
+			pos_opening_shift=pos_opening_shift,
+			reference_doctype="Stock Entry" if stock_entry else None,
 			reference_name=stock_entry, stock_entry=stock_entry,
 			remarks=_("Voucher redemption ({0})").format(qty),
 		)
@@ -282,20 +328,28 @@ def redeem_voucher(pos_profile, customer, pos_opening_shift, qty=1):
 			title=_("فشل الاستبدال"),
 		)
 
-	# --- WhatsApp (best-effort) ---
-	cust_name = frappe.db.get_value("Customer", customer, "customer_name") or customer
-	notify_customer(customer, _(
-		"عزيزنا {0}، تم استخدام {1} قسيمة. رصيدك المتبقي: {2} قسيمة."
-	).format(cust_name, qty, remaining))
-
-	threshold = cint(cfg.get("mu_voucher_low_balance_threshold"))
+	# --- WhatsApp + low-balance alert (best-effort) ---
+	# The redemption is already committed above; nothing in this tail may fail
+	# the request. A WhatsApp/contact-lookup error must NOT surface as an
+	# "Internal Server Error" after the balance was decremented and stock issued.
 	low_alert = False
-	if threshold > 0 and remaining <= threshold and not cint(bal.low_balance_notified):
-		notify_customer(customer, _(
-			"تنبيه: رصيد قسائمك قارب على الانتهاء ({0} متبقية). يسعدنا تجديد دفترك."
-		).format(remaining))
-		bal.db_set("low_balance_notified", 1)
-		low_alert = True
+	whatsapp_on = cint(cfg.get("mu_voucher_whatsapp_enabled"))
+	try:
+		if whatsapp_on:
+			cust_name = frappe.db.get_value("Customer", customer, "customer_name") or customer
+			notify_customer(customer, _(
+				"عزيزنا {0}، تم استخدام {1} قسيمة. رصيدك المتبقي: {2} قسيمة."
+			).format(cust_name, qty, remaining))
+
+			threshold = cint(cfg.get("mu_voucher_low_balance_threshold"))
+			if threshold > 0 and remaining <= threshold and not cint(bal.low_balance_notified):
+				notify_customer(customer, _(
+					"تنبيه: رصيد قسائمك قارب على الانتهاء ({0} متبقية). يسعدنا تجديد دفترك."
+				).format(remaining))
+				bal.db_set("low_balance_notified", 1)
+				low_alert = True
+	except Exception:
+		frappe.log_error(frappe.get_traceback(), "Voucher post-redemption notify failed")
 
 	return {"customer": customer, "balance": remaining, "quantity": qty,
 		"stock_entry": stock_entry, "low_balance_alert": low_alert}

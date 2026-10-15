@@ -172,10 +172,24 @@ def require_customer_read(customer, pos_profile=None):
 
     if pos_profile:
         profile = require_pos_profile_access(pos_profile)
-        profile_group = frappe.db.get_value("POS Profile", profile.name, "customer_group")
-        if profile_group:
+        # A POS Profile restricts customers through the `customer_groups` child
+        # table (doctype "POS Customer Group"), NOT a `customer_group` column —
+        # POS Profile has no such column, so the previous query raised
+        # OperationalError(1054, "Unknown column 'customer_group'") and broke
+        # customer save, wallet lookup and voucher/customer reads with a 500.
+        # Read the child-table restriction defensively; if it cannot be read,
+        # do not block (the restriction is optional, a crash is not acceptable).
+        try:
+            allowed_groups = frappe.get_all(
+                "POS Customer Group",
+                filters={"parent": profile.name, "parenttype": "POS Profile"},
+                pluck="customer_group",
+            )
+        except Exception:
+            allowed_groups = []
+        if allowed_groups:
             customer_group = frappe.db.get_value("Customer", customer, "customer_group")
-            if customer_group != profile_group:
+            if customer_group not in allowed_groups:
                 frappe.throw(
                     _("This customer is outside the customer group allowed for this POS Profile."),
                     frappe.PermissionError,

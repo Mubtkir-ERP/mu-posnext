@@ -51,18 +51,46 @@ def send_whatsapp(mobile_no, message):
 		return False
 
 
+def get_customer_mobile(customer):
+	"""Return a customer's best-known mobile number, or '' if none.
+
+	`mobile_no` on Customer is often empty; the number lives on the linked
+	primary Contact, reached through the Dynamic Link child table.
+	`link_doctype`/`link_name` are columns of `Dynamic Link`, NOT of `Contact`,
+	so filtering Contact by them raised
+	OperationalError(1054, "Unknown column 'link_doctype'").
+	"""
+	if not customer:
+		return ""
+	try:
+		mobile = frappe.db.get_value("Customer", customer, "mobile_no")
+		if not mobile:
+			contact_name = frappe.db.get_value(
+				"Dynamic Link",
+				{"link_doctype": "Customer", "link_name": customer, "parenttype": "Contact"},
+				"parent",
+			)
+			if contact_name:
+				mobile = frappe.db.get_value("Contact", contact_name, "mobile_no")
+		return mobile or ""
+	except Exception:
+		frappe.log_error(frappe.get_traceback(), "get_customer_mobile failed")
+		return ""
+
+
 def notify_customer(customer, message):
-	"""Resolve a customer's mobile and send a WhatsApp message (best-effort)."""
+	"""Resolve a customer's mobile and send a WhatsApp message (best-effort).
+
+	Never raises into the caller — the redemption/voucher flow must not fail
+	because of WhatsApp or a contact lookup.
+	"""
 	if not customer or not message:
 		return False
-	mobile = frappe.db.get_value("Customer", customer, "mobile_no")
-	if not mobile:
-		contact = frappe.db.get_value(
-			"Contact",
-			{"link_doctype": "Customer", "link_name": customer},
-			"mobile_no",
-		)
-		mobile = contact
-	if not mobile:
+	try:
+		mobile = get_customer_mobile(customer)
+		if not mobile:
+			return False
+		return send_whatsapp(mobile, message)
+	except Exception:
+		frappe.log_error(frappe.get_traceback(), "notify_customer failed")
 		return False
-	return send_whatsapp(mobile, message)

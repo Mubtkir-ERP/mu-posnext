@@ -225,6 +225,24 @@ def get_available_cash(shift_name):
     return flt(_available_cash(shift.name, shift.pos_profile, shift.company))
 
 
+def _cash_otp_settings(pos_profile):
+    """Return the cash-disbursement OTP config from the POS Profile.
+
+    Newer custom fields; read each defensively so a site whose columns have not
+    been migrated yet simply behaves as "OTP off" instead of raising.
+    """
+    cfg = frappe._dict({"enabled": 0, "mobile": None})
+    try:
+        cfg["enabled"] = cint(frappe.db.get_value("POS Profile", pos_profile, "mu_cash_otp_enabled"))
+    except Exception:
+        cfg["enabled"] = 0
+    try:
+        cfg["mobile"] = frappe.db.get_value("POS Profile", pos_profile, "mu_cash_otp_mobile")
+    except Exception:
+        cfg["mobile"] = None
+    return cfg
+
+
 def _remark(shift_name, reason):
     return f"{_MARKER}|{shift_name}|{reason}"
 
@@ -253,8 +271,16 @@ def create_cash_disbursement(
     company=None,
     disbursement_account=None,
     request_id=None,
+    otp_code=None,
 ):
-    """Create a Journal Entry recording cash paid out from the active POS shift."""
+    """Create a Journal Entry recording cash paid out from the active POS shift.
+
+    When OTP protection is enabled for the profile, the first call (no
+    ``otp_code``) sends a code to the configured SUPERVISOR/branch-manager
+    WhatsApp number and returns ``{"otp_required": True, ...}`` without paying
+    out; the second call carries the code, which is verified before the Journal
+    Entry is created.
+    """
     amount = flt(amount)
     if amount <= 0:
         frappe.throw(_("Disbursement amount must be greater than zero."))
@@ -358,6 +384,21 @@ def create_cash_disbursement(
             frappe.PermissionError,
         )
     debit_account = configured_debit_account
+
+    # WhatsApp OTP gate (sent to the SUPERVISOR / branch-manager number from the
+    # POS Profile). Everything above has passed, so a code is only sent for a
+    # disbursement that would otherwise go through. First call (no code) sends
+    # and returns otp_required; second call carries the code and is verified.
+    otp_cfg = _cash_otp_settings(pos_profile)
+    if cint(otp_cfg.get("enabled")):
+        from pos_next.api import otp
+        otp_ref = cstr(shift_name)
+        if not otp_code:
+            return otp.generate_and_send(
+                "cash_disbursement", otp_ref, otp_cfg.get("mobile"),
+                label=_("الصرف النقدي"), digits=4,
+            )
+        otp.verify("cash_disbursement", otp_ref, otp_code)
 
     # Resolve cost center from Company. ERPNext will enforce any additional
     # accounting-dimension requirements during Journal Entry validation.

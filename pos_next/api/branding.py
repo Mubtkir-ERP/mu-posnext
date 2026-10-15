@@ -151,20 +151,17 @@ def log_client_event(event_type=None, details=None):
 
 
 def log_tampering_attempt(doc, details):
-	"""Internal function to log tampering attempts"""
-	try:
-		# Increment tampering counter
-		current_attempts = frappe.db.get_value("BrainWise Branding", doc.name, "tampering_attempts") or 0
-		frappe.db.set_value("BrainWise Branding", doc.name, "tampering_attempts", current_attempts + 1)
-		frappe.db.commit()
+	"""Internal function to log tampering attempts.
 
-		# Create error log
-		frappe.log_error(
-			title="BrainWise Branding - Tampering Detected",
-			message=json.dumps(details, indent=2, default=str)
-		)
-	except Exception as e:
-		frappe.log_error(f"Error logging tampering: {str(e)}", "BrainWise Branding")
+	Disabled: this is a MUBTKIR-owned white-label of POSNext, so the custom
+	"Powered by Mubtkir" footer is legitimate, not tampering. The original
+	anti-tamper flagged every page load as a mismatch and then crashed while
+	writing the Error Log (``current_attempts`` came back as text, so
+	``text + 1`` raised "can only concatenate str (not \"int\") to str"),
+	which spammed the Error Log. We no-op it. ``cint`` would also fix the
+	crash, but there is nothing to log in the first place.
+	"""
+	return
 
 
 @frappe.whitelist(allow_guest=False)

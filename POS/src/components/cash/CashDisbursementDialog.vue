@@ -115,6 +115,30 @@
 							</p>
 						</div>
 
+						<!-- OTP verification step -->
+						<div v-if="otpRequired" class="p-3 rounded-xl border border-blue-200 bg-blue-50 flex flex-col gap-2">
+							<p class="text-sm text-blue-800 text-center">
+								{{ __("أُرسل رمز تحقق إلى واتساب المشرف") }}
+								<span v-if="otpMasked" class="font-bold" dir="ltr">{{ otpMasked }}</span>
+							</p>
+							<input
+								v-model="otpCode"
+								type="text"
+								inputmode="numeric"
+								:maxlength="otpDigits"
+								:placeholder="__('أدخل الرمز المكوّن من {0} أرقام', [otpDigits])"
+								class="w-full text-center text-2xl font-bold tracking-[0.4em] py-3 rounded-xl border border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-400"
+								@keyup.enter="submitDisbursement"
+							/>
+							<button
+								class="w-full text-sm font-semibold text-blue-600 hover:text-blue-800 disabled:opacity-50 disabled:cursor-not-allowed"
+								:disabled="resending || submitting"
+								@click="resendOtp"
+							>
+								{{ resending ? __('جارٍ إعادة الإرسال…') : __('إعادة إرسال الرمز') }}
+							</button>
+						</div>
+
 						<!-- Disbursements History -->
 						<div v-if="history.length > 0" class="flex flex-col gap-2">
 							<div class="flex items-center justify-between">
@@ -165,8 +189,8 @@
 						</button>
 						<button
 							class="flex-1 py-3 rounded-xl text-sm font-bold text-white transition-all flex items-center justify-center gap-2 shadow-sm"
-							:class="(submitting || blockSubmit) ? 'bg-amber-300 cursor-not-allowed' : 'bg-amber-500 hover:bg-amber-600 active:scale-95'"
-							:disabled="submitting || blockSubmit"
+							:class="confirmDisabled ? 'bg-amber-300 cursor-not-allowed' : 'bg-amber-500 hover:bg-amber-600 active:scale-95'"
+							:disabled="confirmDisabled"
 							@click="submitDisbursement"
 						>
 							<svg v-if="!submitting" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -177,7 +201,7 @@
 								<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
 								<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
 							</svg>
-							{{ submitting ? __("Processing...") : __("Confirm Disbursement") }}
+							{{ submitting ? __("Processing...") : (otpRequired ? __("تأكيد الرمز والصرف") : __("Confirm Disbursement")) }}
 						</button>
 					</div>
 				</div>
@@ -215,6 +239,14 @@ const history = ref([])
 const availableCash = ref(0)
 const loadingCash = ref(false)
 
+// OTP step (enabled per POS Profile): a code is sent to the supervisor's
+// WhatsApp and must be entered before the disbursement is recorded.
+const otpRequired = ref(false)
+const otpCode = ref("")
+const otpMasked = ref("")
+const otpDigits = ref(4)
+const resending = ref(false)
+
 const form = reactive({
 	amount: null,
 	reason: "",
@@ -246,9 +278,56 @@ const overAvailable = computed(() =>
 // Any instant reason the confirm button must stay disabled (server re-checks).
 const blockSubmit = computed(() => overLimit.value || noCash.value || overAvailable.value)
 
+// Confirm button state across both phases (amount entry vs OTP entry).
+const confirmDisabled = computed(() => {
+	if (submitting.value) return true
+	if (otpRequired.value) return !otpCode.value
+	return blockSubmit.value
+})
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 function formatCurrency(amount) {
 	return `${Number(amount || 0).toFixed(2)} ${props.currency}`
+}
+
+async function resendOtp() {
+	// Re-request a fresh code: call with no otp_code so the server regenerates
+	// and resends (attempts reset).
+	otpCode.value = ""
+	resending.value = true
+	try {
+		const result = await call(
+			"pos_next.api.cash_disbursement.create_cash_disbursement",
+			{
+				shift_name: props.shiftName,
+				amount: form.amount,
+				reason: form.reason.trim(),
+				pos_profile: props.posProfile,
+				company: props.company,
+			}
+		)
+		const data = result?.message || result
+		if (data?.otp_required) {
+			otpMasked.value = data.masked_mobile || otpMasked.value
+			if (data.digits) otpDigits.value = Number(data.digits)
+			window.frappe?.show_alert?.({ message: __("تم إرسال رمز جديد إلى واتساب المشرف"), indicator: "blue" })
+		}
+	} catch (err) {
+		window.frappe?.msgprint?.({
+			title: __("Error"),
+			message: err?.messages?.[0] || err?.message || __("تعذّر إعادة إرسال الرمز"),
+			indicator: "red",
+		})
+	} finally {
+		resending.value = false
+	}
+}
+
+function resetOtp() {
+	otpRequired.value = false
+	otpCode.value = ""
+	otpMasked.value = ""
+	otpDigits.value = 4
 }
 
 function resetForm() {
@@ -256,6 +335,7 @@ function resetForm() {
 	form.reason = ""
 	errors.amount = ""
 	errors.reason = ""
+	resetOtp()
 }
 
 function validate() {
@@ -317,7 +397,13 @@ async function loadAvailableCash() {
 }
 
 async function submitDisbursement() {
-	if (!validate()) return
+	// In OTP mode the button submits the code; the amount/reason were already
+	// validated when the code was requested.
+	if (!otpRequired.value && !validate()) return
+	if (otpRequired.value && !otpCode.value) {
+		window.frappe?.show_alert?.({ message: __("أدخل رمز التحقق المرسل عبر واتساب"), indicator: "orange" })
+		return
+	}
 
 	submitting.value = true
 	const request = getPersistentRequestId(
@@ -326,19 +412,34 @@ async function submitDisbursement() {
 		{ amount: Number(form.amount || 0), reason: form.reason.trim() },
 	)
 	try {
+		const args = {
+			shift_name: props.shiftName,
+			amount: form.amount,
+			reason: form.reason.trim(),
+			pos_profile: props.posProfile,
+			company: props.company,
+			request_id: request.requestId,
+		}
+		if (otpCode.value) args.otp_code = otpCode.value
 		const result = await call(
 			"pos_next.api.cash_disbursement.create_cash_disbursement",
-			{
-				shift_name: props.shiftName,
-				amount: form.amount,
-				reason: form.reason.trim(),
-				pos_profile: props.posProfile,
-				company: props.company,
-				request_id: request.requestId,
-			}
+			args
 		)
-		clearPersistentRequestId(request.key, request.requestId)
 		const data = result?.message || result
+
+		// First call returned a request to verify an OTP instead of paying out.
+		if (data?.otp_required) {
+			otpRequired.value = true
+			otpMasked.value = data.masked_mobile || ""
+			if (data.digits) otpDigits.value = Number(data.digits)
+			window.frappe?.show_alert?.({
+				message: `${__("تم إرسال رمز التحقق إلى واتساب المشرف")} ${otpMasked.value}`,
+				indicator: "blue",
+			})
+			return
+		}
+
+		clearPersistentRequestId(request.key, request.requestId)
 		log.info("Disbursement created:", data?.name)
 
 		// Add to history list

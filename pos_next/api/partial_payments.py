@@ -613,7 +613,27 @@ def get_unpaid_invoices(pos_profile: str, limit: int = DEFAULT_INVOICE_LIMIT, in
     elif limit > MAX_INVOICE_LIMIT:
         limit = MAX_INVOICE_LIMIT
 
-    # Get all unpaid invoices (any invoice with outstanding > 0)
+    # Get all unpaid invoices (any invoice with outstanding > 0).
+    # `pos_status` is an optional custom field; only request it when it actually
+    # exists on Sales Invoice, otherwise the query fails with
+    # OperationalError(1054, "Unknown column 'pos_status'") on sites where the
+    # field/column has not been created.
+    invoice_fields = [
+        "name",
+        "customer",
+        "customer_name",
+        "posting_date",
+        "posting_time",
+        "grand_total",
+        "paid_amount",
+        "outstanding_amount",
+        "status",
+        "creation",
+        "currency",
+    ]
+    if frappe.get_meta("Sales Invoice").has_field("pos_status"):
+        invoice_fields.append("pos_status")
+
     invoices = frappe.get_all(
         "Sales Invoice",
         filters={
@@ -623,20 +643,7 @@ def get_unpaid_invoices(pos_profile: str, limit: int = DEFAULT_INVOICE_LIMIT, in
             "outstanding_amount": [">", 0],
             "is_return": 0,
         },
-        fields=[
-            "name",
-            "customer",
-            "customer_name",
-            "posting_date",
-            "posting_time",
-            "grand_total",
-            "paid_amount",
-            "outstanding_amount",
-            "status",
-            "creation",
-            "currency",
-            "pos_status",
-        ],
+        fields=invoice_fields,
         order_by="posting_date desc, posting_time desc",
         limit=limit,
     )
