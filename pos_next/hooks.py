@@ -221,6 +221,9 @@ doc_events = {
 	},
 	"Promotional Scheme": {
 		"on_update": "pos_next.overrides.pricing_rule.sync_pos_only_to_pricing_rules"
+	},
+	"POS Closing Shift": {
+		"on_submit": "pos_next.api.shift_whatsapp.notify_shift_close"
 	}
 }
 
