@@ -24,7 +24,7 @@
 							</div>
 							<div>
 								<h2 class="text-base font-bold text-gray-900">{{ __("Cash Disbursement") }}</h2>
-								<p class="text-xs text-gray-400 mt-0.5">{{ __("صرف نقدي من الدرج") }}</p>
+								<p class="text-xs text-gray-400 mt-0.5">{{ __("Cash paid out from the drawer") }}</p>
 							</div>
 						</div>
 						<button
@@ -70,11 +70,11 @@
 							</p>
 							<p v-else-if="overLimit" class="text-xs text-red-600 font-semibold flex items-center gap-1">
 								<svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clip-rule="evenodd"/></svg>
-								{{ __("المبلغ يتجاوز الحد المسموح للصرف ({0})", [formatCurrency(cashLimit)]) }}
+								{{ __("Amount exceeds the allowed disbursement limit ({0})", [formatCurrency(cashLimit)]) }}
 							</p>
 							<p v-else-if="overAvailable && !noCash" class="text-xs text-red-600 font-semibold flex items-center gap-1">
 								<svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clip-rule="evenodd"/></svg>
-								{{ __("المبلغ أكبر من النقد المتاح في الدرج ({0})", [formatCurrency(availableCash)]) }}
+								{{ __("Amount exceeds the cash available in the drawer ({0})", [formatCurrency(availableCash)]) }}
 							</p>
 
 							<!-- Available cash in drawer -->
@@ -84,14 +84,14 @@
 							>
 								<span class="flex items-center gap-1.5">
 									<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z"/></svg>
-									{{ __("النقد المتاح في الدرج") }}
+									{{ __("Cash available in drawer") }}
 								</span>
 								<span v-if="loadingCash" class="w-3.5 h-3.5 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin"/>
 								<span v-else>{{ formatCurrency(availableCash) }}</span>
 							</div>
 							<p v-if="noCash && !loadingCash" class="text-xs text-red-600 font-semibold flex items-center gap-1">
 								<svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clip-rule="evenodd"/></svg>
-								{{ __("لا يوجد نقد في الدرج حاليًا — لا يمكن تنفيذ الصرف.") }}
+								{{ __("No cash in the drawer — disbursement is not allowed.") }}
 							</p>
 						</div>
 
@@ -118,7 +118,7 @@
 						<!-- OTP verification step -->
 						<div v-if="otpRequired" class="p-3 rounded-xl border border-blue-200 bg-blue-50 flex flex-col gap-2">
 							<p class="text-sm text-blue-800 text-center">
-								{{ __("أُرسل رمز تحقق إلى واتساب المشرف") }}
+								{{ __("A verification code was sent to the supervisor WhatsApp") }}
 								<span v-if="otpMasked" class="font-bold" dir="ltr">{{ otpMasked }}</span>
 							</p>
 							<input
@@ -126,16 +126,20 @@
 								type="text"
 								inputmode="numeric"
 								:maxlength="otpDigits"
-								:placeholder="__('أدخل الرمز المكوّن من {0} أرقام', [otpDigits])"
+								:placeholder="__('Enter the {0}-digit code', [otpDigits])"
 								class="w-full text-center text-2xl font-bold tracking-[0.4em] py-3 rounded-xl border border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-400"
 								@keyup.enter="submitDisbursement"
 							/>
+							<p class="text-center text-xs" :class="otpSeconds > 0 ? 'text-blue-600' : 'text-red-600'">
+								<span v-if="otpSeconds > 0">{{ __("Code expires in {0}", [otpCountdownText]) }}</span>
+								<span v-else>{{ __("Code expired — request a new one.") }}</span>
+							</p>
 							<button
 								class="w-full text-sm font-semibold text-blue-600 hover:text-blue-800 disabled:opacity-50 disabled:cursor-not-allowed"
 								:disabled="resending || submitting"
 								@click="resendOtp"
 							>
-								{{ resending ? __('جارٍ إعادة الإرسال…') : __('إعادة إرسال الرمز') }}
+								{{ resending ? __('Resending…') : __('Resend code') }}
 							</button>
 						</div>
 
@@ -201,7 +205,7 @@
 								<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
 								<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
 							</svg>
-							{{ submitting ? __("Processing...") : (otpRequired ? __("تأكيد الرمز والصرف") : __("Confirm Disbursement")) }}
+							{{ submitting ? __("Processing...") : (otpRequired ? __("Confirm code & disburse") : __("Confirm Disbursement")) }}
 						</button>
 					</div>
 				</div>
@@ -211,7 +215,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, watch, nextTick } from "vue"
+import { ref, reactive, computed, watch, nextTick, onBeforeUnmount } from "vue"
 import { call } from "@/utils/apiWrapper"
 import { logger } from "@/utils/logger"
 import { getPersistentRequestId, clearPersistentRequestId } from "@/utils/idempotency"
@@ -246,6 +250,25 @@ const otpCode = ref("")
 const otpMasked = ref("")
 const otpDigits = ref(4)
 const resending = ref(false)
+
+// Countdown for the 2-minute OTP validity window.
+const otpSeconds = ref(0)
+let otpTimer = null
+const otpCountdownText = computed(() => {
+	const s = Math.max(0, otpSeconds.value)
+	return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`
+})
+function startOtpCountdown() {
+	stopOtpCountdown()
+	otpSeconds.value = 120
+	otpTimer = setInterval(() => {
+		otpSeconds.value = Math.max(0, otpSeconds.value - 1)
+		if (otpSeconds.value <= 0) stopOtpCountdown()
+	}, 1000)
+}
+function stopOtpCountdown() {
+	if (otpTimer) { clearInterval(otpTimer); otpTimer = null }
+}
 
 const form = reactive({
 	amount: null,
@@ -310,12 +333,13 @@ async function resendOtp() {
 		if (data?.otp_required) {
 			otpMasked.value = data.masked_mobile || otpMasked.value
 			if (data.digits) otpDigits.value = Number(data.digits)
-			window.frappe?.show_alert?.({ message: __("تم إرسال رمز جديد إلى واتساب المشرف"), indicator: "blue" })
+			startOtpCountdown()
+			window.frappe?.show_alert?.({ message: __("A new code was sent to the supervisor WhatsApp"), indicator: "blue" })
 		}
 	} catch (err) {
 		window.frappe?.msgprint?.({
 			title: __("Error"),
-			message: err?.messages?.[0] || err?.message || __("تعذّر إعادة إرسال الرمز"),
+			message: err?.messages?.[0] || err?.message || __("Could not resend the code"),
 			indicator: "red",
 		})
 	} finally {
@@ -328,7 +352,10 @@ function resetOtp() {
 	otpCode.value = ""
 	otpMasked.value = ""
 	otpDigits.value = 4
+	stopOtpCountdown()
+	otpSeconds.value = 0
 }
+onBeforeUnmount(stopOtpCountdown)
 
 function resetForm() {
 	form.amount = null
@@ -347,13 +374,13 @@ function validate() {
 		errors.amount = __("Please enter a valid amount greater than zero.")
 		valid = false
 	} else if (Number(props.cashLimit) > 0 && Number(form.amount) > Number(props.cashLimit)) {
-		errors.amount = __("المبلغ يتجاوز الحد المسموح للصرف ({0})", [formatCurrency(props.cashLimit)])
+		errors.amount = __("Amount exceeds the allowed disbursement limit ({0})", [formatCurrency(props.cashLimit)])
 		valid = false
 	} else if (Number(availableCash.value) <= 0) {
-		errors.amount = __("لا يوجد نقد في الدرج حاليًا — لا يمكن تنفيذ الصرف.")
+		errors.amount = __("No cash in the drawer — disbursement is not allowed.")
 		valid = false
 	} else if (Number(form.amount) > Number(availableCash.value)) {
-		errors.amount = __("المبلغ أكبر من النقد المتاح في الدرج ({0})", [formatCurrency(availableCash.value)])
+		errors.amount = __("Amount exceeds the cash available in the drawer ({0})", [formatCurrency(availableCash.value)])
 		valid = false
 	}
 	if (!form.reason || !form.reason.trim()) {
@@ -401,7 +428,7 @@ async function submitDisbursement() {
 	// validated when the code was requested.
 	if (!otpRequired.value && !validate()) return
 	if (otpRequired.value && !otpCode.value) {
-		window.frappe?.show_alert?.({ message: __("أدخل رمز التحقق المرسل عبر واتساب"), indicator: "orange" })
+		window.frappe?.show_alert?.({ message: __("Enter the verification code sent via WhatsApp"), indicator: "orange" })
 		return
 	}
 
@@ -432,8 +459,9 @@ async function submitDisbursement() {
 			otpRequired.value = true
 			otpMasked.value = data.masked_mobile || ""
 			if (data.digits) otpDigits.value = Number(data.digits)
+			startOtpCountdown()
 			window.frappe?.show_alert?.({
-				message: `${__("تم إرسال رمز التحقق إلى واتساب المشرف")} ${otpMasked.value}`,
+				message: `${__("A verification code was sent to the supervisor WhatsApp")} ${otpMasked.value}`,
 				indicator: "blue",
 			})
 			return

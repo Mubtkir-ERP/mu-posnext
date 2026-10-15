@@ -1248,6 +1248,12 @@ watch(() => cartStore.customer?.name || cartStore.customer, () => refreshVoucher
 watch(() => profilePrintOptions.value.voucherEnabled, () => refreshVoucherBalance(false));
 function onVoucherRedeemed(data) {
 	voucherBalance.value = Number(data?.balance ?? voucherBalance.value);
+	// After a successful redemption, return the POS to the default customer.
+	try {
+		cartStore.setDefaultCustomer?.();
+	} catch (e) {
+		/* non-fatal */
+	}
 }
 
 // Stock Lookup dialog (Products menu)

@@ -467,6 +467,15 @@ def create_wallet_on_customer_insert(doc, method=None):
 	if not pos_settings or not cint(pos_settings.get("auto_create_wallet")):
 		return
 
+	# Only proceed when a valid Receivable wallet account is actually configured.
+	# _get_or_create_wallet uses frappe.throw for a missing account, and
+	# frappe.throw appends its message to the request's message log BEFORE
+	# raising — so even though we catch the exception here, the message would
+	# still pop up on the client after a perfectly normal customer creation.
+	# Pre-checking avoids calling the throwing path at all, so no message leaks.
+	if not _validate_wallet_account(pos_settings.get("wallet_account"), company):
+		return
+
 	try:
 		_get_or_create_wallet(doc.name, company, pos_settings=pos_settings, force_create=True)
 	except Exception:
@@ -665,12 +674,20 @@ def get_wallet_info(customer, company, pos_profile=None):
 		result["wallet_exists"] = True
 		result["wallet_name"] = wallet.name
 		result["wallet_balance"] = _get_customer_wallet_balance(customer, company)
-	elif result["auto_create"]:
-		new_wallet = _get_or_create_wallet(customer, company, pos_settings=pos_settings, force_create=True)
-		if new_wallet:
-			result["wallet_exists"] = True
-			result["wallet_name"] = new_wallet.name if hasattr(new_wallet, "name") else new_wallet.get("name")
-			result["wallet_balance"] = 0.0
+	elif result["auto_create"] and _validate_wallet_account(result["wallet_account"], company):
+		# Only attempt to auto-create a wallet when a valid Receivable wallet
+		# account is actually configured. Otherwise _get_or_create_wallet would
+		# raise "configure a valid Receivable wallet account", and because this
+		# info call runs when simply opening/adding a customer, that error would
+		# block the whole customer screen. Fail soft: report "no wallet yet".
+		try:
+			new_wallet = _get_or_create_wallet(customer, company, pos_settings=pos_settings, force_create=True)
+			if new_wallet:
+				result["wallet_exists"] = True
+				result["wallet_name"] = new_wallet.name if hasattr(new_wallet, "name") else new_wallet.get("name")
+				result["wallet_balance"] = 0.0
+		except Exception:
+			frappe.log_error(frappe.get_traceback(), "get_wallet_info auto-create skipped")
 
 	return result
 

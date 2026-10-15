@@ -240,6 +240,10 @@ def _cash_otp_settings(pos_profile):
         cfg["mobile"] = frappe.db.get_value("POS Profile", pos_profile, "mu_cash_otp_mobile")
     except Exception:
         cfg["mobile"] = None
+    try:
+        cfg["templates"] = frappe.db.get_value("POS Profile", pos_profile, "mu_otp_message_templates")
+    except Exception:
+        cfg["templates"] = None
     return cfg
 
 
@@ -330,7 +334,7 @@ def create_cash_disbursement(
             limit=1,
         )
         if existing:
-            _, existing_reason = _parse_remark(existing[0].user_remark)
+            _ignored_shift, existing_reason = _parse_remark(existing[0].user_remark)
             return {
                 "name": existing[0].name,
                 "amount": flt(amount),
@@ -397,6 +401,7 @@ def create_cash_disbursement(
             return otp.generate_and_send(
                 "cash_disbursement", otp_ref, otp_cfg.get("mobile"),
                 label=_("الصرف النقدي"), digits=4,
+                templates=otp_cfg.get("templates"),
             )
         otp.verify("cash_disbursement", otp_ref, otp_code)
 
@@ -514,7 +519,7 @@ def cancel_disbursement(journal_entry_name):
     if je.docstatus != 1:
         frappe.throw(_("This disbursement entry is not submitted and cannot be cancelled."))
 
-    shift_name, _ = _parse_remark(je.user_remark or "")
+    shift_name, _ignored_reason = _parse_remark(je.user_remark or "")
     if not shift_name:
         frappe.throw(
             _("This Journal Entry is not a POS cash disbursement."),

@@ -4,38 +4,38 @@
     class="fixed inset-0 z-[320] bg-black/50 flex items-center justify-center p-4"
     @click.self="close"
   >
-    <div class="w-full max-w-md bg-white rounded-xl shadow-2xl p-5 space-y-4" dir="rtl">
+    <div class="w-full max-w-md bg-white rounded-xl shadow-2xl p-5 space-y-4">
       <div class="flex items-center justify-between">
-        <h2 class="font-bold text-lg text-gray-900">{{ __('استبدال قسيمة') }}</h2>
+        <h2 class="font-bold text-lg text-gray-900">{{ __('Redeem Voucher') }}</h2>
         <button class="text-gray-500 text-2xl leading-none" @click="close">×</button>
       </div>
 
       <!-- No customer selected -->
       <div v-if="!customerName" class="p-4 rounded-lg bg-amber-50 border border-amber-200 text-sm text-amber-800">
-        {{ __('اختر العميل أولًا من شاشة البيع ثم أعد المحاولة.') }}
+        {{ __('Select a customer on the sale screen first, then try again.') }}
       </div>
 
       <template v-else>
         <div class="p-3 rounded-lg bg-gray-50 border border-gray-200">
-          <div class="text-xs text-gray-500">{{ __('العميل') }}</div>
+          <div class="text-xs text-gray-500">{{ __('Customer') }}</div>
           <div class="font-semibold text-gray-900">{{ customerName }}</div>
         </div>
 
         <div class="flex items-center justify-between p-4 rounded-lg border"
              :class="balance > 0 ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'">
-          <span class="text-sm text-gray-600">{{ __('الرصيد المتبقي') }}</span>
+          <span class="text-sm text-gray-600">{{ __('Remaining Balance') }}</span>
           <span class="text-3xl font-bold" :class="balance > 0 ? 'text-green-700' : 'text-red-700'">
             {{ loading ? '…' : balance }}
           </span>
         </div>
 
         <p v-if="!loading && balance <= 0" class="text-sm text-red-600 text-center">
-          {{ __('لا يوجد رصيد قسائم لهذا العميل.') }}
+          {{ __('This customer has no voucher balance.') }}
         </p>
 
         <!-- Quantity stepper (hidden once an OTP has been requested) -->
         <div v-if="!loading && balance > 0 && !otpRequired" class="flex items-center justify-between p-3 rounded-lg border border-gray-200 bg-white">
-          <span class="text-sm text-gray-600">{{ __('عدد القسائم المراد استبدالها') }}</span>
+          <span class="text-sm text-gray-600">{{ __('Vouchers to redeem') }}</span>
           <div class="flex items-center gap-3">
             <button
               class="w-9 h-9 rounded-lg border border-gray-300 text-xl font-bold text-gray-700 flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed"
@@ -54,7 +54,7 @@
         <!-- OTP verification step -->
         <div v-if="otpRequired" class="p-3 rounded-lg border border-blue-200 bg-blue-50 space-y-2">
           <p class="text-sm text-blue-800 text-center">
-            {{ __('أُرسل رمز تحقق إلى واتساب العميل') }}
+            {{ __('A verification code was sent to the customer WhatsApp') }}
             <span v-if="otpMasked" class="font-bold" dir="ltr">{{ otpMasked }}</span>
           </p>
           <input
@@ -62,16 +62,20 @@
             type="text"
             inputmode="numeric"
             :maxlength="otpDigits"
-            :placeholder="__('أدخل الرمز المكوّن من {0} أرقام', [otpDigits])"
+            :placeholder="__('Enter the {0}-digit code', [otpDigits])"
             class="w-full text-center text-2xl font-bold tracking-[0.4em] py-3 rounded-lg border border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-400"
             @keyup.enter="doRedeem"
           />
+          <p class="text-center text-xs" :class="otpSeconds > 0 ? 'text-blue-600' : 'text-red-600'">
+            <span v-if="otpSeconds > 0">{{ __('Code expires in {0}', [otpCountdownText]) }}</span>
+            <span v-else>{{ __('Code expired — request a new one.') }}</span>
+          </p>
           <button
             class="w-full text-sm font-semibold text-blue-600 hover:text-blue-800 disabled:opacity-50 disabled:cursor-not-allowed"
             :disabled="resending || redeeming"
             @click="resendOtp"
           >
-            {{ resending ? __('جارٍ إعادة الإرسال…') : __('إعادة إرسال الرمز') }}
+            {{ resending ? __('Resending…') : __('Resend code') }}
           </button>
         </div>
 
@@ -82,18 +86,18 @@
             :disabled="otpRequired ? (!otpCode || redeeming) : !canRedeem"
             @click="doRedeem"
           >
-            {{ redeeming ? __('جارٍ المعالجة…') : (otpRequired ? __('تأكيد الرمز والاستبدال') : __('تأكيد استبدال {0} قسيمة', [qty])) }}
+            {{ redeeming ? __('Processing…') : (otpRequired ? __('Confirm code & redeem') : __('Confirm redeem {0} voucher(s)', [qty])) }}
           </button>
           <button
             class="px-5 py-3 rounded-lg font-semibold text-gray-700 bg-gray-100 hover:bg-gray-200 transition-colors"
             :disabled="redeeming"
             @click="close"
           >
-            {{ __('إلغاء') }}
+            {{ __('Cancel') }}
           </button>
         </div>
         <p class="text-[11px] text-gray-400 text-center">
-          {{ __('لا تصدر فاتورة ضريبية عند الاستبدال؛ الضريبة حُصّلت عند شراء الدفتر.') }}
+          {{ __('No tax invoice is issued on redemption; VAT was collected when the voucher book was purchased.') }}
         </p>
       </template>
     </div>
@@ -101,7 +105,7 @@
 </template>
 
 <script setup>
-import { computed, ref, watch } from "vue"
+import { computed, ref, watch, onBeforeUnmount } from "vue"
 import { call } from "frappe-ui"
 import { useToast } from "@/composables/useToast"
 
@@ -126,6 +130,26 @@ const otpCode = ref("")
 const otpMasked = ref("")
 const otpDigits = ref(5)
 const resending = ref(false)
+
+// Countdown for the 2-minute OTP validity window.
+const otpSeconds = ref(0)
+let otpTimer = null
+const otpCountdownText = computed(() => {
+  const s = Math.max(0, otpSeconds.value)
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`
+})
+function startOtpCountdown() {
+  stopOtpCountdown()
+  otpSeconds.value = 120
+  otpTimer = setInterval(() => {
+    otpSeconds.value = Math.max(0, otpSeconds.value - 1)
+    if (otpSeconds.value <= 0) stopOtpCountdown()
+  }, 1000)
+}
+function stopOtpCountdown() {
+  if (otpTimer) { clearInterval(otpTimer); otpTimer = null }
+}
+onBeforeUnmount(stopOtpCountdown)
 
 /**
  * Pull the REAL server message out of a Frappe/frappe-ui error instead of the
@@ -181,7 +205,7 @@ async function loadBalance() {
     qty.value = balance.value > 0 ? 1 : 0
   } catch (e) {
     balance.value = 0
-    showError(serverError(e, __("تعذّر جلب رصيد القسائم")))
+    showError(serverError(e, __("Could not load voucher balance")))
   } finally {
     loading.value = false
   }
@@ -192,7 +216,7 @@ async function doRedeem() {
   // valid quantity selection.
   if (!otpRequired.value && !canRedeem.value) return
   if (otpRequired.value && !otpCode.value) {
-    showError(__("أدخل رمز التحقق المرسل عبر واتساب"))
+    showError(__("Enter the verification code sent via WhatsApp"))
     return
   }
   redeeming.value = true
@@ -212,7 +236,8 @@ async function doRedeem() {
       otpRequired.value = true
       otpMasked.value = data.masked_mobile || ""
       if (data.digits) otpDigits.value = Number(data.digits)
-      showSuccess(__("تم إرسال رمز التحقق إلى واتساب العميل {0}", [otpMasked.value]))
+      startOtpCountdown()
+      showSuccess(__("A verification code was sent to the customer WhatsApp {0}", [otpMasked.value]))
       return
     }
 
@@ -220,11 +245,13 @@ async function doRedeem() {
     balance.value = Number(data.balance ?? 0)
     qty.value = balance.value > 0 ? 1 : 0
     resetOtp()
-    showSuccess(__("تم استبدال {0} قسيمة. الرصيد المتبقي: {1}", [used, balance.value]))
+    showSuccess(__("Redeemed {0} voucher(s). Remaining balance: {1}", [used, balance.value]))
     emit("redeemed", data)
-    if (balance.value <= 0) close()
+    // Always close after a successful redemption; the sale screen resets to the
+    // default customer.
+    close()
   } catch (e) {
-    showError(serverError(e, __("تعذّر استبدال القسيمة")))
+    showError(serverError(e, __("Could not redeem the voucher")))
   } finally {
     redeeming.value = false
   }
@@ -246,10 +273,11 @@ async function resendOtp() {
     if (data.otp_required) {
       otpMasked.value = data.masked_mobile || otpMasked.value
       if (data.digits) otpDigits.value = Number(data.digits)
-      showSuccess(__("تم إرسال رمز جديد إلى واتساب العميل"))
+      startOtpCountdown()
+      showSuccess(__("A new code was sent to the customer WhatsApp"))
     }
   } catch (e) {
-    showError(serverError(e, __("تعذّر إعادة إرسال الرمز")))
+    showError(serverError(e, __("Could not resend the code")))
   } finally {
     resending.value = false
   }
@@ -260,6 +288,8 @@ function resetOtp() {
   otpCode.value = ""
   otpMasked.value = ""
   otpDigits.value = 5
+  stopOtpCountdown()
+  otpSeconds.value = 0
 }
 
 watch(() => props.modelValue, (v) => { if (v) { resetOtp(); loadBalance() } })

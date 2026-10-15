@@ -171,6 +171,13 @@ def _voucher_settings(pos_profile):
 		)
 	except Exception:
 		row["mu_voucher_otp_enabled"] = 0
+	# Customizable OTP message templates (one per line, rotated at random).
+	try:
+		row["mu_otp_message_templates"] = frappe.db.get_value(
+			"POS Profile", pos_profile, "mu_otp_message_templates"
+		)
+	except Exception:
+		row["mu_otp_message_templates"] = None
 	return row
 
 
@@ -288,6 +295,7 @@ def redeem_voucher(pos_profile, customer, pos_opening_shift, qty=1, otp_code=Non
 			return otp.generate_and_send(
 				"voucher_redeem", otp_ref, get_customer_mobile(customer),
 				label=_("استبدال القسائم"), digits=5,
+				templates=cfg.get("mu_otp_message_templates"),
 			)
 		otp.verify("voucher_redeem", otp_ref, otp_code)
 

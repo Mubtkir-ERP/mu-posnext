@@ -42,13 +42,37 @@ def mask_mobile(mobile):
 	return ("•" * (len(m) - 4)) + m[-4:]
 
 
-def generate_and_send(purpose, ref, mobile, label, digits=OTP_DIGITS):
+def _render_message(templates_raw, label, code):
+	"""Pick one message template at random and fill in the code.
+
+	``templates_raw`` is free text from the POS Profile: one template per line.
+	A usable template must contain a ``{code}`` (or ``{otp}``) placeholder;
+	``{label}`` is replaced with the operation name. Rotating randomly between
+	several wordings reduces the chance the sending number is flagged as spam.
+	Falls back to a built-in message when nothing usable is configured.
+	"""
+	lines = [ln.strip() for ln in str(templates_raw or "").splitlines() if ln.strip()]
+	usable = [ln for ln in lines if "{code}" in ln or "{otp}" in ln]
+	if usable:
+		tpl = secrets.choice(usable)
+		return (
+			tpl.replace("{code}", code)
+			.replace("{otp}", code)
+			.replace("{label}", label or "")
+		)
+	return _(
+		"رمز التحقق لعملية «{0}»: {1}\nصالح لمدة دقيقتين. لا تشاركه مع أحد."
+	).format(label, code)
+
+
+def generate_and_send(purpose, ref, mobile, label, digits=OTP_DIGITS, templates=None):
 	"""Create a one-time code, cache its hash, and WhatsApp it to ``mobile``.
 
 	``digits`` sets the code length for this action (vouchers and cash use
-	different lengths). Returns an ``otp_required`` payload the client uses to
-	show the code box. Raises if there is no destination number or WhatsApp
-	delivery fails.
+	different lengths). ``templates`` is the per-profile free-text pool of
+	message wordings (one per line) rotated at random. Returns an
+	``otp_required`` payload the client uses to show the code box. Raises if
+	there is no destination number or WhatsApp delivery fails.
 	"""
 	from pos_next.api.whatsapp_hook import send_whatsapp
 
@@ -63,9 +87,7 @@ def generate_and_send(purpose, ref, mobile, label, digits=OTP_DIGITS):
 		expires_in_sec=OTP_TTL_SECONDS,
 	)
 
-	message = _(
-		"رمز التحقق لعملية «{0}»: {1}\nصالح لمدة دقيقتين. لا تشاركه مع أحد."
-	).format(label, code)
+	message = _render_message(templates, label, code)
 	if not send_whatsapp(mobile, message):
 		# Burn the code so a failed send can't be guessed against.
 		frappe.cache().delete_value(_key(purpose, ref))
