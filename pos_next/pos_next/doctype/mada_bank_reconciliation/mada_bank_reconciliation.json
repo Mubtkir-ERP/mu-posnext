@@ -13,6 +13,7 @@
   "from_date",
   "to_date",
   "upload_section",
+  "bank_statement_file",
   "upload_help",
   "statement_rows",
   "results_section",
@@ -59,9 +60,14 @@
    "label": "Bank Statement Rows"
   },
   {
+   "fieldname": "bank_statement_file",
+   "fieldtype": "Attach",
+   "label": "Bank Statement File (Excel / CSV)"
+  },
+  {
    "fieldname": "upload_help",
    "fieldtype": "HTML",
-   "options": "<p style='color:#6a7480;margin:0 0 8px'>الصق صفوف إيداعات مدى من كشف البنك (التاريخ، رقم الموازنة، المبلغ)، أو استخدم زر Import أعلى الجدول. ثم اضغط <b>Run Matching</b>.</p>"
+   "options": "<p style='color:#6a7480;margin:0 0 8px'>ارفع ملف كشف البنك (Excel/CSV) ثم اضغط <b>رفع وتعبئة الكشف</b> لتعبئة الصفوف تلقائيًا واستخراج رقم الموازنة — أو الصق الصفوف يدويًا. بعدها احفظ واضغط <b>Run Matching</b>.</p>"
   },
   {
    "fieldname": "statement_rows",

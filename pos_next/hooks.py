@@ -223,7 +223,11 @@ doc_events = {
 		"on_update": "pos_next.overrides.pricing_rule.sync_pos_only_to_pricing_rules"
 	},
 	"POS Closing Shift": {
-		"on_submit": "pos_next.api.shift_whatsapp.notify_shift_close"
+		"on_submit": [
+			"pos_next.api.shift_whatsapp.notify_shift_close",
+			"pos_next.mada.closing_shift.create_mada_settlements"
+		],
+		"on_cancel": "pos_next.mada.closing_shift.cancel_mada_settlements"
 	}
 }
 

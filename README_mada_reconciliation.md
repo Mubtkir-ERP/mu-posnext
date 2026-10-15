@@ -1,36 +1,36 @@
-# مطابقة موازنات مدى — المرحلة 1 (قابلة للتجربة)
+# مطابقة موازنات مدى — الميزة الكاملة (داخل mu-posnext)
 
-ملفات تُضاف إلى تطبيق **pos_next** (module: POS Next). تُنشئ 4 DocTypes ومنطق المطابقة.
+تطبيق pos_next (module: POS Next). المطابقة تعمل end-to-end.
 
-## المحتوى
-| DocType | الوظيفة |
-|---|---|
-| **Mada Terminal** | سجل أجهزة مدى (المعرّف، الفرع، الحساب البنكي، المستخدم) |
-| **Mada Settlement** | سجل الموازنة (التاريخ، الجهاز، رقم الموازنة، المبلغ، الحالة) — سجل مستقل لكل جهاز |
-| **Mada Reconciliation Settings** | إعداد واحد للموقع (مفاتيح التفعيل والمقارنة) |
-| **Mada Bank Reconciliation** | رفع صفوف كشف البنك + زر **Run Matching** |
-| Mada Bank Reconciliation Row | جدول فرعي لصفوف الكشف |
+## DocTypes
+- **Mada Terminal** — سجل الأجهزة
+- **Mada Settlement** — سجل الموازنة (مستقل لكل جهاز، حالة تلقائية)
+- **Mada Settlement Entry** — إدخال السائق: عدة أجهزة دفعة واحدة (زر Create Settlements)
+- **Mada Bank Reconciliation** — رفع كشف البنك + مطابقة
+- **Mada Reconciliation Settings** — مفاتيح التفعيل والمقارنة والبنك
+- تقرير **Mada Reconciliation Status** — حالة كل الموازنات
 
-## التركيب (بدون SSH)
-1. انسخ مجلد `pos_next/pos_next/doctype/` من هذا الأرشيف فوق نفس المسار في مستودع تطبيق pos_next لديك (يضيف 5 مجلدات جديدة فقط، لا يستبدل شيئًا قائمًا).
-2. ادفع التغييرات إلى المستودع (Git).
-3. من لوحة **MUBTKIR Cloud** للموقع: **Apps → pos_next → Update**، ثم انتظر انتهاء **Migrate**.
+## التدفق الكامل
+1. فعّل الإعدادات في **Mada Reconciliation Settings**.
+2. سجّل الأجهزة في **Mada Terminal**.
+3. أدخل الموازنات: إمّا **Mada Settlement Entry** (عدة أجهزة)، أو تلقائيًا من **إقفال الوردية** (إذا فعّلت feed_from_closing_shift).
+4. في **Mada Bank Reconciliation**: احفظ → ارفع ملف الكشف في حقل Bank Statement File → **رفع وتعبئة الكشف** (يستخرج رقم الموازنة بالـ regex) → **Run Matching**.
+5. راجع النتائج في التقرير وفي قائمة Mada Settlement.
 
-> لا يوجد تعديل على `hooks.py` في هذه المرحلة. تكامل إقفال الوردية (التغذية التلقائية) يأتي في المرحلة 2 ويتطلب تعديل hooks + حقل على POS Closing Shift.
+## تكامل إقفال الوردية
+- patch يضيف جدول **Mada Settlements** داخل POS Closing Shift (حقول مخصّصة قابلة للفصل).
+- عند اعتماد الإقفال (on_submit) تُنشأ سجلات مدى تلقائيًا؛ وعند الإلغاء تُحذف.
+- عند جهاز واحد + تفعيل compare_pos_total يُعبّأ "إجمالي مدى في POS" من جدول تسوية المدفوعات.
 
-## خطوات التجربة
-1. **Mada Reconciliation Settings**: افتحه وفعّل `تفعيل مطابقة موازنات مدى`. (فعّل `مقارنة إجمالي مدى في POS` فقط لمن يُدخل كل الفواتير.)
-2. **Mada Terminal**: أنشئ جهازًا أو أكثر (Terminal ID = المعرّف على ورقة الموازنة).
-3. **Mada Settlement**: أدخل موازنتين أو ثلاثًا (جهاز + رقم موازنة + مبلغ). الحالة تبدأ `Pending`.
-4. **Mada Bank Reconciliation**: أنشئ سجلًا، حدّد `From/To Date`، والصق صفوف الكشف في الجدول (رقم الموازنة + المبلغ)، ثم **Run Matching**.
-5. راجع النتائج: العدّادات في الأسفل، وحالة كل سجل في قائمة **Mada Settlement** (Matched / Not in Bank / Amount Mismatch).
+## رفع كشف البنك
+- يدعم Excel (.xlsx) و CSV. يكتشف الأعمدة تلقائيًا (عربي/إنجليزي: التاريخ/المبلغ/البيان/رقم الموازنة).
+- يستخرج رقم الموازنة من البيان عبر settlement_regex في الإعدادات.
+- يتعامل مع الأرقام العربية والفواصل العربية (٬ ٫).
 
-## إظهارها في مساحة عمل نقاط البيع
-من مساحة العمل **POSNext**: زر **Edit** → **Add Shortcut / Add Card** وأضف اختصارات لـ Mada Settlement و Mada Bank Reconciliation و Mada Reconciliation Settings. (يمكنني لاحقًا تسليمها جاهزة داخل workspace JSON.)
+## ملفات مُعدّلة على التطبيق القائم
+- `hooks.py` — doc_events["POS Closing Shift"] (on_submit/on_cancel)
+- `patches.txt` — إضافة patch مدى
+- `workspace/posnext/posnext.json` — اختصارات وبطاقة مدى
 
-## منطق المطابقة
-المفتاح = **رقم الموازنة**. لكل موازنة ضمن الفترة:
-- رقم موجود في البنك + المبلغ متساوٍ → **Matched**
-- رقم موجود + مبلغ مختلف → **Amount Mismatch**
-- موازنة بلا صف بنكي → **Not in Bank** (هدفك الأساسي)
-- صف بنكي بلا موازنة → **Extra in Bank** (عدّ فقط)
+## النشر
+Push → **Build image (#)** → **Redeploy في Coolify** → **Migrate**. (Migrate وحده لا يكفي.)
