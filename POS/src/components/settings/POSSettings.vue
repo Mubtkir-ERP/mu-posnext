@@ -93,6 +93,12 @@
 								>
 									السياسات التشغيلية
 								</button>
+								<button
+									@click="activeTab = 'customer_display'"
+									:class="['px-4 py-2 text-sm font-medium rounded-md transition-all duration-200', activeTab === 'customer_display' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-200/50']"
+								>
+									شاشة العميل (الشاشة الثانية)
+								</button>
 							</div>
 
 							<!-- Stock Settings Section - Prominent -->
@@ -457,6 +463,80 @@
 									</div>
 								</div>
 							</div>
+
+							<!-- Customer Display Settings Section -->
+							<div
+								v-if="activeTab === 'customer_display'"
+								class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden"
+							>
+								<div class="px-6 py-4 bg-gradient-to-r from-slate-50 via-gray-50 to-zinc-50 border-b border-gray-200">
+									<div class="flex items-center justify-between gap-4">
+										<div>
+											<h3 class="text-lg font-bold text-gray-900">{{ __("Customer Display") }}</h3>
+											<p class="text-xs text-gray-600 mt-0.5">{{ __("Configure the second-monitor customer display for this POS Profile") }}</p>
+										</div>
+										<button type="button" @click="openCustomerDisplay" :disabled="!settings.customer_display_enabled" class="px-4 py-2 rounded-lg bg-gray-900 text-white text-sm font-semibold disabled:opacity-40 disabled:cursor-not-allowed">
+											{{ __("Open Customer Display") }}
+										</button>
+									</div>
+								</div>
+								<div class="p-6 flex flex-col gap-6">
+									<CheckboxField v-model="settings.customer_display_enabled" :label="__('Enable Customer Display')" :description="__('Enable the always-on customer display for this POS Profile')" />
+
+									<div v-if="settings.customer_display_enabled" class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+										<div class="rounded-lg border border-gray-200 p-4 flex flex-col gap-3">
+											<h4 class="text-sm font-semibold text-gray-900">{{ __("General") }}</h4>
+											<label class="text-xs font-medium text-gray-700">{{ __("Company / Display Name") }}<input v-model="settings.customer_display_company_name" class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm" /></label>
+											<label class="text-xs font-medium text-gray-700">{{ __("Welcome Text") }}<input v-model="settings.customer_display_welcome_text" class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm" /></label>
+											<label class="text-xs font-medium text-gray-700">{{ __("POS Location") }}<input v-model="settings.customer_display_pos_location" class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm" /></label>
+											<div class="grid grid-cols-2 gap-3">
+												<label class="text-xs font-medium text-gray-700">{{ __("Theme") }}<select v-model="settings.customer_display_theme" class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm"><option>Dark</option><option>Light</option></select></label>
+												<label class="text-xs font-medium text-gray-700">{{ __("Display Layout") }}<select v-model="settings.customer_display_size_mode" class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm"><option>Auto</option><option>Standard</option><option>Compact</option></select><span class="mt-1 block text-xs text-gray-500">{{ __("Auto adjusts for 7-inch landscape screens (1024x600 or 800x480).") }}</span></label>
+												<label class="text-xs font-medium text-gray-700">{{ __("Currency Label") }}<input v-model="settings.customer_display_currency_label" class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm" /></label>
+											</div>
+										</div>
+
+										<div class="rounded-lg border border-gray-200 p-4 flex flex-col gap-3">
+											<h4 class="text-sm font-semibold text-gray-900">{{ __("Idle & Thank You") }}</h4>
+											<label class="text-xs font-medium text-gray-700">{{ __("Idle Display Mode") }}<select v-model="settings.customer_display_idle_mode" class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm"><option>Welcome</option><option>Image</option><option>Video</option></select></label>
+											<label v-if="settings.customer_display_idle_mode === 'Image'" class="text-xs font-medium text-gray-700">{{ __("Promotional Image URL / File") }}<input v-model="settings.customer_display_idle_image" class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm" /></label>
+											<label v-if="settings.customer_display_idle_mode === 'Video'" class="text-xs font-medium text-gray-700">{{ __("Promotional Video URL / File") }}<input v-model="settings.customer_display_idle_video" class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm" /></label>
+											<div class="rounded-lg border border-blue-100 bg-blue-50/60 p-3 flex flex-col gap-3">
+												<CheckboxField v-model="settings.customer_display_overlay_enabled" :label="__('Enable Idle Text Overlay')" />
+												<template v-if="settings.customer_display_overlay_enabled">
+													<label class="text-xs font-medium text-gray-700">{{ __('Overlay Message') }}<textarea v-model="settings.customer_display_overlay_text" rows="2" maxlength="500" class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm" placeholder="Buy More Pay Less" /></label>
+													<div class="grid grid-cols-2 gap-2">
+														<label class="text-xs font-medium text-gray-700">{{ __('Style') }}<select v-model="settings.customer_display_overlay_type" class="mt-1 w-full rounded-md border border-gray-300 px-2 py-2"><option>Static</option><option>Scrolling</option></select></label>
+														<label class="text-xs font-medium text-gray-700">{{ __('Show On') }}<select v-model="settings.customer_display_overlay_on" class="mt-1 w-full rounded-md border border-gray-300 px-2 py-2"><option>All</option><option>Welcome</option><option>Image</option><option>Video</option></select></label>
+														<label class="text-xs font-medium text-gray-700">{{ __('Position') }}<select v-model="settings.customer_display_overlay_position" class="mt-1 w-full rounded-md border border-gray-300 px-2 py-2"><option>Top</option><option>Bottom</option><option>Center</option></select></label>
+														<label v-if="settings.customer_display_overlay_type === 'Scrolling'" class="text-xs font-medium text-gray-700">{{ __('Scroll Speed') }}<select v-model="settings.customer_display_overlay_scroll_speed" class="mt-1 w-full rounded-md border border-gray-300 px-2 py-2"><option>Slow</option><option>Normal</option><option>Fast</option></select></label>
+														<label class="text-xs font-medium text-gray-700">{{ __('Text Color') }}<input v-model="settings.customer_display_overlay_text_color" type="color" class="mt-1 w-full h-9" /></label>
+														<label class="text-xs font-medium text-gray-700">{{ __('Background Color') }}<input v-model="settings.customer_display_overlay_background_color" type="color" class="mt-1 w-full h-9" /></label>
+														<label class="text-xs font-medium text-gray-700">{{ __('Background Opacity %') }}<input v-model.number="settings.customer_display_overlay_opacity" type="number" min="0" max="100" class="mt-1 w-full rounded-md border border-gray-300 px-2 py-2" /></label>
+														<label class="text-xs font-medium text-gray-700">{{ __('Font Size (px)') }}<input v-model.number="settings.customer_display_overlay_font_size" type="number" min="14" max="72" class="mt-1 w-full rounded-md border border-gray-300 px-2 py-2" /></label>
+													</div>
+												</template>
+											</div>
+											<CheckboxField v-model="settings.cd_enable_thank_you" :label="__('Enable Thank You Screen')" />
+											<label v-if="settings.cd_enable_thank_you" class="text-xs font-medium text-gray-700">{{ __("Thank You Title") }}<input v-model="settings.customer_display_thank_you_title" class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm" /></label>
+											<label v-if="settings.cd_enable_thank_you" class="text-xs font-medium text-gray-700">{{ __("Thank You Message") }}<input v-model="settings.customer_display_thank_you_message" class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm" /></label>
+											<NumberField v-if="settings.cd_enable_thank_you" v-model="settings.customer_display_thank_you_duration" :label="__('Thank You Duration (Seconds)')" :min="1" :max="60" />
+										</div>
+									</div>
+
+									<div v-if="settings.customer_display_enabled" class="rounded-lg border border-gray-200 p-4">
+										<h4 class="text-sm font-semibold text-gray-900 mb-1">{{ __("Field Visibility") }}</h4>
+										<p class="text-xs text-gray-500 mb-4">{{ __("Turn off any information you do not want customers to see. The layout automatically closes empty space.") }}</p>
+										<div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+											<CheckboxField v-for="field in customerDisplayVisibilityFields" :key="field.key" v-model="settings[field.key]" :label="__(field.label)" />
+										</div>
+									</div>
+
+									<div v-if="settings.customer_display_enabled && settings.cd_show_customer_name" class="rounded-lg border border-gray-200 p-4">
+										<label class="text-xs font-medium text-gray-700">{{ __("Customer Name Display") }}<select v-model="settings.cd_customer_name_mode" class="mt-1 w-full max-w-xs rounded-md border border-gray-300 px-3 py-2 text-sm"><option>First Name</option><option>Full Name</option><option>Masked</option></select></label>
+									</div>
+								</div>
+							</div>
 						</div>
 
 						<!-- Empty State -->
@@ -492,6 +572,7 @@ import { logger } from "@/utils/logger"
 import { usePOSEvents } from "@/composables/usePOSEvents"
 import TranslatedHTML from "../common/TranslatedHTML.vue"
 import { useQzTray } from "@/composables/useQzTray"
+import { resolveTerminalIdentity } from "@/utils/terminalIdentity"
 
 const log = logger.create('POSSettings')
 const { detectSettingsChanges, updateSettingsSnapshot, emitStockSyncConfigured } = usePOSEvents()
@@ -508,6 +589,33 @@ const show = ref(props.modelValue)
 
 // State
 const activeTab = ref('stock')
+const customerDisplayVisibilityFields = [
+	{ key: "cd_show_company_name", label: "Show Company Name" },
+	{ key: "cd_show_welcome_text", label: "Show Welcome Text" },
+	{ key: "cd_show_pos_location", label: "Show POS Location" },
+	{ key: "cd_show_pos_number", label: "Show POS Number" },
+	{ key: "cd_show_product_image", label: "Show Product Image" },
+	{ key: "cd_show_item_name", label: "Show Item Name" },
+	{ key: "cd_show_barcode", label: "Show Barcode" },
+	{ key: "cd_show_quantity", label: "Show Quantity" },
+	{ key: "cd_show_original_price", label: "Show Original Price" },
+	{ key: "cd_show_discount_amount", label: "Show Discount Amount" },
+	{ key: "cd_show_discount_percentage", label: "Show Discount Percentage" },
+	{ key: "cd_show_final_price", label: "Show Final Price" },
+	{ key: "cd_show_running_qty", label: "Show Running Quantity" },
+	{ key: "cd_show_subtotal", label: "Show Subtotal" },
+	{ key: "cd_show_total_discount", label: "Show Total Discount" },
+	{ key: "cd_show_grand_total", label: "Show Grand Total" },
+	{ key: "cd_show_customer_name", label: "Show Customer Name" },
+	{ key: "cd_show_loyalty_points", label: "Show Loyalty Points" },
+	{ key: "cd_show_loyalty_earned", label: "Show Loyalty Points Earned" },
+	{ key: "cd_show_customer_credit", label: "Show Customer Credit" },
+	{ key: "cd_show_payment_method", label: "Show Payment Method" },
+	{ key: "cd_show_amount_paid", label: "Show Amount Paid" },
+	{ key: "cd_show_remaining_balance", label: "Show Remaining Balance" },
+	{ key: "cd_show_change", label: "Show Change" },
+	{ key: "cd_show_invoice_number", label: "Show Invoice Number" },
+]
 const loading = ref(true)
 const saving = ref(false)
 const settings = ref({
@@ -520,7 +628,57 @@ const settings = ref({
 	enable_auto_stock_sync: 0,
 	stock_sync_interval: 60,
 	mu_enable_order_status: 1,
-	})
+	customer_display_enabled: 0,
+	customer_display_company_name: "MUBTKIR",
+	customer_display_welcome_text: "Welcome",
+	customer_display_pos_location: "",
+	customer_display_theme: "Dark",
+	customer_display_size_mode: "Auto",
+	customer_display_currency_label: "SAR",
+	customer_display_idle_mode: "Welcome",
+	customer_display_idle_image: "",
+	customer_display_idle_video: "",
+	customer_display_overlay_enabled: 0,
+	customer_display_overlay_text: "",
+	customer_display_overlay_type: "Scrolling",
+	customer_display_overlay_on: "All",
+	customer_display_overlay_position: "Bottom",
+	customer_display_overlay_text_color: "#FFFFFF",
+	customer_display_overlay_background_color: "#000000",
+	customer_display_overlay_opacity: 65,
+	customer_display_overlay_font_size: 28,
+	customer_display_overlay_scroll_speed: "Normal",
+	customer_display_thank_you_duration: 5,
+	cd_show_company_name: 1,
+	cd_show_welcome_text: 1,
+	cd_show_pos_location: 1,
+	cd_show_pos_number: 1,
+	cd_show_product_image: 1,
+	cd_show_item_name: 1,
+	cd_show_barcode: 1,
+	cd_show_quantity: 1,
+	cd_show_original_price: 1,
+	cd_show_discount_amount: 1,
+	cd_show_discount_percentage: 0,
+	cd_show_final_price: 1,
+	cd_show_running_qty: 1,
+	cd_show_subtotal: 1,
+	cd_show_total_discount: 1,
+	cd_show_grand_total: 1,
+	cd_show_customer_name: 1,
+	cd_customer_name_mode: "First Name",
+	cd_show_loyalty_points: 1,
+	cd_show_loyalty_earned: 1,
+	cd_show_customer_credit: 1,
+	cd_show_payment_method: 1,
+	cd_show_amount_paid: 1,
+	cd_show_remaining_balance: 1,
+	cd_show_change: 1,
+	cd_show_invoice_number: 1,
+	cd_enable_thank_you: 1,
+	customer_display_thank_you_title: "Thank You",
+	customer_display_thank_you_message: "Thank you for shopping with us",
+})
 
 // Stock Sync Settings (stored in POS Settings; mirrored to localStorage for app startup)
 const stockSyncEnabled = ref(false)
@@ -622,6 +780,19 @@ function handleClose() {
 	show.value = false
 }
 
+async function openCustomerDisplay() {
+	if (!props.posProfile || !settings.value.customer_display_enabled) return
+	const identity = await resolveTerminalIdentity(props.posProfile)
+	const terminalId = String(identity?.terminalId || "").trim()
+	if (!terminalId) {
+		showError(__("Set the Terminal ID in Printer & Cash Drawer Setup first."))
+		return
+	}
+	const terminal = encodeURIComponent(terminalId)
+	const url = `/pos/customer-display?profile=${encodeURIComponent(props.posProfile)}&terminal=${terminal}`
+	window.open(url, `POSNextCustomerDisplay_${terminalId}`, "popup=yes,width=1280,height=720,resizable=yes")
+}
+
 async function loadSettings() {
 	if (!props.posProfile) return
 	loading.value = true
@@ -648,6 +819,35 @@ async function saveSettings() {
 			enable_auto_stock_sync: stockSyncEnabled.value ? 1 : 0,
 			stock_sync_interval: Number(stockSyncIntervalSeconds.value) || 60,
 			mu_enable_order_status: settings.value.mu_enable_order_status ? 1 : 0,
+			customer_display_enabled: settings.value.customer_display_enabled ? 1 : 0,
+			customer_display_company_name: settings.value.customer_display_company_name || "",
+			customer_display_welcome_text: settings.value.customer_display_welcome_text || "",
+			customer_display_pos_location: settings.value.customer_display_pos_location || "",
+			customer_display_theme: settings.value.customer_display_theme || "Dark",
+			customer_display_size_mode: settings.value.customer_display_size_mode || "Auto",
+			customer_display_currency_label: settings.value.customer_display_currency_label || "SAR",
+			customer_display_idle_mode: settings.value.customer_display_idle_mode || "Welcome",
+			customer_display_idle_image: settings.value.customer_display_idle_image || "",
+			customer_display_idle_video: settings.value.customer_display_idle_video || "",
+			customer_display_overlay_enabled: settings.value.customer_display_overlay_enabled ? 1 : 0,
+			customer_display_overlay_text: settings.value.customer_display_overlay_text || "",
+			customer_display_overlay_type: settings.value.customer_display_overlay_type || "Scrolling",
+			customer_display_overlay_on: settings.value.customer_display_overlay_on || "All",
+			customer_display_overlay_position: settings.value.customer_display_overlay_position || "Bottom",
+			customer_display_overlay_text_color: settings.value.customer_display_overlay_text_color || "#FFFFFF",
+			customer_display_overlay_background_color: settings.value.customer_display_overlay_background_color || "#000000",
+			customer_display_overlay_opacity: Number(settings.value.customer_display_overlay_opacity ?? 65),
+			customer_display_overlay_font_size: Number(settings.value.customer_display_overlay_font_size ?? 28),
+			customer_display_overlay_scroll_speed: settings.value.customer_display_overlay_scroll_speed || "Normal",
+			cd_enable_thank_you: settings.value.cd_enable_thank_you ? 1 : 0,
+			customer_display_thank_you_title: settings.value.customer_display_thank_you_title || "Thank You",
+			customer_display_thank_you_message: settings.value.customer_display_thank_you_message || "Thank you for shopping with us",
+			customer_display_thank_you_duration: Number(settings.value.customer_display_thank_you_duration ?? 5),
+			cd_show_customer_name: settings.value.cd_show_customer_name ? 1 : 0,
+			cd_customer_name_mode: settings.value.cd_customer_name_mode || "First Name",
+		}
+		for (const field of customerDisplayVisibilityFields) {
+			editableSettings[field.key] = settings.value[field.key] ? 1 : 0
 		}
 		const result = await call(
 			"pos_next.pos_next.doctype.pos_settings.pos_settings.update_pos_settings",

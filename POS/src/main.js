@@ -13,7 +13,12 @@ import { createPinia } from "pinia"
 import { createApp } from "vue"
 
 import App from "./App.vue"
-import { session, sessionUser } from "./data/session"
+import {
+	session,
+	sessionUser,
+	getCachedOfflineSessionUser,
+	cacheOfflineSessionUser,
+} from "./data/session"
 import { userResource } from "./data/user"
 import router from "./router"
 import {
@@ -158,11 +163,42 @@ async function initializeApp() {
 	})()
 
 	const userPromise = (async () => {
+		const cookieUser = sessionUser()
+		const persistentOfflineUser = getCachedOfflineSessionUser()
+
 		try {
 			if (!userResource.loading) userResource.fetch()
 			await userResource.promise
-			return sessionUser()
+
+			const authenticatedUser = sessionUser()
+			if (authenticatedUser) {
+				cacheOfflineSessionUser(authenticatedUser)
+			}
+
+			return authenticatedUser
 		} catch (error) {
+			const browserOffline =
+				typeof navigator !== "undefined" && navigator.onLine === false
+
+			if (browserOffline && cookieUser) {
+				cacheOfflineSessionUser(cookieUser)
+				log.info(`Offline startup: preserving session user ${cookieUser}`)
+				return cookieUser
+			}
+
+			if (browserOffline && persistentOfflineUser) {
+				const hasCachedShift =
+					typeof localStorage !== "undefined" &&
+					Boolean(localStorage.getItem("pos_shift_data"))
+
+				if (hasCachedShift) {
+					log.info(
+						`Offline cold start: restoring cached user ${persistentOfflineUser}`
+					)
+					return persistentOfflineUser
+				}
+			}
+
 			log.debug("User not logged in", error?.message || "No session")
 			return null
 		}

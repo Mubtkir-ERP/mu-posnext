@@ -10,6 +10,11 @@ const routes = [
 		component: () => import("@/pages/POSSale.vue"),
 	},
 	{
+		name: "CustomerDisplay",
+		path: "/customer-display",
+		component: () => import("@/pages/CustomerDisplay.vue"),
+	},
+	{
 		name: "Login",
 		path: "/account/login",
 		component: () => import("@/pages/Login.vue"),
@@ -27,6 +32,12 @@ const router = createRouter({
 })
 
 router.beforeEach((to, from, next) => {
+	// Allow customer display page to render without login redirection
+	if (to.name === "CustomerDisplay") {
+		next()
+		return
+	}
+
 	// Check authentication status (session.user is already set in main.js before app mount)
 	const isLoggedIn = session.isLoggedIn
 

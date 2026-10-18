@@ -203,6 +203,8 @@ import { logger } from "@/utils/logger"
 import { Button, Dialog, Input, createResource } from "frappe-ui"
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue"
 import { call } from "@/utils/apiWrapper"
+import { offlineState } from "@/utils/offline/offlineState"
+import { saveOfflineCustomer } from "@/utils/offline/customerQueue"
 
 const log = logger.create("CreateCustomerDialog")
 
@@ -499,10 +501,14 @@ const loadDialogData = async () => {
 const checkPermissions = async () => {
 	checkingPermission.value = true
 	try {
+		if (offlineState.isOffline || !navigator.onLine) {
+			hasPermission.value = true
+			return
+		}
 		hasPermission.value = await canCreateCustomer()
 	} catch (err) {
 		log.error("Permission check failed", err)
-		hasPermission.value = false
+		hasPermission.value = offlineState.isOffline || !navigator.onLine
 	} finally {
 		checkingPermission.value = false
 	}
@@ -516,10 +522,34 @@ const handleCreate = async () => {
 		return showError(__("Customer Group is required"))
 	}
 	if (isEditMode.value) {
+		if (offlineState.isOffline || !navigator.onLine) {
+			return showError(__("Editing customers requires an internet connection"))
+		}
 		await updateCustomerResource.submit()
-	} else {
-		await createCustomerResource.submit()
+		return
 	}
+
+	// Offline customer creation: persist locally before selecting customer.
+	if (offlineState.isOffline || !navigator.onLine) {
+		try {
+			updateMobileNumber()
+
+			const customer = await saveOfflineCustomer(
+				{ ...customerData.value },
+				props.posProfile
+			)
+
+			emit("customer-created", customer)
+			showSuccess(__("Customer saved offline. Will sync when online."))
+			show.value = false
+		} catch (error) {
+			log.error("Could not save offline customer", error)
+			showError(error.message || __("Failed to save offline customer"))
+		}
+		return
+	}
+
+	await createCustomerResource.submit()
 }
 
 const resetForm = () => {

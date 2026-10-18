@@ -1,5 +1,6 @@
 import { call } from "@/utils/apiWrapper"
 import { db, getSetting, setSetting } from "./db"
+import { syncPendingOfflineCustomers, resolveOfflineCustomerId } from "./customerQueue"
 import { offlineState } from "./offlineState"
 import { ensureOfflineInvoiceId } from "./offlineInvoiceId"
 
@@ -105,6 +106,11 @@ export const syncOfflineInvoices = async () => {
 		return { success: 0, failed: 0 }
 	}
 
+	const customerSyncResult = await syncPendingOfflineCustomers()
+	if (customerSyncResult.failed) {
+		console.warn("Some offline customers could not synchronize", customerSyncResult)
+	}
+
 	const pendingInvoices = await getOfflineInvoices()
 	if (pendingInvoices.length === 0) {
 		return { success: 0, failed: 0 }
@@ -136,6 +142,19 @@ export const syncOfflineInvoices = async () => {
 					...item,
 					qty: item.quantity || item.qty || 1,
 				}))
+			}
+
+			// Resolve offline-created customers before invoice submission.
+			if (String(invoiceData.customer || "").startsWith("pos_customer_")) {
+				const serverCustomer = await resolveOfflineCustomerId(invoiceData.customer)
+				if (!serverCustomer) {
+					console.warn("Invoice waiting for offline customer sync", {
+						invoiceId: invoice.id,
+						customer: invoiceData.customer,
+					})
+					continue
+				}
+				invoiceData.customer = serverCustomer
 			}
 
 			// Submit invoice to server

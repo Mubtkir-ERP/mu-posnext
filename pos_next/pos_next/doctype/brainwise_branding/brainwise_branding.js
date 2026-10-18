@@ -53,8 +53,8 @@ function add_master_key_controls(frm) {
 }
 
 function update_field_permissions(frm) {
-	// Protected fields
-	const protected_fields = ['enabled', 'brand_text', 'brand_name', 'brand_url', 'check_interval'];
+	// Protected fields (only enabled is protected by master key)
+	const protected_fields = ['enabled'];
 
 	// If master key is not provided, ensure fields are read-only
 	if (!frm.doc.master_key_provided) {
@@ -66,7 +66,7 @@ function update_field_permissions(frm) {
 
 function unlock_protected_fields(frm) {
 	// Temporarily unlock protected fields when master key is provided
-	const protected_fields = ['enabled', 'brand_text', 'brand_name', 'brand_url', 'check_interval'];
+	const protected_fields = ['enabled'];
 
 	protected_fields.forEach(field => {
 		frm.set_df_property(field, 'read_only', 0);

@@ -41,6 +41,10 @@ const CURRENT_SCHEMA = {
 	// Invoice queue for offline submissions
 	invoice_queue: "++id, timestamp, synced",
 
+	// Pending offline customer creation.
+	// Stable offline_id supports retries and invoice customer resolution.
+	customer_queue: "&offline_id, status, timestamp, server_customer",
+
 	// Pending shift-close requests. close_id is unique so retries cannot create duplicates.
 	closing_shift_queue: "++id, &close_id, opening_shift, timestamp, synced",
 
@@ -112,38 +116,32 @@ function getSchemaHash(schema) {
  * @returns {number} Current schema version number
  * @private
  */
-function getSchemaVersion() {
-	const schemaHash = getSchemaHash(CURRENT_SCHEMA)
-	const storedHash = localStorage.getItem("pos_next_schema_hash")
-	const storedVersion = Number.parseInt(
-		localStorage.getItem("pos_next_schema_version") || "1",
-	)
+// Dexie versioning: register the schema synchronously before other modules use db.
+const schemaHash = getSchemaHash(CURRENT_SCHEMA).toString()
+const storedHash = localStorage.getItem("pos_next_schema_hash")
+const storedVersion = Number.parseInt(
+	localStorage.getItem("pos_next_schema_version") || "1",
+	10,
+)
 
-	if (storedHash !== schemaHash.toString()) {
-		// Schema changed, increment version
-		const newVersion = storedVersion + 1
-		log.info(`Schema changed detected. Upgrading from v${storedVersion} to v${newVersion}`)
-		localStorage.setItem("pos_next_schema_hash", schemaHash.toString())
-		localStorage.setItem("pos_next_schema_version", newVersion.toString())
-		return newVersion
-	}
+const baseVersion = Number.isSafeInteger(storedVersion) && storedVersion > 0
+	? storedVersion
+	: 1
 
-	return storedVersion
-}
+const schemaVersion = storedHash === schemaHash
+	? baseVersion
+	: baseVersion + 1
 
-// Apply schema with auto-versioning
-const schemaVersion = getSchemaVersion()
-log.debug(`Initializing database with schema version: ${schemaVersion}`)
 db.version(schemaVersion).stores(CURRENT_SCHEMA)
 
-/**
- * Opens the database connection.
- * Called automatically on module import.
- * @returns {Promise<boolean>} True if opened successfully
- */
 export const initDB = async () => {
 	try {
 		await db.open()
+
+		// Record the successful upgrade, not just an attempted upgrade.
+		localStorage.setItem("pos_next_schema_hash", schemaHash)
+		localStorage.setItem("pos_next_schema_version", String(schemaVersion))
+
 		log.success("POS Next offline database initialized")
 		return true
 	} catch (error) {

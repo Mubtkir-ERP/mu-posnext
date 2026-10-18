@@ -606,6 +606,393 @@
    "fieldname": "session_lock_timeout",
    "fieldtype": "Int",
    "label": "Session Lock Timeout (minutes)"
+  },
+  {
+   "fieldname": "section_break_customer_display",
+   "fieldtype": "Section Break",
+   "label": "Customer Display"
+  },
+  {
+   "default": "0",
+   "fieldname": "customer_display_enabled",
+   "fieldtype": "Check",
+   "label": "Enable Customer Display"
+  },
+  {
+   "default": "Brand & More",
+   "depends_on": "eval:doc.customer_display_enabled",
+   "fieldname": "customer_display_company_name",
+   "fieldtype": "Data",
+   "label": "Company / Display Name"
+  },
+  {
+   "default": "Welcome",
+   "depends_on": "eval:doc.customer_display_enabled",
+   "fieldname": "customer_display_welcome_text",
+   "fieldtype": "Data",
+   "label": "Welcome Text"
+  },
+  {
+   "depends_on": "eval:doc.customer_display_enabled",
+   "fieldname": "customer_display_pos_location",
+   "fieldtype": "Data",
+   "label": "POS Location"
+  },
+  {
+   "fieldname": "column_break_customer_display_general",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "Dark",
+   "depends_on": "eval:doc.customer_display_enabled",
+   "fieldname": "customer_display_theme",
+   "fieldtype": "Select",
+   "label": "Customer Display Theme",
+   "options": "Dark\nLight"
+  },
+  {
+   "default": "Auto",
+   "depends_on": "eval:doc.customer_display_enabled",
+   "description": "Auto adapts to 7-inch landscape displays (1024x600 / 800x480) using browser viewport dimensions.",
+   "fieldname": "customer_display_size_mode",
+   "fieldtype": "Select",
+   "label": "Customer Display Layout",
+   "options": "Auto\nStandard\nCompact"
+  },
+  {
+   "default": "KD",
+   "depends_on": "eval:doc.customer_display_enabled",
+   "fieldname": "customer_display_currency_label",
+   "fieldtype": "Data",
+   "label": "Currency Label"
+  },
+  {
+   "default": "Welcome",
+   "depends_on": "eval:doc.customer_display_enabled",
+   "fieldname": "customer_display_idle_mode",
+   "fieldtype": "Select",
+   "label": "Idle Display Mode",
+   "options": "Welcome\nImage\nVideo"
+  },
+  {
+   "depends_on": "eval:doc.customer_display_enabled && doc.customer_display_idle_mode == 'Image'",
+   "fieldname": "customer_display_idle_image",
+   "fieldtype": "Attach Image",
+   "label": "Idle Promotional Image"
+  },
+  {
+   "depends_on": "eval:doc.customer_display_enabled && doc.customer_display_idle_mode == 'Video'",
+   "fieldname": "customer_display_idle_video",
+   "fieldtype": "Attach",
+   "label": "Idle Promotional Video"
+  },
+  {
+   "default": "5",
+   "depends_on": "eval:doc.customer_display_enabled",
+   "fieldname": "customer_display_thank_you_duration",
+   "fieldtype": "Int",
+   "label": "Thank You Duration (Seconds)"
+  },
+  {
+   "fieldname": "section_break_customer_display_visibility",
+   "fieldtype": "Section Break",
+   "label": "Customer Display - Field Visibility"
+  },
+  {
+   "default": "1",
+   "depends_on": "eval:doc.customer_display_enabled",
+   "fieldname": "cd_show_company_name",
+   "fieldtype": "Check",
+   "label": "Show Company Name"
+  },
+  {
+   "default": "1",
+   "depends_on": "eval:doc.customer_display_enabled",
+   "fieldname": "cd_show_welcome_text",
+   "fieldtype": "Check",
+   "label": "Show Welcome Text"
+  },
+  {
+   "default": "1",
+   "depends_on": "eval:doc.customer_display_enabled",
+   "fieldname": "cd_show_pos_location",
+   "fieldtype": "Check",
+   "label": "Show POS Location"
+  },
+  {
+   "default": "1",
+   "depends_on": "eval:doc.customer_display_enabled",
+   "fieldname": "cd_show_pos_number",
+   "fieldtype": "Check",
+   "label": "Show POS Number"
+  },
+  {
+   "default": "1",
+   "depends_on": "eval:doc.customer_display_enabled",
+   "fieldname": "cd_show_product_image",
+   "fieldtype": "Check",
+   "label": "Show Product Image"
+  },
+  {
+   "default": "1",
+   "depends_on": "eval:doc.customer_display_enabled",
+   "fieldname": "cd_show_item_name",
+   "fieldtype": "Check",
+   "label": "Show Item Name"
+  },
+  {
+   "default": "1",
+   "depends_on": "eval:doc.customer_display_enabled",
+   "fieldname": "cd_show_barcode",
+   "fieldtype": "Check",
+   "label": "Show Barcode"
+  },
+  {
+   "default": "1",
+   "depends_on": "eval:doc.customer_display_enabled",
+   "fieldname": "cd_show_quantity",
+   "fieldtype": "Check",
+   "label": "Show Quantity"
+  },
+  {
+   "fieldname": "column_break_customer_display_visibility",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "1",
+   "depends_on": "eval:doc.customer_display_enabled",
+   "fieldname": "cd_show_original_price",
+   "fieldtype": "Check",
+   "label": "Show Original Price"
+  },
+  {
+   "default": "1",
+   "depends_on": "eval:doc.customer_display_enabled",
+   "fieldname": "cd_show_discount_amount",
+   "fieldtype": "Check",
+   "label": "Show Discount Amount"
+  },
+  {
+   "default": "0",
+   "depends_on": "eval:doc.customer_display_enabled",
+   "fieldname": "cd_show_discount_percentage",
+   "fieldtype": "Check",
+   "label": "Show Discount Percentage"
+  },
+  {
+   "default": "1",
+   "depends_on": "eval:doc.customer_display_enabled",
+   "fieldname": "cd_show_final_price",
+   "fieldtype": "Check",
+   "label": "Show Final Price"
+  },
+  {
+   "default": "1",
+   "depends_on": "eval:doc.customer_display_enabled",
+   "fieldname": "cd_show_running_qty",
+   "fieldtype": "Check",
+   "label": "Show Running Quantity"
+  },
+  {
+   "default": "1",
+   "depends_on": "eval:doc.customer_display_enabled",
+   "fieldname": "cd_show_subtotal",
+   "fieldtype": "Check",
+   "label": "Show Subtotal"
+  },
+  {
+   "default": "1",
+   "depends_on": "eval:doc.customer_display_enabled",
+   "fieldname": "cd_show_total_discount",
+   "fieldtype": "Check",
+   "label": "Show Total Discount"
+  },
+  {
+   "default": "1",
+   "depends_on": "eval:doc.customer_display_enabled",
+   "fieldname": "cd_show_grand_total",
+   "fieldtype": "Check",
+   "label": "Show Grand Total"
+  },
+  {
+   "fieldname": "section_break_customer_display_customer_payment",
+   "fieldtype": "Section Break",
+   "label": "Customer Display - Customer & Payment"
+  },
+  {
+   "default": "1",
+   "depends_on": "eval:doc.customer_display_enabled",
+   "fieldname": "cd_show_customer_name",
+   "fieldtype": "Check",
+   "label": "Show Customer Name"
+  },
+  {
+   "default": "First Name",
+   "depends_on": "eval:doc.customer_display_enabled && doc.cd_show_customer_name",
+   "fieldname": "cd_customer_name_mode",
+   "fieldtype": "Select",
+   "label": "Customer Name Display",
+   "options": "First Name\nFull Name\nMasked"
+  },
+  {
+   "default": "1",
+   "depends_on": "eval:doc.customer_display_enabled",
+   "fieldname": "cd_show_loyalty_points",
+   "fieldtype": "Check",
+   "label": "Show Loyalty Points"
+  },
+  {
+   "default": "1",
+   "depends_on": "eval:doc.customer_display_enabled",
+   "fieldname": "cd_show_loyalty_earned",
+   "fieldtype": "Check",
+   "label": "Show Loyalty Points Earned"
+  },
+  {
+   "default": "1",
+   "depends_on": "eval:doc.customer_display_enabled",
+   "fieldname": "cd_show_customer_credit",
+   "fieldtype": "Check",
+   "label": "Show Customer Credit"
+  },
+  {
+   "fieldname": "column_break_customer_display_customer_payment",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "1",
+   "depends_on": "eval:doc.customer_display_enabled",
+   "fieldname": "cd_show_payment_method",
+   "fieldtype": "Check",
+   "label": "Show Payment Method"
+  },
+  {
+   "default": "1",
+   "depends_on": "eval:doc.customer_display_enabled",
+   "fieldname": "cd_show_amount_paid",
+   "fieldtype": "Check",
+   "label": "Show Amount Paid"
+  },
+  {
+   "default": "1",
+   "depends_on": "eval:doc.customer_display_enabled",
+   "fieldname": "cd_show_remaining_balance",
+   "fieldtype": "Check",
+   "label": "Show Remaining Balance"
+  },
+  {
+   "default": "1",
+   "depends_on": "eval:doc.customer_display_enabled",
+   "fieldname": "cd_show_change",
+   "fieldtype": "Check",
+   "label": "Show Change"
+  },
+  {
+   "default": "1",
+   "depends_on": "eval:doc.customer_display_enabled",
+   "fieldname": "cd_show_invoice_number",
+   "fieldtype": "Check",
+   "label": "Show Invoice Number"
+  },
+  {
+   "default": "1",
+   "depends_on": "eval:doc.customer_display_enabled",
+   "fieldname": "cd_enable_thank_you",
+   "fieldtype": "Check",
+   "label": "Enable Thank You Screen"
+  },
+  {
+   "default": "Thank You",
+   "depends_on": "eval:doc.customer_display_enabled && doc.cd_enable_thank_you",
+   "fieldname": "customer_display_thank_you_title",
+   "fieldtype": "Data",
+   "label": "Thank You Title"
+  },
+  {
+   "default": "Thank you for shopping with us",
+   "depends_on": "eval:doc.customer_display_enabled && doc.cd_enable_thank_you",
+   "fieldname": "customer_display_thank_you_message",
+   "fieldtype": "Data",
+   "label": "Thank You Message"
+  },
+  {
+   "fieldname": "section_break_customer_display_overlay",
+   "fieldtype": "Section Break",
+   "label": "Customer Display - Idle Text Overlay",
+   "depends_on": "eval:doc.customer_display_enabled"
+  },
+  {
+   "fieldname": "customer_display_overlay_enabled",
+   "fieldtype": "Check",
+   "label": "Enable Idle Text Overlay",
+   "default": "0",
+   "description": "Only on idle Welcome, Image or Video screens; never displayed during a transaction."
+  },
+  {
+   "fieldname": "customer_display_overlay_text",
+   "fieldtype": "Small Text",
+   "label": "Overlay Message",
+   "depends_on": "eval:doc.customer_display_overlay_enabled"
+  },
+  {
+   "fieldname": "customer_display_overlay_type",
+   "fieldtype": "Select",
+   "label": "Overlay Style",
+   "options": "Static\nScrolling",
+   "default": "Scrolling",
+   "depends_on": "eval:doc.customer_display_overlay_enabled"
+  },
+  {
+   "fieldname": "customer_display_overlay_on",
+   "fieldtype": "Select",
+   "label": "Show Overlay On",
+   "options": "All\nWelcome\nImage\nVideo",
+   "default": "All",
+   "depends_on": "eval:doc.customer_display_overlay_enabled"
+  },
+  {
+   "fieldname": "customer_display_overlay_position",
+   "fieldtype": "Select",
+   "label": "Overlay Position",
+   "options": "Top\nBottom\nCenter",
+   "default": "Bottom",
+   "depends_on": "eval:doc.customer_display_overlay_enabled"
+  },
+  {
+   "fieldname": "customer_display_overlay_text_color",
+   "fieldtype": "Color",
+   "label": "Text Color",
+   "default": "#FFFFFF",
+   "depends_on": "eval:doc.customer_display_overlay_enabled"
+  },
+  {
+   "fieldname": "customer_display_overlay_background_color",
+   "fieldtype": "Color",
+   "label": "Background Color",
+   "default": "#000000",
+   "depends_on": "eval:doc.customer_display_overlay_enabled"
+  },
+  {
+   "fieldname": "customer_display_overlay_opacity",
+   "fieldtype": "Int",
+   "label": "Background Opacity (0-100)",
+   "default": "65",
+   "depends_on": "eval:doc.customer_display_overlay_enabled"
+  },
+  {
+   "fieldname": "customer_display_overlay_font_size",
+   "fieldtype": "Int",
+   "label": "Text Font Size (px)",
+   "default": "28",
+   "depends_on": "eval:doc.customer_display_overlay_enabled"
+  },
+  {
+   "fieldname": "customer_display_overlay_scroll_speed",
+   "fieldtype": "Select",
+   "label": "Scroll Speed",
+   "options": "Slow\nNormal\nFast",
+   "default": "Normal",
+   "depends_on": "eval:doc.customer_display_overlay_enabled && doc.customer_display_overlay_type == 'Scrolling'"
   }
  ],
  "index_web_pages_for_search": 1,

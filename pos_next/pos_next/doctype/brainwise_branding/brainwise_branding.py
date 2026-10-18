@@ -21,8 +21,8 @@ PROTECTION_PHRASE_HASH = "3ddb5c12a034095ff81a85bbd06623a60e81252c296b747cf9c127
 
 
 class BrainWiseBranding(Document):
-	# Protected fields that require master key to modify
-	PROTECTED_FIELDS = ['enabled', 'brand_text', 'brand_name', 'brand_url', 'check_interval']
+	# Protected fields that require master key to modify (only 'enabled' is protected)
+	PROTECTED_FIELDS = ['enabled']
 
 	def validate(self):
 		"""Validate before saving - enforce master key requirement"""
@@ -184,9 +184,13 @@ class BrainWiseBranding(Document):
 			# Decode stored signature
 			stored = json.loads(base64.b64decode(self.encrypted_signature))
 
-			# Check if branding data matches
-			if (client_data.get("brand_name") != self.brand_name or
-				client_data.get("brand_url") != self.brand_url):
+			# Check if branding data matches (case-insensitive & stripped)
+			client_brand = (client_data.get("brand_name") or "").strip().lower()
+			stored_brand = (self.brand_name or "").strip().lower()
+			client_url = (client_data.get("brand_url") or "").rstrip("/").lower()
+			stored_url = (self.brand_url or "").rstrip("/").lower()
+
+			if client_brand != stored_brand or client_url != stored_url:
 				return False
 
 			return True
@@ -241,8 +245,8 @@ def get_branding_config():
 		# Return default config even on error
 		return {
 			"_t": base64.b64encode("Powered by".encode()).decode(),
-			"_l": base64.b64encode("BrainWise".encode()).decode(),
-			"_u": base64.b64encode("https://nexus.brainwise.me".encode()).decode(),
+			"_l": base64.b64encode("MUBTKIR".encode()).decode(),
+			"_u": base64.b64encode("https://mubtkir.com".encode()).decode(),
 			"_i": 10000,
 			"_v": True,
 			"_e": 1

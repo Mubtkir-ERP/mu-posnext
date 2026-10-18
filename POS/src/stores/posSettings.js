@@ -81,10 +81,66 @@ export const usePOSSettingsStore = defineStore("posSettings", () => {
 		// Security
 		enable_session_lock: 0,
 		session_lock_timeout: 5,
+		// Customer Display
+		customer_display_enabled: 0,
+		customer_display_company_name: "",
+		customer_display_welcome_text: "Welcome",
+		customer_display_pos_location: "",
+		customer_display_theme: "Dark",
+		customer_display_size_mode: "Auto",
+		customer_display_currency_label: "SAR",
+		customer_display_idle_mode: "Welcome",
+		customer_display_idle_image: "",
+		customer_display_idle_video: "",
+		customer_display_overlay_enabled: 0,
+		customer_display_overlay_text: "",
+		customer_display_overlay_type: "Scrolling",
+		customer_display_overlay_on: "All",
+		customer_display_overlay_position: "Bottom",
+		customer_display_overlay_text_color: "#FFFFFF",
+		customer_display_overlay_background_color: "#000000",
+		customer_display_overlay_opacity: 65,
+		customer_display_overlay_font_size: 28,
+		customer_display_overlay_scroll_speed: "Normal",
+		cd_enable_thank_you: 1,
+		customer_display_thank_you_title: "Thank You",
+		customer_display_thank_you_message: "Thank you for shopping with us",
+		customer_display_thank_you_duration: 5,
+		cd_show_company_name: 1,
+		cd_show_welcome_text: 1,
+		cd_show_pos_location: 1,
+		cd_show_pos_number: 1,
+		cd_show_product_image: 1,
+		cd_show_item_name: 1,
+		cd_show_barcode: 1,
+		cd_show_quantity: 1,
+		cd_show_original_price: 1,
+		cd_show_discount_amount: 1,
+		cd_show_discount_percentage: 0,
+		cd_show_final_price: 1,
+		cd_show_running_qty: 1,
+		cd_show_subtotal: 1,
+		cd_show_total_discount: 1,
+		cd_show_grand_total: 1,
+		cd_show_customer_name: 1,
+		cd_customer_name_mode: "First Name",
+		cd_show_loyalty_points: 1,
+		cd_show_loyalty_earned: 1,
+		cd_show_customer_credit: 1,
+		cd_show_payment_method: 1,
+		cd_show_amount_paid: 1,
+		cd_show_remaining_balance: 1,
+		cd_show_change: 1,
+		cd_show_invoice_number: 1,
 	})
 
 	const isLoading = ref(false)
 	const isLoaded = ref(false)
+
+	// Computed - Customer Display
+	const customerDisplayEnabled = computed(() =>
+		Boolean(Number(settings.value.customer_display_enabled || 0)),
+	)
 
 	// Computed - Wallet & Loyalty Settings
 	const enableLoyaltyProgram = computed(() =>
@@ -560,6 +616,9 @@ export const usePOSSettingsStore = defineStore("posSettings", () => {
 		// Computed - Security
 		enableSessionLock,
 		sessionLockTimeout,
+
+		// Computed - Customer Display
+		customerDisplayEnabled,
 
 		// Actions
 		loadSettings,

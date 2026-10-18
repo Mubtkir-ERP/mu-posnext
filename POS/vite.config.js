@@ -68,6 +68,7 @@ export default defineConfig({
 			],
 		}),
 		VitePWA({
+			scope: "/pos",
 			registerType: "autoUpdate",
 			includeAssets: ["favicon.png", "icon.svg", "icon-maskable.svg"],
 			manifest: {
@@ -78,7 +79,7 @@ export default defineConfig({
 				theme_color: "#4F46E5",
 				background_color: "#ffffff",
 				display: "standalone",
-				scope: "/assets/pos_next/pos/",
+				scope: "/pos",
 				start_url: "/pos",
 				icons: [
 					{
@@ -110,7 +111,7 @@ export default defineConfig({
 			workbox: {
 				globPatterns: ["**/*.{js,css,html,ico,png,svg,woff,woff2}"],
 				maximumFileSizeToCacheInBytes: 4 * 1024 * 1024, // 3 MB
-				navigateFallback: null,
+				navigateFallback: "index.html",
 				navigateFallbackDenylist: [/^\/api/, /^\/app/],
 				runtimeCaching: [
 					{

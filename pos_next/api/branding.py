@@ -31,7 +31,7 @@ def get_default_config():
 	"""Return default branding configuration"""
 	return {
 		"_t": base64.b64encode("Powered by".encode()).decode(),
-		"_l": base64.b64encode("Mubtkir".encode()).decode(),
+		"_l": base64.b64encode("MUBTKIR".encode()).decode(),
 		"_u": base64.b64encode("https://mubtkir.com".encode()).decode(),
 		"_i": 10000,
 		"_v": True,
@@ -64,10 +64,10 @@ def validate_branding(client_signature=None, brand_name=None, brand_url=None):
 		if not doc.enabled or not doc.enable_server_validation:
 			return {"valid": True, "message": "Validation disabled"}
 
-		# Validate branding data
+		# Validate branding data (case-insensitive and stripped)
 		is_valid = (
-			brand_name == doc.brand_name and
-			brand_url == doc.brand_url
+			(brand_name or "").strip().lower() == (doc.brand_name or "").strip().lower() and
+			(brand_url or "").rstrip("/").lower() == (doc.brand_url or "").rstrip("/").lower()
 		)
 
 		if not is_valid:

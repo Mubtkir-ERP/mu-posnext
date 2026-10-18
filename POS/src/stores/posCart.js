@@ -8,6 +8,7 @@ import {
 	checkStockAvailability,
 } from "@/utils/stockValidator"
 import { offlineState } from "@/utils/offline/offlineState"
+import { syncPendingOfflineCustomers, resolveOfflineCustomerId } from "@/utils/offline/customerQueue"
 import { useToast } from "@/composables/useToast"
 import { defineStore } from "pinia"
 import { computed, nextTick, ref, toRaw, watch } from "vue"
@@ -262,6 +263,40 @@ export const usePOSCartStore = defineStore("posCart", () => {
 		if (!customer.value) {
 			showWarning(__("Please select a customer"))
 			return
+		}
+
+		// Resolve offline-created customer before normal online checkout.
+		const selectedCustomerId = customer.value?.name || customer.value
+
+		if (String(selectedCustomerId || "").startsWith("pos_customer_")) {
+			if (offlineState.isOffline || !navigator.onLine) {
+				showWarning(__("Customer is pending synchronization. Please reconnect."))
+				return
+			}
+
+			try {
+				await syncPendingOfflineCustomers()
+
+				const serverCustomerId = await resolveOfflineCustomerId(selectedCustomerId)
+
+				if (!serverCustomerId) {
+					showWarning(__("Customer synchronization is pending. Please retry."))
+					return
+				}
+
+				if (typeof customer.value === "object" && customer.value !== null) {
+					customer.value = {
+						...customer.value,
+						name: serverCustomerId,
+						offline_pending: false,
+					}
+				} else {
+					customer.value = serverCustomerId
+				}
+			} catch (error) {
+				showWarning(__("Customer synchronization failed. Invoice was not submitted."))
+				return
+			}
 		}
 
 		const result = await baseSubmitInvoice(targetDoctype.value, deliveryDate.value, writeOffAmount.value)

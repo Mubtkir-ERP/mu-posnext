@@ -1095,6 +1095,7 @@ const props = defineProps({
 const emit = defineEmits([
 	"update:modelValue",
 	"payment-completed",
+	"payment-updated",
 	"update-additional-discount",
 ])
 
@@ -1417,7 +1418,51 @@ const filteredPaymentMethods = computed(() => {
 // Sales Persons state
 const salesPersons = ref([])
 const selectedSalesPersons = ref([])
+const SALES_PERSON_RECOVERY_PREFIX = "posnext_payment_sales_person_recovery_v1"
 const salesPersonSearch = ref("")
+
+function salesPersonRecoveryKey() {
+	return `${SALES_PERSON_RECOVERY_PREFIX}:${String(props.posProfile || "default")}`
+}
+
+function persistSelectedSalesPersons() {
+	if (typeof sessionStorage === "undefined") return
+	try {
+		if (selectedSalesPersons.value.length) {
+			sessionStorage.setItem(salesPersonRecoveryKey(), JSON.stringify({
+				saved_at: Date.now(),
+				persons: selectedSalesPersons.value.map((person) => ({ ...person })),
+			}))
+		} else {
+			sessionStorage.removeItem(salesPersonRecoveryKey())
+		}
+	} catch (_) {}
+}
+
+function restoreSelectedSalesPersons() {
+	if (typeof sessionStorage === "undefined" || selectedSalesPersons.value.length) return
+	try {
+		const raw = sessionStorage.getItem(salesPersonRecoveryKey())
+		if (!raw) return
+		const snapshot = JSON.parse(raw)
+		const age = Date.now() - Number(snapshot?.saved_at || 0)
+		if (age >= 0 && age <= 2 * 60 * 60 * 1000 && Array.isArray(snapshot?.persons)) {
+			selectedSalesPersons.value = snapshot.persons.map((person) => ({ ...person }))
+		} else {
+			sessionStorage.removeItem(salesPersonRecoveryKey())
+		}
+	} catch (_) {}
+}
+
+function clearSalesPersonRecovery() {
+	try { sessionStorage.removeItem(salesPersonRecoveryKey()) } catch (_) {}
+}
+
+watch(
+	selectedSalesPersons,
+	() => persistSelectedSalesPersons(),
+	{ deep: true, flush: "post" }
+)
 const loadingSalesPersons = ref(false)
 const salesPersonDropdownOpen = ref(false)
 const salesPersonDropdownRef = ref(null)
@@ -1682,6 +1727,26 @@ const changeAmount = computed(() => {
 	const change = totalPaid.value - roundCurrency(props.grandTotal)
 	return change > 0 ? roundCurrency(change) : 0
 })
+
+// Customer Display: publish tender changes while the payment dialog is open.
+// This is display-only and never participates in invoice calculations.
+watch(
+	[show, paymentEntries, totalPaid, remainingAmount, changeAmount, totalAvailableCredit, remainingAvailableCredit],
+	([isOpen]) => {
+		// Customer Display needs to know both when the payment screen opens and closes.
+		// While open, PAYMENT state has priority over background cart watchers.
+		emit("payment-updated", {
+			is_open: Boolean(isOpen),
+			payments: paymentEntries.value.map((row) => ({ ...row })),
+			paid_amount: totalPaid.value,
+			outstanding_amount: remainingAmount.value,
+			change_amount: changeAmount.value,
+			customer_credit_balance: remainingAvailableCredit.value,
+			customer_credit_total: totalAvailableCredit.value,
+		})
+	},
+	{ deep: true, flush: "post", immediate: true }
+)
 
 // ===========================================
 // Write-Off Logic
@@ -1968,6 +2033,9 @@ watch(show, (newVal) => {
 		customerCredit.value = []
 		// Note: Don't reset customerBalance here - it's pre-fetched when customer changes
 		selectedSalesPersons.value = []
+		// Rehydrate the cashier's in-progress sales-person selection after a browser
+		// refresh. The snapshot includes allocated_percentage for multi-person splits.
+		restoreSelectedSalesPersons()
 		salesPersonSearch.value = ""
 		applyWriteOff.value = false // Reset write-off state
 		// Set default delivery date to today for Sales Orders
@@ -2424,6 +2492,7 @@ function completePayment() {
 
 	log.debug("[PaymentDialog] Emitting payment-completed:", paymentData)
 
+	clearSalesPersonRecovery()
 	emit("payment-completed", paymentData)
 
 	show.value = false

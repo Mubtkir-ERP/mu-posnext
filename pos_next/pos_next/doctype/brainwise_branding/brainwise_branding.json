@@ -62,7 +62,7 @@
   {
    "fieldname": "branding_locked_notice",
    "fieldtype": "HTML",
-   "options": "<div class=\"alert alert-info\" style=\"margin-bottom: 15px;\"><strong>🔒 These fields are protected and read-only.</strong><br>To modify them, provide the Master Key above.</div>"
+   "options": "<div class=\"alert alert-info\" style=\"margin-bottom: 15px;\"><strong>Branding Configuration:</strong><br>Brand Text, Brand Name, Brand URL and Check Interval can be customized freely. Disabling branding still requires the Master Key.</div>"
   },
   {
    "default": "Powered by",
@@ -70,25 +70,25 @@
    "fieldtype": "Data",
    "in_list_view": 1,
    "label": "Brand Text",
-   "reqd": 1,
-   "read_only": 1
+   "read_only": 0,
+   "reqd": 1
   },
   {
-   "default": "BrainWise",
+   "default": "MUBTKIR",
    "fieldname": "brand_name",
    "fieldtype": "Data",
    "in_list_view": 1,
    "label": "Brand Name",
-   "reqd": 1,
-   "read_only": 1
+   "read_only": 0,
+   "reqd": 1
   },
   {
-   "default": "https://nexus.brainwise.me",
+   "default": "https://mubtkir.com",
    "fieldname": "brand_url",
    "fieldtype": "Data",
    "label": "Brand URL",
-   "reqd": 1,
-   "read_only": 1
+   "read_only": 0,
+   "reqd": 1
   },
   {
    "fieldname": "column_break_config",
@@ -100,7 +100,7 @@
    "fieldname": "check_interval",
    "fieldtype": "Int",
    "label": "Check Interval (ms)",
-   "read_only": 1
+   "read_only": 0
   },
   {
    "fieldname": "encrypted_signature",

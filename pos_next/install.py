@@ -25,6 +25,9 @@ def after_install():
 		# Setup default print format for POS Profiles
 		setup_default_print_format()
 
+		# Initialize branding with Mubtkir defaults and valid signature
+		setup_branding()
+
 		# Clear cache to ensure changes take effect
 		frappe.clear_cache()
 		frappe.db.commit()
@@ -46,6 +49,9 @@ def after_migrate():
 		# Setup default print format
 		setup_default_print_format(quiet=True)
 
+		# Initialize branding
+		setup_branding(quiet=True)
+
 		# Clear cache
 		frappe.clear_cache()
 		frappe.db.commit()
@@ -59,6 +65,36 @@ def after_migrate():
 		)
 		log_message(f"POS Next: Migration error - {str(e)}", level="error")
 		raise
+
+
+def setup_branding(quiet=False):
+	"""Ensure BrainWise Branding is initialized with Mubtkir branding and valid signature"""
+	try:
+		if not frappe.db.exists("DocType", "BrainWise Branding"):
+			return
+
+		doc = frappe.get_single("BrainWise Branding")
+		dirty = False
+
+		if not doc.brand_name or doc.brand_name == "BrainWise":
+			doc.brand_name = "MUBTKIR"
+			dirty = True
+		if not doc.brand_url or "brainwise" in doc.brand_url:
+			doc.brand_url = "https://mubtkir.com"
+			dirty = True
+		if not doc.brand_text:
+			doc.brand_text = "Powered by"
+			dirty = True
+		if not doc.encrypted_signature:
+			dirty = True
+
+		if dirty:
+			doc.flags.ignore_permissions = True
+			doc.save(ignore_permissions=True)
+			if not quiet:
+				log_message("POS Next: Branding configuration initialized successfully", level="info")
+	except Exception as e:
+		log_message(f"POS Next: Branding setup warning - {str(e)}", level="warning")
 
 
 def setup_default_print_format(quiet=False):

@@ -302,6 +302,31 @@ export const useCustomerSearchStore = defineStore("customerSearch", () => {
 		}
 	}
 
+	function replaceOfflineCustomer(offlineId, serverId) {
+		if (!offlineId || !serverId) return
+
+		const pending = allCustomers.value.find(
+			(customer) => customer.name === offlineId
+		)
+
+		allCustomers.value = allCustomers.value.filter(
+			(customer) =>
+				customer.name !== offlineId &&
+				customer.name !== serverId
+		)
+
+		if (pending) {
+			allCustomers.value.unshift({
+				...pending,
+				name: serverId,
+				offline_pending: false,
+			})
+		}
+
+		searchIndex.value.clear()
+		resultCache.value.clear()
+	}
+
 	// Real-time Push Integration
 	const { onCustomerUpdate } = useRealtimeCustomers()
 	onCustomerUpdate(async (data) => {
@@ -412,6 +437,7 @@ export const useCustomerSearchStore = defineStore("customerSearch", () => {
 		// Actions
 		loadAllCustomers,
 		addCustomerToCache,
+		replaceOfflineCustomer,
 		setSearchTerm,
 		clearSearch,
 		setSelectedIndex,

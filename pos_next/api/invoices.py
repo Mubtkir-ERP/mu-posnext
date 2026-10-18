@@ -1477,6 +1477,18 @@ def submit_invoice(invoice=None, data=None):
                     status="Synced",
                 )
         except Exception as submit_error:
+            if offline_id and offline_sync and doctype == "Sales Invoice":
+                try:
+                    offline_sync.create_sync_record(
+                        offline_id,
+                        getattr(invoice_doc, "name", "") or "",
+                        pos_profile=pos_profile,
+                        customer=getattr(invoice_doc, "customer", None),
+                        status="Failed",
+                    )
+                except Exception:
+                    pass
+
             # If submission fails, cleanup the invoice to prevent stock reservation issues
             try:
                 # Reload to get current state

@@ -17,7 +17,7 @@ import { call } from '@/utils/apiWrapper'
 
 // Component state
 const footerText = ref('Powered by')
-const linkText = ref('Mubtkir')
+const linkText = ref('MUBTKIR')
 const footerLink = ref('https://mubtkir.com')
 const footerRoot = ref(null)
 const config = ref({})
@@ -26,7 +26,7 @@ const serverValidationEnabled = ref(true)
 // Dynamic class and style to prevent easy CSS targeting
 const componentId = Math.random().toString(36).substring(7)
 const footerClass = ref(`pos-footer-component pos-footer-component-${componentId}`)
-const brandSignature = computed(() => `Mubtkir-${componentId}`)
+const brandSignature = computed(() => `MUBTKIR-${componentId}`)
 
 const footerStyle = computed(() => ({
 	padding: config.value._s?.p || '12px 20px',
@@ -81,10 +81,10 @@ const loadBrandingConfig = async () => {
 			}
 		}
 	} catch (error) {
-		console.error('[Mubtkir] Failed to load branding config:', error)
+		console.error('[MUBTKIR] Failed to load branding config:', error)
 		// Use fallback values
 		footerText.value = 'Powered by'
-		linkText.value = 'Mubtkir'
+		linkText.value = 'MUBTKIR'
 		footerLink.value = 'https://mubtkir.com'
 	}
 }
@@ -130,7 +130,7 @@ const logClientEvent = async (eventType, details = {}) => {
 const ensureBranding = () => {
 	if (!footerRoot.value) return
 
-	const expectedBrand = atob(config.value._l || btoa('Mubtkir'))
+	const expectedBrand = atob(config.value._l || btoa('MUBTKIR'))
 	const expectedUrl = atob(config.value._u || btoa('https://mubtkir.com'))
 	const expectedText = atob(config.value._t || btoa('Powered by'))
 

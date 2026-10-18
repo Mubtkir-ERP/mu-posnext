@@ -29,9 +29,11 @@
 				:show-cash-disbursement="profilePrintOptions.allowCashExpense && shiftStore.hasOpenShift && canAccessShiftActions"
 				:show-voucher-redeem="profilePrintOptions.voucherEnabled && shiftStore.hasOpenShift && canAccessShiftActions"
 				:voucher-balance="voucherBalance"
+				:customer-display-enabled="posSettingsStore.customerDisplayEnabled"
 				@sync-click="handleSyncClick"
 				@cash-disbursement-click="handleOpenCashDisbursement"
 				@voucher-redeem-click="showVoucherRedeem = true"
+				@customer-display-click="customerDisplayStore.openDisplayWindow({ preferSecondary: true })"
 				@printer-click="openHistoryDialog"
 				@go-home="goHome"
 				@refresh-click="handleRefresh"
@@ -532,6 +534,7 @@
 			:target-doctype="cartStore.targetDoctype"
 			:is-submitting="cartStore.isSubmitting"
 			@payment-completed="handlePaymentCompleted"
+			@payment-updated="handleCustomerDisplayPaymentUpdated"
 			@update-additional-discount="handleAdditionalDiscountUpdate"
 		/>
 
@@ -1058,6 +1061,7 @@ let _posInitPromise = null
 </script>
 
 <script setup>
+import { syncPendingOfflineCustomers, resolveOfflineCustomerId } from "@/utils/offline/customerQueue";
 import ShiftClosingDialog from "@/components/ShiftClosingDialog.vue";
 import ShiftOpeningDialog from "@/components/ShiftOpeningDialog.vue";
 import ClearCacheOverlay from "@/components/common/ClearCacheOverlay.vue";
@@ -1112,6 +1116,7 @@ import { useStockStore } from "@/stores/stock";
 import { usePOSCartStore } from "@/stores/posCart";
 import { usePOSDraftsStore } from "@/stores/posDrafts";
 import { usePOSSettingsStore } from "@/stores/posSettings";
+import { useCustomerDisplayStore } from "@/stores/customerDisplay";
 import { usePOSShiftStore } from "@/stores/posShift";
 import { usePOSSyncStore } from "@/stores/posSync";
 import { usePOSUIStore } from "@/stores/posUI";
@@ -1130,8 +1135,203 @@ const itemStore = useItemSearchStore();
 const stockStore = useStockStore();
 const customerSearchStore = useCustomerSearchStore();
 const bootstrapStore = useBootstrapStore();
+const customerDisplayStore = useCustomerDisplayStore();
+let customerDisplayAutoOpenAttempted = false;
+let cartRecoveryInitialized = false;
+let cartRecoveryRestoring = false;
+let cartRecoveryProfile = null;
+let cartRecoveryVerificationTimer = null;
+const CART_RECOVERY_PREFIX = "posnext_active_cart_recovery_v1";
+
+function cartRecoveryKey(profile = shiftStore.profileName) {
+	return `${CART_RECOVERY_PREFIX}:${String(profile || "default")}`;
+}
+
+function discardActiveCartRecovery(profile = shiftStore.profileName) {
+	if (cartRecoveryVerificationTimer) {
+		window.clearTimeout(cartRecoveryVerificationTimer);
+		cartRecoveryVerificationTimer = null;
+	}
+	if (!profile || typeof sessionStorage === "undefined") return;
+	try {
+		sessionStorage.removeItem(cartRecoveryKey(profile));
+	} catch (error) {
+		log.warn("Could not discard active cart recovery:", error);
+	}
+}
+
+function saveActiveCartRecovery() {
+	if (cartRecoveryRestoring || typeof sessionStorage === "undefined") return;
+	const profile = shiftStore.profileName || cartStore.posProfile;
+	if (!profile) return;
+	try {
+		if (!cartStore.invoiceItems?.length) {
+			return;
+		}
+		const rawCustomer = cartStore.customer || null;
+		const snapshot = {
+			profile,
+			saved_at: Date.now(),
+			items: JSON.parse(JSON.stringify(cartStore.invoiceItems)),
+			customer: rawCustomer ? JSON.parse(JSON.stringify(rawCustomer)) : null,
+			additional_discount: Number(cartStore.additionalDiscount || 0),
+		};
+		sessionStorage.setItem(cartRecoveryKey(profile), JSON.stringify(snapshot));
+	} catch (error) {
+		log.warn("Could not save active POS cart recovery:", error);
+	}
+}
+
+async function restoreActiveCartRecovery(profile, { verify = false } = {}) {
+	if (!profile || typeof sessionStorage === "undefined" || cartRecoveryRestoring) return false;
+	if (cartRecoveryInitialized && !verify && cartRecoveryProfile === profile) return false;
+	cartRecoveryRestoring = true;
+	let restored = false;
+	try {
+		const raw = sessionStorage.getItem(cartRecoveryKey(profile));
+		if (!raw) return false;
+		const snapshot = JSON.parse(raw);
+		const age = Date.now() - Number(snapshot?.saved_at || 0);
+		if (
+			snapshot?.profile !== profile || age < 0 || age > 2 * 60 * 60 * 1000 ||
+			!Array.isArray(snapshot.items) || !snapshot.items.length
+		) {
+			sessionStorage.removeItem(cartRecoveryKey(profile));
+			return false;
+		}
+		if (cartStore.invoiceItems?.length) return false;
+
+		cartStore.invoiceItems = JSON.parse(JSON.stringify(snapshot.items));
+		cartStore.additionalDiscount = Number(snapshot.additional_discount || 0);
+		cartStore.rebuildIncrementalCache();
+		restored = cartStore.invoiceItems.length > 0;
+		if (!restored) return false;
+
+		if (snapshot.customer) {
+			try {
+				await cartStore.setCustomer(snapshot.customer);
+				await customerDisplayStore.refreshCustomerFinancials(snapshot.customer);
+			} catch (error) {
+				log.warn("Recovered cart; customer refresh failed:", error);
+			}
+		}
+		log.info("Recovered unfinished POS transaction", { profile, items: cartStore.invoiceItems.length });
+		return true;
+	} catch (error) {
+		log.warn("Active cart recovery failed; stored snapshot retained:", error);
+		return false;
+	} finally {
+		cartRecoveryRestoring = false;
+		cartRecoveryInitialized = true;
+		cartRecoveryProfile = profile;
+		if (restored) saveActiveCartRecovery();
+	}
+}
+
+function verifyActiveCartRecoveryAfterInit(profile) {
+	if (cartRecoveryVerificationTimer) window.clearTimeout(cartRecoveryVerificationTimer);
+	cartRecoveryVerificationTimer = window.setTimeout(async () => {
+		cartRecoveryVerificationTimer = null;
+		if (shiftStore.profileName !== profile || cartStore.invoiceItems?.length) return;
+		try {
+			if (sessionStorage.getItem(cartRecoveryKey(profile))) {
+				await restoreActiveCartRecovery(profile, { verify: true });
+			}
+		} catch (error) {
+			log.warn("Delayed cart recovery verification failed:", error);
+		}
+	}, 950);
+}
+
+function flushActiveCartRecoveryBeforeUnload() {
+	saveActiveCartRecovery();
+}
+if (typeof window !== "undefined") {
+	window.addEventListener("pagehide", flushActiveCartRecoveryBeforeUnload);
+}
+
+function handleCustomerDisplayPaymentUpdated(paymentData) {
+	customerDisplayStore.setPayment(paymentData);
+}
+
 // Note: settingsStore is an alias to posSettingsStore (same Pinia store singleton)
 const settingsStore = posSettingsStore;
+
+watch(
+	() => [shiftStore.profileName, posSettingsStore.isLoaded, posSettingsStore.settings.customer_display_enabled],
+	async ([profile, loaded]) => {
+		if (!profile || !loaded) return;
+		if (Number(posSettingsStore.settings.customer_display_enabled || 0) === 1) {
+			const ready = await customerDisplayStore.initialize(profile);
+			if (ready && !customerDisplayAutoOpenAttempted) {
+				customerDisplayAutoOpenAttempted = true;
+				setTimeout(async () => {
+					const displayWindow = await customerDisplayStore.openDisplayWindow({ preferSecondary: true });
+					if (displayWindow) {
+						try { displayWindow.blur(); window.focus(); } catch (_) {}
+					}
+				}, 250);
+			}
+		} else {
+			customerDisplayStore.stop();
+		}
+	},
+	{ immediate: true }
+);
+
+watch(
+	() => JSON.stringify({
+		items: (cartStore.invoiceItems || []).map((item) => ({
+			item_code: item.item_code,
+			uom: item.uom || item.stock_uom,
+			quantity: item.quantity ?? item.qty,
+			rate: item.rate,
+			price_list_rate: item.price_list_rate,
+			discount_amount: item.discount_amount,
+			discount_percentage: item.discount_percentage,
+		})),
+		customer: cartStore.customer?.name || cartStore.customer?.customer || cartStore.customer || null,
+		additional_discount: Number(cartStore.additionalDiscount || 0),
+	}),
+	() => saveActiveCartRecovery(),
+	{ flush: "sync" }
+);
+
+watch(
+	() => {
+		const customer = cartStore.customer || null;
+		return JSON.stringify({
+			items: (cartStore.invoiceItems || []).map((item) => ({
+				item_code: item.item_code || "",
+				item_name: item.item_name || "",
+				barcode: item.barcode || item.item_barcode || "",
+				image: item.image || item.item_image || item.website_image || "",
+				qty: Number(item.quantity ?? item.qty ?? 0),
+				rate: Number(item.rate ?? 0),
+				price_list_rate: Number(item.price_list_rate ?? 0),
+				amount: Number(item.amount ?? 0),
+				discount_amount: Number(item.discount_amount ?? 0),
+				discount_percentage: Number(item.discount_percentage ?? 0),
+			})),
+			customer: customer
+				? {
+					name: customer.name || customer.customer || customer.customer_name || String(customer),
+					customer_name: customer.customer_name || customer.full_name || "",
+					loyalty_points: Number(customer.loyalty_points ?? customer.available_loyalty_points ?? customer.points ?? 0),
+					credit: Number(customer.customer_credit ?? customer.credit_balance ?? customer.available_credit ?? 0),
+				}
+				: null,
+			subtotal: Number(cartStore.subtotal || 0),
+			discount: Number(cartStore.totalDiscount || 0),
+			grand_total: Number(cartStore.grandTotal || 0),
+		});
+	},
+	() => {
+		if (!customerDisplayStore.initialized || !customerDisplayStore.isEnabled) return;
+		customerDisplayStore.scheduleCartSync();
+	},
+	{ flush: "post" }
+);
 
 // Real-time stock updates
 const { onStockUpdate } = useRealtimeStock();
@@ -1491,7 +1691,15 @@ onMounted(async () => {
 		cleanup();
 		stopActivityTracking();
 		qzDisconnect();
+		window.removeEventListener("pagehide", flushActiveCartRecoveryBeforeUnload);
+		window.removeEventListener("offlineCustomerSynced", handleOfflineCustomerSynced);
+		if (cartRecoveryVerificationTimer) {
+			window.clearTimeout(cartRecoveryVerificationTimer);
+			cartRecoveryVerificationTimer = null;
+		}
 	});
+
+	window.addEventListener("offlineCustomerSynced", handleOfflineCustomerSynced);
 
 	try {
 		// Start timers for current time and shift duration
@@ -1588,6 +1796,11 @@ onMounted(async () => {
 
 		// Load tax rules (depends on settings being loaded)
 		await cartStore.loadTaxRules(shiftStore.profileName, posSettingsStore.settings);
+
+		// Restore the active POS transaction only after default customer/settings are ready,
+		// otherwise setDefaultCustomer() can overwrite the recovered customer.
+		await restoreActiveCartRecovery(shiftStore.profileName);
+		verifyActiveCartRecoveryAfterInit(shiftStore.profileName);
 
 		_initializedKey = `${shiftStore.profileName}::${shiftStore.currentShift?.name}`;
 	}
@@ -1927,6 +2140,10 @@ async function handleShiftOpened() {
 	// Load tax rules (depends on settings being loaded)
 	await cartStore.loadTaxRules(shiftStore.profileName, posSettingsStore.settings);
 
+	// Restore an interrupted transaction after the new shift has completed initialization.
+	await restoreActiveCartRecovery(shiftStore.profileName);
+	verifyActiveCartRecoveryAfterInit(shiftStore.profileName);
+
 	_initializedProfile = shiftStore.profileName;
 
 	// Start session lock tracking now that a shift is open and POS is ready
@@ -2044,9 +2261,11 @@ function handleAdditionalDiscountUpdate(discountAmount) {
 	cartStore.rebuildIncrementalCache();
 }
 
-function handleCustomerSelected(selectedCustomer) {
+async function handleCustomerSelected(selectedCustomer) {
 	if (selectedCustomer) {
-		cartStore.setCustomer(selectedCustomer);
+		await cartStore.setCustomer(selectedCustomer);
+		await customerDisplayStore.refreshCustomerFinancials(selectedCustomer);
+		customerDisplayStore.syncCartNow();
 		uiStore.showCustomerDialog = false;
 		showSuccess(__("{0} selected", [selectedCustomer.customer_name]));
 
@@ -2055,7 +2274,9 @@ function handleCustomerSelected(selectedCustomer) {
 			uiStore.showPaymentDialog = true;
 		}
 	} else {
-		cartStore.setCustomer(null);
+		await cartStore.setCustomer(null);
+		await customerDisplayStore.refreshCustomerFinancials(null);
+		customerDisplayStore.syncCartNow();
 	}
 }
 
@@ -2117,6 +2338,27 @@ async function handleErrorRetry() {
 
 async function handlePaymentCompleted(paymentData) {
 	try {
+		// Payment Hub and online checkout require a real ERPNext Customer ID.
+		const pendingCustomerId = cartStore.customer?.name || cartStore.customer;
+
+		if (String(pendingCustomerId || "").startsWith("pos_customer_")
+			&& !offlineStore.isOffline && navigator.onLine) {
+			await syncPendingOfflineCustomers();
+
+			const resolvedId = await resolveOfflineCustomerId(pendingCustomerId);
+
+			if (!resolvedId) {
+				showError(__("Customer synchronization is pending. Please retry."));
+				return;
+			}
+
+			await cartStore.setCustomer({
+				...(typeof cartStore.customer === "object" ? cartStore.customer : {}),
+				name: resolvedId,
+				offline_pending: false,
+			});
+		}
+
 		const customerValue = cartStore.customer?.name || cartStore.customer;
 		if (!customerValue && !shiftStore.profileCustomer) {
 			showWarning(__("Please select a customer before proceeding"));
@@ -2124,6 +2366,8 @@ async function handlePaymentCompleted(paymentData) {
 			uiStore.showCustomerDialog = true;
 			return;
 		}
+
+		customerDisplayStore.setPayment(paymentData);
 
 		cartStore.payments = [];
 		if (paymentData.payments && Array.isArray(paymentData.payments)) {
@@ -2182,7 +2426,9 @@ async function handlePaymentCompleted(paymentData) {
 				cartStore.grandTotal,
 				paymentData.paid_amount
 			);
+			customerDisplayStore.showCompleted({ invoice: invoiceData, payment: paymentData });
 			uiStore.showPaymentDialog = false;
+			discardActiveCartRecovery();
 			cartStore.clearCart();
 			// Reset cart hash after successful payment
 			previousCartHash = "";
@@ -2213,7 +2459,9 @@ async function handlePaymentCompleted(paymentData) {
 				const invoiceTotal = result.grand_total || result.total || 0;
 				const paidAmount = paymentData.paid_amount || invoiceTotal;
 
+				customerDisplayStore.showCompleted({ invoice: result, payment: paymentData });
 				uiStore.showPaymentDialog = false;
+				discardActiveCartRecovery();
 				cartStore.clearCart();
 				// Reset cart hash after successful payment
 				previousCartHash = "";
@@ -2275,6 +2523,14 @@ function handleClearCart() {
 }
 
 function confirmClearCart() {
+	discardActiveCartRecovery();
+	try {
+		const profile = String(shiftStore.profileName || "default");
+		sessionStorage.removeItem(`posnext_payment_sales_person_recovery_v1:${profile}`);
+	} catch (error) {
+		log.warn("Could not discard Sales Person recovery:", error);
+	}
+	customerDisplayStore.clearToIdle();
 	cartStore.clearCart();
 	// Reset cart hash when cart is cleared
 	previousCartHash = "";
@@ -2432,6 +2688,7 @@ async function handleSaveDraft() {
 		cartStore.currentDraftId
 	);
 	if (savedDraft) {
+		discardActiveCartRecovery();
 		cartStore.clearCart();
 		// Reset cart hash when cart is saved as draft and cleared
 		previousCartHash = "";
@@ -2487,7 +2744,8 @@ async function handleLoadDraft(draft) {
 
 function handleReturnCreated(returnInvoice) {
 	// Success message is already shown by ReturnInvoiceDialog
-	log.debug("Return invoice created:", returnInvoice.name)
+	log.debug("Return invoice created:", returnInvoice.name);
+	customerDisplayStore.showCompleted({ invoice: returnInvoice, mode: "RETURN" });
 }
 
 function handleDiscountApplied(discount) {
@@ -2525,6 +2783,24 @@ function handleBatchSerialSelected(batchSerial) {
 		} catch (error) {
 			showError(error.message);
 		}
+	}
+}
+
+function handleOfflineCustomerSynced(event) {
+	const { offlineId, serverId } = event.detail || {};
+	if (!offlineId || !serverId) return;
+
+	customerSearchStore.replaceOfflineCustomer(offlineId, serverId);
+
+	const selected = cartStore.customer;
+	const selectedId = selected?.name || selected;
+
+	if (selectedId === offlineId) {
+		const resolved = typeof selected === "object"
+			? { ...selected, name: serverId, offline_pending: false }
+			: { name: serverId, customer_name: serverId };
+
+		cartStore.setCustomer(resolved);
 	}
 }
 
@@ -2651,6 +2927,7 @@ async function confirmClearCache() {
 
 async function handleEditOfflineInvoice(invoice) {
 	try {
+		discardActiveCartRecovery();
 		cartStore.clearCart();
 
 		const invoiceData = invoice.data;
@@ -2989,4 +3266,8 @@ function handleTabSwitch(tab) {
 		uiStore.setMobileTab(tab);
 	});
 }
+
+onUnmounted(() => {
+	customerDisplayStore.stop();
+});
 </script>
