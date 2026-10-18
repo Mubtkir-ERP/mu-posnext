@@ -224,10 +224,8 @@ doc_events = {
 	},
 	"POS Closing Shift": {
 		"on_submit": [
-			"pos_next.api.shift_whatsapp.notify_shift_close",
-			"pos_next.mada.closing_shift.create_mada_settlements"
-		],
-		"on_cancel": "pos_next.mada.closing_shift.cancel_mada_settlements"
+			"pos_next.api.shift_whatsapp.notify_shift_close"
+		]
 	}
 }
 
