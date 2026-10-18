@@ -22,6 +22,12 @@ frappe.ui.form.on("POS Closing Shift", {
 
 		if (frm.doc.docstatus === 0) frm.set_value("period_end_date", frappe.datetime.now_datetime());
 		if (frm.doc.docstatus === 1) set_html_data(frm);
+
+		apply_profile_field_visibility(frm);
+	},
+
+	refresh: function (frm) {
+		apply_profile_field_visibility(frm);
 	},
 
 	pos_opening_shift(frm) {
@@ -298,3 +304,20 @@ const get_base_value = (doc, field, base_field, conversion_rate) => {
 
 	return flt(value) * flt(conversion_rate || 1);
 };
+
+function apply_profile_field_visibility(frm) {
+	if (!frm.doc.pos_profile) return;
+	frappe.db.get_value("POS Profile", frm.doc.pos_profile, [
+		"mu_hide_closing_taxes",
+		"mu_hide_closing_vouchers",
+		"mu_hide_closing_reconciliation",
+		"mu_enable_non_taxable_charges"
+	]).then(({ message }) => {
+		if (message) {
+			if (message.mu_hide_closing_taxes) frm.set_df_property("taxes", "hidden", 1);
+			if (message.mu_hide_closing_vouchers) frm.set_df_property("mu_vouchers_redeemed", "hidden", 1);
+			if (message.mu_hide_closing_reconciliation) frm.set_df_property("payment_reconciliation", "hidden", 1);
+			if (!message.mu_enable_non_taxable_charges) frm.set_df_property("mu_non_taxable_section", "hidden", 1);
+		}
+	});
+}

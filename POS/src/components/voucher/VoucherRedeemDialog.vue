@@ -21,6 +21,22 @@
           <div class="font-semibold text-gray-900">{{ customerName }}</div>
         </div>
 
+        <!-- Branch / Address selection for customer -->
+        <div v-if="branches.length > 1" class="p-3 rounded-lg bg-blue-50/60 border border-blue-200">
+          <div class="text-xs font-semibold text-blue-800 mb-1 flex items-center justify-between">
+            <span>{{ __('Branch / Address') }}</span>
+            <span class="text-[11px] font-normal text-blue-600">{{ branches.length }} {{ __('branches') }}</span>
+          </div>
+          <select v-model="selectedBranch" class="w-full text-sm font-semibold rounded-lg border-gray-300 p-2 bg-white text-gray-800 shadow-sm">
+            <option v-for="b in branches" :key="b.address_name" :value="b.address_name">
+              {{ b.branch_title }} {{ b.phone ? ' - ' + b.phone : '' }}
+            </option>
+          </select>
+        </div>
+        <div v-else-if="branches.length === 1" class="text-xs text-gray-500 px-1">
+          <span class="font-medium">{{ __('Branch') }}:</span> {{ branches[0].branch_title }}
+        </div>
+
         <div class="flex items-center justify-between p-4 rounded-lg border"
              :class="balance > 0 ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'">
           <span class="text-sm text-gray-600">{{ __('Remaining Balance') }}</span>
@@ -193,6 +209,9 @@ function close() {
   emit("update:modelValue", false)
 }
 
+const branches = ref([])
+const selectedBranch = ref("")
+
 async function loadBalance() {
   if (!customerId.value) return
   loading.value = true
@@ -203,6 +222,22 @@ async function loadBalance() {
     })
     balance.value = Number((res && (res.message ?? res))?.balance ?? 0)
     qty.value = balance.value > 0 ? 1 : 0
+
+    // Fetch branches (addresses) for the customer
+    try {
+      const bRes = await call("pos_next.operations.customer_branches.get_customer_branches", {
+        customer: customerId.value,
+      })
+      branches.value = (bRes && (bRes.message ?? bRes)) || []
+      if (branches.value.length > 0) {
+        selectedBranch.value = branches.value[0].address_name
+      } else {
+        selectedBranch.value = ""
+      }
+    } catch (_) {
+      branches.value = []
+      selectedBranch.value = ""
+    }
   } catch (e) {
     balance.value = 0
     showError(serverError(e, __("Could not load voucher balance")))
@@ -226,6 +261,7 @@ async function doRedeem() {
       customer: customerId.value,
       pos_opening_shift: props.openingShift,
       qty: qty.value,
+      branch_address: selectedBranch.value || undefined,
     }
     if (otpCode.value) args.otp_code = otpCode.value
     const res = await call("pos_next.api.voucher.redeem_voucher", args)

@@ -87,7 +87,7 @@ _asset_version = get_build_version()
 # Fixtures
 # --------
 fixtures = [
-    {"dt": "Custom Field", "filters": [["name", "in", ['POS Profile-mu_allow_item_discount', 'POS Profile-mu_allow_additional_discount', 'POS Profile-mu_max_discount_percent', 'POS Profile-mu_use_percentage_discount', 'POS Profile-mu_posnext_print_section', 'POS Profile-mu_thermal_print_format', 'POS Profile-mu_print_col_right', 'POS Profile-mu_allow_a4_print', 'POS Profile-mu_a4_print_format', 'POS Profile-mu_posnext_communications_section', 'POS Profile-mu_allow_whatsapp_invoice', 'POS Profile-mu_posnext_cash_section', 'POS Profile-mu_allow_cash_expense', 'POS Profile-mu_cash_col_right', 'POS Profile-mu_cash_expense_limit', 'POS Profile-mu_cash_expense_account', 'POS Profile-mu_kitchen_section', 'POS Profile-mu_kitchen_printers', 'POS Profile-mu_customer_section', 'POS Profile-mu_cfg_col_a', 'POS Profile-mu_cfg_col_b', 'POS Profile-mu_voucher_section', 'POS Profile-mu_voucher_enabled', 'POS Profile-mu_voucher_redeem_item', 'POS Profile-mu_voucher_col', 'POS Profile-mu_voucher_warehouse', 'POS Profile-mu_voucher_low_balance_threshold', 'POS Profile-mu_voucher_daily_limit', 'Item-mu_is_voucher_item', 'Item-mu_voucher_units']]]},
+    {"dt": "Custom Field", "filters": [["name", "in", ['POS Profile-mu_allow_item_discount', 'POS Profile-mu_allow_additional_discount', 'POS Profile-mu_max_discount_percent', 'POS Profile-mu_use_percentage_discount', 'POS Profile-mu_posnext_print_section', 'POS Profile-mu_thermal_print_format', 'POS Profile-mu_print_col_right', 'POS Profile-mu_allow_a4_print', 'POS Profile-mu_a4_print_format', 'POS Profile-mu_posnext_communications_section', 'POS Profile-mu_allow_whatsapp_invoice', 'POS Profile-mu_posnext_cash_section', 'POS Profile-mu_allow_cash_expense', 'POS Profile-mu_cash_col_right', 'POS Profile-mu_cash_expense_limit', 'POS Profile-mu_cash_expense_account', 'POS Profile-mu_kitchen_section', 'POS Profile-mu_kitchen_printers', 'POS Profile-mu_customer_section', 'POS Profile-mu_cfg_col_a', 'POS Profile-mu_cfg_col_b', 'POS Profile-mu_voucher_section', 'POS Profile-mu_voucher_enabled', 'POS Profile-mu_voucher_redeem_item', 'POS Profile-mu_voucher_col', 'POS Profile-mu_voucher_warehouse', 'POS Profile-mu_voucher_low_balance_threshold', 'POS Profile-mu_voucher_daily_limit', 'Item-mu_is_voucher_item', 'Item-mu_voucher_units', 'POS Profile-mu_cash_sweeping_section', 'POS Profile-mu_auto_sweep_cash', 'POS Profile-mu_driver_cash_account', 'POS Profile-mu_shop_cash_account', 'POS Profile-mu_main_cash_account', 'POS Profile-mu_cash_difference_account', 'POS Profile-mu_van_stock_section', 'POS Profile-mu_enable_van_stock_cycle', 'POS Profile-mu_shop_warehouse', 'POS Profile-mu_van_warehouse', 'POS Profile-mu_non_taxable_section', 'POS Profile-mu_enable_non_taxable_charges', 'POS Profile-mu_non_taxable_income_account', 'POS Profile-mu_closing_controls_section', 'POS Profile-mu_hide_closing_taxes', 'POS Profile-mu_hide_closing_vouchers', 'POS Profile-mu_hide_closing_reconciliation']]]},
     {"dt": "Property Setter", "filters": [["name", "in", ['POS Profile-print_format-hidden', 'POS Profile-section_break_14-label', 'POS Profile-section_break_14-collapsible', 'POS Profile-section_break_23-collapsible', 'POS Profile-customer_groups-insert_after', 'POS Profile-section_break_19-collapsible', 'POS Profile-accounting_dimensions_section-collapsible']]]},
 	{
 		"dt": "Print Format",
@@ -224,7 +224,8 @@ doc_events = {
 	},
 	"POS Closing Shift": {
 		"on_submit": [
-			"pos_next.api.shift_whatsapp.notify_shift_close"
+			"pos_next.api.shift_whatsapp.notify_shift_close",
+			"pos_next.operations.shift_operations.on_closing_shift_submit"
 		]
 	}
 }

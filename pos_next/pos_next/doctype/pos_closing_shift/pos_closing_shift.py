@@ -81,8 +81,16 @@ class POSClosingShift(Document):
         # update the difference values in Payment Reconciliation child table
         # get default precision for site
         precision = frappe.get_cached_value("System Settings", None, "currency_precision") or 3
+        non_taxable_added = False
+        non_taxable = flt(self.get("mu_non_taxable_amount") or 0)
         for d in self.payment_reconciliation:
-            d.difference = +flt(d.closing_amount, precision) - flt(d.expected_amount, precision)
+            expected = flt(d.expected_amount, precision)
+            if non_taxable > 0 and not non_taxable_added:
+                type_of_payment = frappe.db.get_value("Mode of Payment", d.mode_of_payment, "type") if d.mode_of_payment else None
+                if type_of_payment == "Cash" or "cash" in str(d.mode_of_payment).lower() or "نقد" in str(d.mode_of_payment):
+                    expected += non_taxable
+                    non_taxable_added = True
+            d.difference = +flt(d.closing_amount, precision) - expected
 
     def on_submit(self):
         opening_entry = frappe.get_doc("POS Opening Shift", self.pos_opening_shift)

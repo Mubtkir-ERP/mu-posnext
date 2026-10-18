@@ -216,7 +216,7 @@ def _make_material_issue(item_code, warehouse, company, customer, qty=1, cost_ce
 
 
 @frappe.whitelist()
-def redeem_voucher(pos_profile, customer, pos_opening_shift, qty=1, otp_code=None):
+def redeem_voucher(pos_profile, customer, pos_opening_shift, qty=1, otp_code=None, branch_address=None):
 	"""Redeem one or more voucher units for the current customer.
 
 	Decrements the balance by ``qty``, issues ``qty`` physical items from stock
@@ -345,9 +345,12 @@ def redeem_voucher(pos_profile, customer, pos_opening_shift, qty=1, otp_code=Non
 	try:
 		if whatsapp_on:
 			cust_name = frappe.db.get_value("Customer", customer, "customer_name") or customer
-			notify_customer(customer, _(
-				"عزيزنا {0}، تم استخدام {1} قسيمة. رصيدك المتبقي: {2} قسيمة."
-			).format(cust_name, qty, remaining))
+			msg = _("عزيزنا {0}، تم استخدام {1} قسيمة. رصيدك المتبقي: {2} قسيمة.").format(cust_name, qty, remaining)
+			notify_customer(customer, msg)
+			branch_phone = frappe.db.get_value("Address", branch_address, "phone") if branch_address else None
+			if branch_phone:
+				from pos_next.api.whatsapp_hook import send_whatsapp
+				send_whatsapp(branch_phone, msg)
 
 			threshold = cint(cfg.get("mu_voucher_low_balance_threshold"))
 			if threshold > 0 and remaining <= threshold and not cint(bal.low_balance_notified):

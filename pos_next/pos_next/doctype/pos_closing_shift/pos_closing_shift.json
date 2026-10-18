@@ -33,6 +33,13 @@
   "column_break_16",
   "taxes",
   "section_break_14",
+  "mu_non_taxable_section",
+  "mu_non_taxable_amount",
+  "column_break_non_taxable",
+  "mu_non_taxable_remarks",
+  "mu_closing_linked_entries_section",
+  "mu_cash_sweep_entry",
+  "mu_stock_return_entry",
   "amended_from"
  ],
  "fields": [
@@ -202,9 +209,47 @@
    "default": "0",
    "fieldname": "mu_vouchers_redeemed",
    "fieldtype": "Int",
-   "label": "القسائم المستبدلة",
+   "label": "\u0627\u0644\u0642\u0633\u0627\u0626\u0645 \u0627\u0644\u0645\u0633\u062a\u0628\u062f\u0644\u0629",
    "read_only": 1,
-   "description": "عدد القسائم المسبقة المستبدلة خلال هذه الوردية."
+   "description": "\u0639\u062f\u062f \u0627\u0644\u0642\u0633\u0627\u0626\u0645 \u0627\u0644\u0645\u0633\u0628\u0642\u0629 \u0627\u0644\u0645\u0633\u062a\u0628\u062f\u0644\u0629 \u062e\u0644\u0627\u0644 \u0647\u0630\u0647 \u0627\u0644\u0648\u0631\u062f\u064a\u0629."
+  },
+  {
+   "fieldname": "mu_non_taxable_section",
+   "fieldtype": "Section Break",
+   "label": "\u0627\u0644\u0645\u0628\u0627\u0644\u063a \u063a\u064a\u0631 \u0627\u0644\u0636\u0631\u064a\u0628\u064a\u0629 (\u062a\u0648\u0635\u064a\u0644 / \u062f\u0627\u0641\u0648\u0631) - Non-Taxable Charges"
+  },
+  {
+   "fieldname": "mu_non_taxable_amount",
+   "fieldtype": "Currency",
+   "label": "\u0625\u062c\u0645\u0627\u0644\u064a \u0627\u0644\u0645\u0628\u0627\u0644\u063a \u063a\u064a\u0631 \u0627\u0644\u0636\u0631\u064a\u0628\u064a\u0629 (\u062a\u0648\u0635\u064a\u0644/\u062f\u0627\u0641\u0648\u0631)"
+  },
+  {
+   "fieldname": "column_break_non_taxable",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "mu_non_taxable_remarks",
+   "fieldtype": "Small Text",
+   "label": "\u0645\u0644\u0627\u062d\u0638\u0627\u062a \u0648\u062a\u0641\u0627\u0635\u064a\u0644 \u0627\u0644\u062a\u0648\u0635\u064a\u0644 \u0648\u0627\u0644\u062f\u0627\u0641\u0648\u0631"
+  },
+  {
+   "fieldname": "mu_closing_linked_entries_section",
+   "fieldtype": "Section Break",
+   "label": "\u0627\u0644\u0642\u064a\u0648\u062f \u0627\u0644\u0622\u0644\u064a\u0629 \u0627\u0644\u0646\u0627\u062a\u062c\u0629 - Automated Linked Entries"
+  },
+  {
+   "fieldname": "mu_cash_sweep_entry",
+   "fieldtype": "Link",
+   "label": "\u0633\u0646\u062f \u062a\u0635\u0641\u064a\u0631 \u0627\u0644\u0635\u0646\u062f\u0648\u0642 \u0627\u0644\u064a\u0648\u0645\u064a",
+   "options": "Journal Entry",
+   "read_only": 1
+  },
+  {
+   "fieldname": "mu_stock_return_entry",
+   "fieldtype": "Link",
+   "label": "\u0633\u0646\u062f \u0625\u0631\u062c\u0627\u0639 \u0639\u0647\u062f\u0629 \u0627\u0644\u0633\u064a\u0627\u0631\u0629 (\u0645\u0633\u0648\u062f\u0629)",
+   "options": "Stock Entry",
+   "read_only": 1
   }
  ],
  "is_submittable": 1,
