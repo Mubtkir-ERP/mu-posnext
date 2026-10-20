@@ -2156,6 +2156,30 @@ def prepare_return_invoice(invoice_name, pos_opening_shift=None):
         "payments": payments_data,
     }
 
+    # Load full original invoice to calculate tax-inclusive rates for each item
+    orig_doc = frappe.get_doc("Sales Invoice", invoice_name)
+    item_tax_map = {}
+    for tax_row in orig_doc.get("taxes") or []:
+        if tax_row.item_wise_tax_detail:
+            try:
+                detail = (
+                    json.loads(tax_row.item_wise_tax_detail)
+                    if isinstance(tax_row.item_wise_tax_detail, str)
+                    else tax_row.item_wise_tax_detail
+                )
+                if isinstance(detail, dict):
+                    for k, v in detail.items():
+                        t_amt = flt(v[1]) if isinstance(v, (list, tuple)) and len(v) > 1 else flt(v)
+                        item_tax_map[k] = item_tax_map.get(k, 0.0) + t_amt
+            except Exception:
+                pass
+
+    orig_items_by_ref = {it.name: it for it in orig_doc.get("items") or []}
+    orig_items_by_code = {it.item_code: it for it in orig_doc.get("items") or []}
+    total_taxes = flt(orig_doc.total_taxes_and_charges or (orig_doc.grand_total - orig_doc.net_total))
+    orig_net_total = flt(orig_doc.net_total or 0)
+    is_tax_inclusive = any(cint(t.get("included_in_print_rate")) for t in orig_doc.get("taxes") or [])
+
     updated_items = []
     for item in return_dict.get("items", []):
         # Get the original item reference (sales_invoice_item points to original item name)
@@ -2175,6 +2199,35 @@ def prepare_return_invoice(invoice_name, pos_opening_shift=None):
             item_copy["remaining_qty"] = remaining_qty
             # Set qty to negative of remaining (for return)
             item_copy["qty"] = -remaining_qty
+
+            # Calculate accurate tax-inclusive rate (rate_with_tax) and tax_per_unit
+            orig_row = orig_items_by_ref.get(item.get("sales_invoice_item")) or orig_items_by_code.get(item.get("item_code"))
+            orig_item_tax = 0.0
+            if orig_row:
+                if orig_row.name in item_tax_map:
+                    orig_item_tax = item_tax_map[orig_row.name]
+                elif orig_row.item_code in item_tax_map:
+                    orig_item_tax = item_tax_map[orig_row.item_code]
+                elif orig_net_total > 0 and total_taxes != 0:
+                    item_net = flt(orig_row.net_amount or (orig_row.rate * orig_row.qty))
+                    orig_item_tax = (item_net / orig_net_total) * total_taxes
+
+                orig_row_qty = abs(flt(orig_row.qty or 1))
+                tax_per_unit = abs(orig_item_tax / orig_row_qty) if orig_row_qty else 0.0
+
+                if is_tax_inclusive:
+                    rate_with_tax = flt(orig_row.rate)
+                else:
+                    rate_with_tax = flt(orig_row.rate) + tax_per_unit
+
+                item_copy["tax_per_unit"] = round(tax_per_unit, 4)
+                item_copy["rate_with_tax"] = round(rate_with_tax, 4)
+                item_copy["tax_included_in_rate"] = 1 if is_tax_inclusive else 0
+            else:
+                item_copy["rate_with_tax"] = flt(item.get("rate") or 0)
+                item_copy["tax_per_unit"] = 0.0
+                item_copy["tax_included_in_rate"] = 0
+
             updated_items.append(item_copy)
 
     return_dict["items"] = updated_items

@@ -28,11 +28,14 @@ export function useQuickAmounts(remainingAmount, isCash) {
 
 		const cash = isCash ? isCash.value : true
 		const amounts = new Set()
-		// Cash payments use ceil (physical denominations), non-cash use exact amount
-		const exactAmount = cash ? Math.ceil(remaining) : roundCurrency(remaining)
-
-		// Always include the primary amount first
+		// Always include the exact remaining amount first (without ceil rounding)
+		const exactAmount = roundCurrency(remaining)
 		amounts.add(exactAmount)
+
+		// For cash, also suggest rounding up to next whole number if fractional
+		if (cash && Math.ceil(remaining) > exactAmount) {
+			amounts.add(Math.ceil(remaining))
+		}
 
 		// Determine appropriate denominations based on amount size
 		let denominations
