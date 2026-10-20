@@ -40,16 +40,16 @@ def send_invoice_whatsapp(invoice, pos_profile=None):
 
 	mobile = _customer_mobile(inv.customer)
 	if not mobile:
-		frappe.throw(_("لا يوجد رقم جوال لهذا العميل لإرسال الفاتورة."))
+		frappe.throw(_("This customer has no mobile phone number to send the invoice."))
 
 	cust_name = frappe.db.get_value("Customer", inv.customer, "customer_name") or inv.customer
 	total = fmt_money(inv.grand_total, currency=inv.currency)
 	message = _(
-		"عزيزنا {0}، شكرًا لتعاملك مع {1}.\nفاتورتك رقم {2} بإجمالي {3}."
+		"Dear {0}, thank you for dealing with {1}.\nYour invoice #{2} for total {3}."
 	).format(cust_name, inv.company, inv.name, total)
 
 	sent = send_whatsapp(mobile, message)
 	if not sent:
-		frappe.throw(_("خدمة واتساب غير موصولة بعد. تم تسجيل الرسالة دون إرسال."))
+		frappe.throw(_("WhatsApp service is not connected yet. Message was recorded without sending."))
 
 	return {"ok": True, "invoice": inv.name}

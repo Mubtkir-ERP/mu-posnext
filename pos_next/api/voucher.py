@@ -282,7 +282,7 @@ def redeem_voucher(pos_profile, customer, pos_opening_shift, qty=1, otp_code=Non
 		if used_today + qty > daily_limit:
 			remaining_today = max(0, daily_limit - used_today)
 			frappe.throw(_(
-				"تجاوز الحد اليومي للاستبدال ({0} قسيمة). المتبقي المسموح اليوم: {1}."
+				"Daily redemption limit exceeded ({0} vouchers). Remaining allowed today: {1}."
 			).format(daily_limit, remaining_today), frappe.ValidationError)
 
 	# WhatsApp OTP gate (sent to the customer). All checks above have passed, so
@@ -294,7 +294,7 @@ def redeem_voucher(pos_profile, customer, pos_opening_shift, qty=1, otp_code=Non
 		if not otp_code:
 			return otp.generate_and_send(
 				"voucher_redeem", otp_ref, get_customer_mobile(customer),
-				label=_("استبدال القسائم"), digits=5,
+				label=_("Voucher Redemption"), digits=5,
 				templates=cfg.get("mu_otp_message_templates"),
 			)
 		otp.verify("voucher_redeem", otp_ref, otp_code)
@@ -332,8 +332,8 @@ def redeem_voucher(pos_profile, customer, pos_opening_shift, qty=1, otp_code=Non
 	except Exception as e:
 		frappe.log_error(frappe.get_traceback(), "Voucher Redemption Failed")
 		frappe.throw(
-			_("تعذّر استبدال القسيمة: {0}").format(str(e)),
-			title=_("فشل الاستبدال"),
+			_("Failed to redeem voucher: {0}").format(str(e)),
+			title=_("Redemption Failed"),
 		)
 
 	# --- WhatsApp + low-balance alert (best-effort) ---
@@ -345,7 +345,7 @@ def redeem_voucher(pos_profile, customer, pos_opening_shift, qty=1, otp_code=Non
 	try:
 		if whatsapp_on:
 			cust_name = frappe.db.get_value("Customer", customer, "customer_name") or customer
-			msg = _("عزيزنا {0}، تم استخدام {1} قسيمة. رصيدك المتبقي: {2} قسيمة.").format(cust_name, qty, remaining)
+			msg = _("Dear {0}, {1} vouchers have been redeemed. Your remaining balance is: {2} vouchers.").format(cust_name, qty, remaining)
 			notify_customer(customer, msg)
 			branch_phone = frappe.db.get_value("Address", branch_address, "phone") if branch_address else None
 			if branch_phone:
@@ -355,7 +355,7 @@ def redeem_voucher(pos_profile, customer, pos_opening_shift, qty=1, otp_code=Non
 			threshold = cint(cfg.get("mu_voucher_low_balance_threshold"))
 			if threshold > 0 and remaining <= threshold and not cint(bal.low_balance_notified):
 				notify_customer(customer, _(
-					"تنبيه: رصيد قسائمك قارب على الانتهاء ({0} متبقية). يسعدنا تجديد دفترك."
+					"Notice: Your voucher balance is running low ({0} remaining). Please consider renewing your book."
 				).format(remaining))
 				bal.db_set("low_balance_notified", 1)
 				low_alert = True

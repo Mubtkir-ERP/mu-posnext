@@ -362,12 +362,12 @@ def create_cash_disbursement(
     available = _available_cash(shift_name, pos_profile, company)
     if available <= 0:
         frappe.throw(
-            _("لا يوجد نقد في الدرج حاليًا، لا يمكن تنفيذ الصرف النقدي."),
+            _("No cash currently in drawer; cash disbursement cannot be processed."),
             frappe.ValidationError,
         )
     if amount > available:
         frappe.throw(
-            _("المبلغ المطلوب صرفه ({0}) أكبر من النقد المتاح في الدرج ({1}).").format(
+            _("The requested disbursement amount ({0}) is greater than available cash in drawer ({1}).").format(
                 frappe.utils.fmt_money(amount, currency=frappe.get_cached_value("Company", company, "default_currency")),
                 frappe.utils.fmt_money(available, currency=frappe.get_cached_value("Company", company, "default_currency")),
             ),
@@ -400,7 +400,7 @@ def create_cash_disbursement(
         if not otp_code:
             return otp.generate_and_send(
                 "cash_disbursement", otp_ref, otp_cfg.get("mobile"),
-                label=_("الصرف النقدي"), digits=4,
+                label=_("Cash Disbursement"), digits=4,
                 templates=otp_cfg.get("templates"),
             )
         otp.verify("cash_disbursement", otp_ref, otp_code)

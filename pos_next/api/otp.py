@@ -61,7 +61,7 @@ def _render_message(templates_raw, label, code):
 			.replace("{label}", label or "")
 		)
 	return _(
-		"رمز التحقق لعملية «{0}»: {1}\nصالح لمدة دقيقتين. لا تشاركه مع أحد."
+		"Verification code for '{0}': {1}\nValid for 2 minutes. Do not share it with anyone."
 	).format(label, code)
 
 
@@ -77,7 +77,7 @@ def generate_and_send(purpose, ref, mobile, label, digits=OTP_DIGITS, templates=
 	from pos_next.api.whatsapp_hook import send_whatsapp
 
 	if not mobile:
-		frappe.throw(_("لا يوجد رقم واتساب لإرسال رمز التحقق إليه."))
+		frappe.throw(_("No WhatsApp phone number found to send the verification code to."))
 
 	digits = cint(digits) or OTP_DIGITS
 	code = f"{secrets.randbelow(10 ** digits):0{digits}d}"
@@ -92,7 +92,7 @@ def generate_and_send(purpose, ref, mobile, label, digits=OTP_DIGITS, templates=
 		# Burn the code so a failed send can't be guessed against.
 		frappe.cache().delete_value(_key(purpose, ref))
 		frappe.throw(_(
-			"تعذّر إرسال رمز التحقق عبر واتساب. تأكد من ربط تطبيق الواتساب ومن صحة الرقم."
+			"Failed to send verification code via WhatsApp. Please check WhatsApp connection and phone number."
 		))
 
 	return {
@@ -106,22 +106,22 @@ def generate_and_send(purpose, ref, mobile, label, digits=OTP_DIGITS, templates=
 def verify(purpose, ref, code):
 	"""Validate a submitted code. Consumes it on success; raises otherwise."""
 	if not code:
-		frappe.throw(_("أدخل رمز التحقق المرسل عبر واتساب."))
+		frappe.throw(_("Please enter the verification code sent via WhatsApp."))
 
 	key = _key(purpose, ref)
 	data = frappe.cache().get_value(key)
 	if not data:
-		frappe.throw(_("انتهت صلاحية رمز التحقق أو لم يُطلب بعد. أعد المحاولة."))
+		frappe.throw(_("Verification code expired or not requested yet. Please try again."))
 
 	if cint(data.get("n")) >= OTP_MAX_ATTEMPTS:
 		frappe.cache().delete_value(key)
-		frappe.throw(_("تم تجاوز عدد المحاولات المسموح بها. اطلب رمزًا جديدًا."))
+		frappe.throw(_("Maximum attempts exceeded. Please request a new code."))
 
 	if _hash(code) != data.get("h"):
 		data["n"] = cint(data.get("n")) + 1
 		frappe.cache().set_value(key, data, expires_in_sec=OTP_TTL_SECONDS)
 		remaining = OTP_MAX_ATTEMPTS - cint(data["n"])
-		frappe.throw(_("رمز التحقق غير صحيح. المحاولات المتبقية: {0}.").format(max(0, remaining)))
+		frappe.throw(_("Invalid verification code. Remaining attempts: {0}.").format(max(0, remaining)))
 
 	# One-time use: remove on success.
 	frappe.cache().delete_value(key)

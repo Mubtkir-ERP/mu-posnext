@@ -61,7 +61,7 @@ def notify_shift_close(doc, method=None):
 		).insert(ignore_permissions=True)
 
 		cashier = doc.get("user") or frappe.session.user
-		caption = _("تفاصيل إغلاق الوردية {0} — الكاشير: {1}").format(doc.name, cashier)
+		caption = _("POS Shift Closing Details {0} — Cashier: {1}").format(doc.name, cashier)
 
 		# Build and queue the outgoing WhatsApp document message via the app's
 		# central router (same mechanism the scheduled-report feature uses).

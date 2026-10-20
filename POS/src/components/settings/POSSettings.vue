@@ -19,12 +19,12 @@
 								</svg>
 							</div>
 							<div>
-								<h2 class="text-xl font-bold text-gray-900">إعدادات نقاط البيع</h2>
+								<h2 class="text-xl font-bold text-gray-900">{{ __('POS Settings') }}</h2>
 								<p class="text-sm text-gray-600 flex items-center mt-0.5">
 									<svg class="w-4 h-4 me-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 										<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
 									</svg>
-									الإعدادات التشغيلية والمزامنة للبروفايل الحالي
+									{{ __('Operational and synchronization settings for current profile') }}
 								</p>
 							</div>
 						</div>
@@ -40,7 +40,7 @@
 										<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
 									</svg>
 								</template>
-								تحديث
+								{{ __('Refresh') }}
 							</Button>
 							<Button
 								@click="saveSettings"
@@ -53,7 +53,7 @@
 										<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
 									</svg>
 								</template>
-								حفظ التغييرات
+								{{ __('Save Changes') }}
 							</Button>
 							<button
 								@click="handleClose"
@@ -75,9 +75,9 @@
 						</div>
 
 						<!-- Settings Form -->
-						<div v-else-if="settings.pos_profile || posProfile" class="p-4 md:p-6 flex flex-col gap-5" dir="rtl">
-							<div class="p-4 rounded-lg bg-indigo-50 border border-indigo-200 text-sm text-indigo-900" dir="auto">
-                                صلاحيات الأسعار والخصومات والصرف وقوالب الفواتير تُدار من بروفايل نقطة البيع. إعدادات QZ Tray والطباعة الصامتة تبقى في تفضيلات الكاشير.
+						<div v-else-if="settings.pos_profile || posProfile" class="p-4 md:p-6 flex flex-col gap-5">
+							<div class="p-4 rounded-lg bg-indigo-50 border border-indigo-200 text-sm text-indigo-900">
+                                {{ __('Pricing, discount, disbursement, and print format permissions are managed in the POS Profile. QZ Tray and silent printing settings remain in Cashier Preferences.') }}
                             </div>
 							<!-- Tabs Navigation -->
 							<div class="flex p-1 bg-gray-200 rounded-lg self-start">
@@ -85,19 +85,19 @@
 									@click="activeTab = 'stock'"
 									:class="['px-4 py-2 text-sm font-medium rounded-md transition-all duration-200', activeTab === 'stock' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-200/50']"
 								>
-									المخزون والمزامنة
+									{{ __('Inventory & Sync') }}
 								</button>
 								<button
 									@click="activeTab = 'sales'"
 									:class="['px-4 py-2 text-sm font-medium rounded-md transition-all duration-200', activeTab === 'sales' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-200/50']"
 								>
-									السياسات التشغيلية
+									{{ __('Operational Policies') }}
 								</button>
 								<button
 									@click="activeTab = 'customer_display'"
 									:class="['px-4 py-2 text-sm font-medium rounded-md transition-all duration-200', activeTab === 'customer_display' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-200/50']"
 								>
-									شاشة العميل (الشاشة الثانية)
+									{{ __('Customer Display (Secondary Screen)') }}
 								</button>
 							</div>
 
@@ -112,7 +112,7 @@
 												</svg>
 											</div>
 											<div>
-												<h3 class="text-lg font-bold text-gray-900">إدارة المخزون</h3>
+												<h3 class="text-lg font-bold text-gray-900">{{ __('Stock Management') }}</h3>
 												<p class="text-xs text-gray-600 mt-0.5">{{ __('Configure warehouse and inventory settings') }}</p>
 											</div>
 										</div>
@@ -226,7 +226,7 @@
 												</svg>
 											</div>
 											<div>
-												<h3 class="text-lg font-bold text-gray-900">سياسات البيع</h3>
+												<h3 class="text-lg font-bold text-gray-900">{{ __('Sales Policies') }}</h3>
 												<p class="text-xs text-gray-600 mt-0.5">{{ __('Configure pricing, discounts, and sales operations') }}</p>
 											</div>
 										</div>
@@ -245,10 +245,10 @@
 											<svg :class="pricingSubsectionClasses.icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 												<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" :d="icons.tag"/>
 											</svg>
-											<h4 class="text-sm font-semibold text-gray-900">الضرائب والحساب</h4>
+											<h4 class="text-sm font-semibold text-gray-900">{{ __('Taxes & Calculation') }}</h4>
 										</div>
 										<div class="flex flex-col gap-3">
-											<p class="text-sm text-gray-600">تُدار صلاحيات الخصومات وتعديل الأسعار وشمول الضريبة من بروفايل نقطة البيع وشاشة إعدادات POS (قرار الجرد).</p>
+											<p class="text-sm text-gray-600">{{ __('Discount, rate edit, and tax inclusive permissions are managed from POS Profile and POS Settings.') }}</p>
 										</div>
 									</div>
 
@@ -264,7 +264,7 @@
 											<CheckboxField
 												v-model="settings.mu_enable_order_status"
 												:label="__('Enable Order Status')"
-												:description="__('إظهار محدِّد حالة الطلب على بطاقات الفواتير')"
+												:description="__('Show order status selector on invoice cards')"
 											/>
 										</div>
 									</div>

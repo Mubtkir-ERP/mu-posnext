@@ -78,7 +78,7 @@ def _ensure_use_percentage_field():
 		{
 			"fieldname": "mu_use_percentage_discount",
 			"fieldtype": "Check",
-			"label": "استخدام الخصم بالنسبة المئوية",
+			"label": "Use Percentage Discount",
 			"insert_after": "mu_max_discount_percent",
 			"default": "0",
 		},

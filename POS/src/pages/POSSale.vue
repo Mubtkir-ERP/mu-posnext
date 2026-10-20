@@ -3215,9 +3215,9 @@ async function handleWhatsappInvoice(invoiceData) {
 			invoice: name,
 			pos_profile: shiftStore.profileName,
 		});
-		showSuccess(__("تم إرسال الفاتورة عبر واتساب"));
+		showSuccess(__("Invoice sent via WhatsApp"));
 	} catch (e) {
-		showError(e?.messages?.[0] || e?.message || __("تعذّر إرسال الفاتورة عبر واتساب"));
+		showError(e?.messages?.[0] || e?.message || __("Failed to send invoice via WhatsApp"));
 	}
 }
 

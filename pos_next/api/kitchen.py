@@ -101,7 +101,7 @@ def _render_ticket(station, printer_name, lines, when, invoice_name, order_note)
 		qty = cint(it.get("qty")) or it.get("qty") or 1
 		name = frappe.utils.escape_html(it.get("item_name") or it.get("item_code") or "")
 		prep = cint(it.get("prep_time"))
-		prep_html = f' <span class="pt">⏱{prep}د</span>' if prep else ""
+		prep_html = f' <span class="pt">⏱{prep}m</span>' if prep else ""
 		rows_html.append(
 			f'<div class="ln"><span class="q">{qty}×</span> <span class="nm">{name}</span>{prep_html}</div>'
 		)

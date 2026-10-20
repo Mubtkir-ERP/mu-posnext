@@ -478,7 +478,7 @@ def update_customer(
         # can display it instead of a generic 500.
         frappe.log_error(frappe.get_traceback(), "POS update_customer failed")
         frappe.throw(
-            _("تعذّر حفظ بيانات العميل: {0}").format(str(e)),
+            _("Failed to save customer data: {0}").format(str(e)),
             title=_("Save Failed"),
         )
     return doc.as_dict()
