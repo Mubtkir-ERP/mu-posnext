@@ -2,6 +2,7 @@ frappe.ui.form.on("Customer", {
 	refresh(frm) {
 		if (frm.is_new()) return;
 
+		// Direct top-level button on Customer doctype
 		frm.add_custom_button(__("Print Branch QR Codes"), () => {
 			frappe.call({
 				method: "pos_next.operations.customer_branches.get_customer_branches",
@@ -29,7 +30,7 @@ frappe.ui.form.on("Customer", {
 					`).join("");
 
 					let d = new frappe.ui.Dialog({
-						title: __("Customer Branches QR Codes") + " - " + frm.doc.customer_name,
+						title: __("Customer Branches QR Codes") + " - " + (frm.doc.customer_name || frm.doc.name),
 						size: "large",
 						fields: [
 							{
@@ -37,7 +38,12 @@ frappe.ui.form.on("Customer", {
 								fieldname: "branches_html",
 								options: `
 									<div class="p-2">
-										<p class="text-xs text-muted mb-3">${__("Select a branch to view and print its POS quick-scan QR card:")}</p>
+										<div class="flex justify-between items-center mb-3">
+											<p class="text-xs text-muted mb-0">${__("Select a branch to view and print its POS quick-scan QR card:")}</p>
+											<button class="btn btn-sm btn-secondary btn-print-all-qr">
+												🖨️ ${__("Print All Branch Cards")}
+											</button>
+										</div>
 										${options_html}
 									</div>
 								`
@@ -61,9 +67,24 @@ frappe.ui.form.on("Customer", {
 						});
 					});
 
+					d.$wrapper.find(".btn-print-all-qr").on("click", function() {
+						frappe.call({
+							method: "pos_next.operations.customer_branches.get_all_branches_qr_cards_html",
+							args: { customer: frm.doc.name },
+							callback(resp) {
+								if (resp.message) {
+									const w = window.open("", "_blank");
+									w.document.open();
+									w.document.write(resp.message);
+									w.document.close();
+								}
+							}
+						});
+					});
+
 					d.show();
 				}
 			});
-		}, __("Actions"));
+		});
 	}
 });

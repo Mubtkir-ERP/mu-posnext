@@ -236,6 +236,141 @@ def get_branch_qr_card_html(customer, address_name):
 
 
 @frappe.whitelist()
+def get_all_branches_qr_cards_html(customer):
+    """
+    Returns a styled, printable HTML containing QR cards for all branches of a customer.
+    """
+    branches = get_customer_branches(customer)
+    if not branches:
+        frappe.throw(_("No linked addresses/branches found for this customer. Please add an address first."))
+
+    cust_name = frappe.db.get_value("Customer", customer, "customer_name") or customer
+    cards_html = []
+    for b in branches:
+        qr_img = b.get("qr_image") or ""
+        branch_title = b.get("branch_title") or b.get("address_name")
+        city = b.get("city") or ""
+        phone = b.get("phone") or ""
+        addr_line = b.get("address_line1") or ""
+        addr_info = f"📍 {addr_line} {city}" if (addr_line or city) else ""
+        phone_info = f"📞 {phone}" if phone else ""
+
+        cards_html.append(f"""
+        <div class="card">
+            <div class="customer-name">{cust_name}</div>
+            <div class="branch-badge">🏢 {branch_title}</div>
+            <div class="qr-wrapper">
+                <img src="{qr_img}" alt="Branch QR Code" class="qr-img" />
+            </div>
+            <div class="info-row">{addr_info}</div>
+            <div class="info-row">{phone_info}</div>
+            <div class="scan-hint">امسح الكود لتحديد العميل وفرعه تلقائياً في نقاط البيع</div>
+        </div>
+        """)
+
+    all_cards_str = "\n".join(cards_html)
+    return f"""<!DOCTYPE html>
+<html dir="rtl" lang="ar">
+<head>
+    <meta charset="utf-8">
+    <title>بطاقات فروع العميل - {cust_name}</title>
+    <style>
+        @media print {{
+            body {{ margin: 0; padding: 10px; background: white; }}
+            .no-print {{ display: none !important; }}
+            .card {{ box-shadow: none !important; border: 1px solid #ccc !important; page-break-inside: avoid; }}
+        }}
+        body {{
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background-color: #f3f4f6;
+            margin: 0;
+            padding: 24px 12px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }}
+        .grid-container {{
+            display: flex;
+            flex-wrap: wrap;
+            gap: 20px;
+            justify-content: center;
+            max-width: 1000px;
+        }}
+        .card {{
+            background: white;
+            border: 2px solid #e5e7eb;
+            border-radius: 16px;
+            padding: 20px;
+            width: 280px;
+            text-align: center;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+        }}
+        .customer-name {{
+            font-size: 16px;
+            font-weight: 700;
+            color: #111827;
+            margin-bottom: 6px;
+        }}
+        .branch-badge {{
+            display: inline-block;
+            background: #eff6ff;
+            color: #1d4ed8;
+            padding: 3px 12px;
+            border-radius: 9999px;
+            font-size: 12px;
+            font-weight: 600;
+            margin-bottom: 12px;
+            border: 1px solid #bfdbfe;
+        }}
+        .qr-wrapper {{
+            background: #fafafa;
+            border: 1px dashed #d1d5db;
+            border-radius: 12px;
+            padding: 10px;
+            display: inline-block;
+            margin-bottom: 12px;
+        }}
+        .qr-img {{
+            width: 170px;
+            height: 170px;
+            display: block;
+        }}
+        .info-row {{
+            font-size: 11px;
+            color: #4b5563;
+            margin-top: 3px;
+        }}
+        .scan-hint {{
+            font-size: 10px;
+            color: #9ca3af;
+            margin-top: 10px;
+            border-top: 1px solid #f3f4f6;
+            padding-top: 8px;
+        }}
+        .print-btn {{
+            background: #2563eb;
+            color: white;
+            border: none;
+            padding: 10px 24px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            margin-bottom: 24px;
+            box-shadow: 0 2px 4px rgba(37, 99, 235, 0.2);
+        }}
+    </style>
+</head>
+<body>
+    <button class="print-btn no-print" onclick="window.print()">طباعة جميع البطاقات 🖨️</button>
+    <div class="grid-container">
+        {all_cards_str}
+    </div>
+</body>
+</html>"""
+
+
+@frappe.whitelist()
 def resolve_customer_branch(qr_code_content):
     """
     Parses scanned QR and returns full customer and branch details for instant POS selection.

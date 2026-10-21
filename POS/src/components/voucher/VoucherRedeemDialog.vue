@@ -25,7 +25,7 @@
         <div v-if="branches.length > 1" class="p-3 rounded-lg bg-blue-50/60 border border-blue-200">
           <div class="text-xs font-semibold text-blue-800 mb-1 flex items-center justify-between">
             <span>{{ __('Branch / Address') }}</span>
-            <span class="text-[11px] font-normal text-blue-600">{{ branches.length }} {{ __('branches') }}</span>
+            <span class="text-[11px] font-normal text-blue-600">{{ __('Branches: {0}', [branches.length]) }}</span>
           </div>
           <select v-model="selectedBranch" class="w-full text-sm font-semibold rounded-lg border-gray-300 p-2 bg-white text-gray-800 shadow-sm">
             <option v-for="b in branches" :key="b.address_name" :value="b.address_name">
