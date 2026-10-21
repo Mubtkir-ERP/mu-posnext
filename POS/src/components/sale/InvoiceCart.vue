@@ -161,6 +161,43 @@
 							</div>
 						</div>
 					</div>
+
+					<!-- Branch / Address Row (if customer has branches) -->
+					<div
+						v-if="cartStore.customerBranches && cartStore.customerBranches.length > 0"
+						class="mt-1.5 flex items-center justify-between gap-1.5 bg-blue-50/80 border border-blue-200/70 rounded-xl px-2.5 py-1 text-xs"
+					>
+						<div class="flex items-center gap-1.5 min-w-0 flex-1">
+							<span class="text-blue-700 font-semibold flex items-center gap-1 flex-shrink-0">
+								<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" /></svg>
+								<span>{{ __('Branch') }}:</span>
+							</span>
+							<select
+								:value="cartStore.customerAddress"
+								@change="cartStore.setCustomerAddress($event.target.value)"
+								class="bg-transparent border-none text-blue-900 font-bold focus:ring-0 p-0 text-xs flex-1 truncate cursor-pointer"
+							>
+								<option
+									v-for="b in cartStore.customerBranches"
+									:key="b.address_name"
+									:value="b.address_name"
+								>
+									{{ b.branch_title }} {{ b.city ? `(${b.city})` : '' }}
+								</option>
+							</select>
+						</div>
+						<!-- View & Print Branch QR Code button -->
+						<button
+							type="button"
+							@click.stop="openBranchQRDialog"
+							class="w-6 h-6 flex items-center justify-center text-blue-600 hover:bg-blue-200/60 active:bg-blue-300 rounded-lg transition-colors flex-shrink-0"
+							:title="__('View & Print Branch QR Code')"
+						>
+							<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" />
+							</svg>
+						</button>
+					</div>
 				</div>
 				<div v-else>
 					<div class="flex gap-1.5">
@@ -207,6 +244,19 @@
 								:aria-label="__('Search customer in cart')"
 							/>
 						</div>
+
+						<!-- Quick Scan Branch QR Button -->
+						<button
+							type="button"
+							@click="openScanQRDialog"
+							class="flex items-center justify-center w-10 h-10 bg-blue-500 hover:bg-blue-600 active:bg-blue-700 rounded-xl text-white transition-colors shadow-sm hover:shadow touch-manipulation flex-shrink-0"
+							:title="__('Scan Customer Branch QR Code')"
+							:aria-label="__('Scan Customer Branch QR Code')"
+						>
+							<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+								<path stroke-linecap="round" stroke-linejoin="round" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" />
+							</svg>
+						</button>
 
 						<!-- Quick Create Customer Button -->
 						<button
@@ -1244,6 +1294,19 @@
 			@update-item="handleUpdateItem"
 		/>
 
+		<!-- Branch QR View & Print Modal -->
+		<BranchQRModal
+			v-model="showBranchQRModal"
+			:customer="customer"
+			:branch="currentSelectedBranch"
+		/>
+
+		<!-- Scan Branch QR Modal -->
+		<ScanBranchQRModal
+			v-model="showScanQRModal"
+			@branch-resolved="handleBranchResolved"
+		/>
+
 	</div>
 </template>
 
@@ -1269,6 +1332,10 @@ const log = logger.create("InvoiceCart");
 import { createResource } from "frappe-ui";
 import { computed, onBeforeUnmount, onMounted, ref, watch, nextTick } from "vue";
 import EditItemDialog from "./EditItemDialog.vue";
+import BranchQRModal from "@/components/customer/BranchQRModal.vue";
+import ScanBranchQRModal from "@/components/customer/ScanBranchQRModal.vue";
+import { useToast } from "@/composables/useToast";
+import { call } from "@/utils/apiWrapper";
 
 /**
  * ============================================================================
@@ -1283,6 +1350,45 @@ const { formatQuantity } = useFormatters(); // Quantity formatting utilities
 
 function handleProceedToPayment() {
 	emit("proceed-to-payment");
+}
+
+const { showSuccess, showWarning } = useToast();
+const showBranchQRModal = ref(false);
+const showScanQRModal = ref(false);
+
+const currentSelectedBranch = computed(() => {
+	if (!cartStore.customerBranches || cartStore.customerBranches.length === 0) return null;
+	return cartStore.customerBranches.find((b) => b.address_name === cartStore.customerAddress) || cartStore.customerBranches[0];
+});
+
+function openBranchQRDialog() {
+	showBranchQRModal.value = true;
+}
+
+function openScanQRDialog() {
+	showScanQRModal.value = true;
+}
+
+async function handleBranchResolved(res) {
+	emit("select-customer", res.customer);
+	if (res.branch_address) {
+		cartStore.setCustomerAddress(res.branch_address);
+	}
+	showSuccess(__("Customer {0} - Branch {1} selected", [res.customer.customer_name || res.customer.name, res.branch_title]));
+}
+
+async function handleBranchQRSubmitted(qrText) {
+	try {
+		const res = await call("pos_next.operations.customer_branches.resolve_customer_branch", {
+			qr_code_content: qrText,
+		});
+		if (res && res.status === "success" && res.customer) {
+			handleBranchResolved(res);
+		}
+	} catch (err) {
+		console.error("Failed to resolve branch QR:", err);
+		showWarning(__("Invalid or unknown Branch QR code"));
+	}
 }
 
 /**
@@ -1613,7 +1719,14 @@ const displayGrandTotal = computed(() => {
  * @param {Event} event - Input event from search field
  */
 function handleSearchInput(event) {
-	customerSearch.value = event.target.value;
+	const val = event.target.value;
+	if (val && (val.startsWith("MUBTKIR_BRANCH::") || val.includes("MUBTKIR_BRANCH::"))) {
+		handleBranchQRSubmitted(val.trim());
+		event.target.value = "";
+		customerSearch.value = "";
+		return;
+	}
+	customerSearch.value = val;
 }
 
 // Track if customer history has been loaded this session
@@ -1657,6 +1770,12 @@ function handleKeydown(event) {
 	if (event.key === "Enter") {
 		event.preventDefault();
 		event.stopPropagation();
+		const val = (customerSearch.value || "").trim();
+		if (val.startsWith("MUBTKIR_BRANCH::") || val.includes("MUBTKIR_BRANCH::")) {
+			handleBranchQRSubmitted(val);
+			customerSearch.value = "";
+			return;
+		}
 		if (selectedIndex.value >= 0 && selectedIndex.value < customerResults.value.length) {
 			selectCustomer(customerResults.value[selectedIndex.value]);
 		} else if (customerResults.value.length === 1) {

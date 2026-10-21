@@ -10,11 +10,40 @@ import secrets
 import json
 
 
+import io
+import base64
+
+
+def generate_branch_qr_data_url(qr_text):
+    """Generates base64 PNG data URL for QR code using qrcode library."""
+    if not qr_text:
+        return ""
+    try:
+        import qrcode
+
+        qr = qrcode.QRCode(
+            version=1,
+            error_correction=qrcode.constants.ERROR_CORRECT_M,
+            box_size=8,
+            border=2,
+        )
+        qr.add_data(qr_text)
+        qr.make(fit=True)
+        img = qr.make_image(fill_color="black", back_color="white")
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
+        return f"data:image/png;base64,{b64}"
+    except Exception as e:
+        frappe.log_error(f"Failed to generate QR code: {e}", "Customer Branch QR")
+        return ""
+
+
 @frappe.whitelist()
 def get_customer_branches(customer):
     """
     Returns all branches (Addresses) linked to the given customer.
-    If 0 or 1 branch, caller knows no disambiguation popup is needed.
+    Includes base64 QR code image for each branch.
     """
     if not customer:
         return []
@@ -38,17 +67,208 @@ def get_customer_branches(customer):
     results = []
     for a in addresses:
         branch_label = a.address_title or a.address_line1 or a.name
+        qr_text = f"MUBTKIR_BRANCH::{customer}::{a.name}"
+        qr_img = generate_branch_qr_data_url(qr_text)
         results.append({
             "address_name": a.name,
             "branch_title": branch_label,
             "address_line1": a.address_line1 or "",
+            "address_line2": a.address_line2 or "",
             "city": a.city or "",
             "phone": a.phone or "",
             "email_id": a.email_id or "",
-            "qr_data": f"MUBTKIR_BRANCH::{customer}::{a.name}"
+            "is_primary": a.is_primary_address,
+            "qr_data": qr_text,
+            "qr_image": qr_img
         })
 
     return results
+
+
+@frappe.whitelist()
+def get_customer_branch_qr(customer, address_name):
+    """
+    Returns full QR info and card details for a customer branch.
+    """
+    if not customer or not address_name:
+        frappe.throw(_("Customer and address are required"))
+
+    customer_name = frappe.db.get_value("Customer", customer, "customer_name") or customer
+    addr = frappe.get_doc("Address", address_name)
+    qr_text = f"MUBTKIR_BRANCH::{customer}::{address_name}"
+    qr_img = generate_branch_qr_data_url(qr_text)
+
+    return {
+        "customer": customer,
+        "customer_name": customer_name,
+        "address_name": address_name,
+        "branch_title": addr.address_title or addr.address_line1 or address_name,
+        "address_line1": addr.address_line1 or "",
+        "city": addr.city or "",
+        "phone": addr.phone or "",
+        "qr_data": qr_text,
+        "qr_image": qr_img
+    }
+
+
+@frappe.whitelist()
+def get_branch_qr_card_html(customer, address_name):
+    """
+    Returns a styled, printable HTML card for customer branch QR.
+    """
+    info = get_customer_branch_qr(customer, address_name)
+    qr_img = info.get("qr_image") or ""
+    cust_name = info.get("customer_name") or customer
+    branch_title = info.get("branch_title") or address_name
+    city = info.get("city") or ""
+    phone = info.get("phone") or ""
+    addr_line = info.get("address_line1") or ""
+
+    addr_info = f"📍 {addr_line} {city}" if (addr_line or city) else ""
+    phone_info = f"📞 {phone}" if phone else ""
+
+    html = f"""<!DOCTYPE html>
+<html dir="rtl" lang="ar">
+<head>
+    <meta charset="utf-8">
+    <title>بطاقة فرع العميل - {cust_name}</title>
+    <style>
+        @media print {{
+            body {{ margin: 0; padding: 0; background: white; }}
+            .no-print {{ display: none !important; }}
+            .card {{ box-shadow: none !important; border: 1px solid #ccc !important; }}
+        }}
+        body {{
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background-color: #f3f4f6;
+            margin: 0;
+            padding: 30px 15px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }}
+        .card {{
+            background: white;
+            border: 2px solid #e5e7eb;
+            border-radius: 16px;
+            padding: 24px;
+            width: 300px;
+            text-align: center;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+        }}
+        .customer-name {{
+            font-size: 17px;
+            font-weight: 700;
+            color: #111827;
+            margin-bottom: 6px;
+            line-height: 1.3;
+        }}
+        .branch-badge {{
+            display: inline-block;
+            background: #eff6ff;
+            color: #1d4ed8;
+            padding: 4px 14px;
+            border-radius: 9999px;
+            font-size: 13px;
+            font-weight: 600;
+            margin-bottom: 16px;
+            border: 1px solid #bfdbfe;
+        }}
+        .qr-wrapper {{
+            background: #fafafa;
+            border: 1px dashed #d1d5db;
+            border-radius: 12px;
+            padding: 12px;
+            display: inline-block;
+            margin-bottom: 14px;
+        }}
+        .qr-img {{
+            width: 190px;
+            height: 190px;
+            display: block;
+        }}
+        .info-row {{
+            font-size: 12px;
+            color: #4b5563;
+            margin-top: 4px;
+        }}
+        .scan-hint {{
+            font-size: 11px;
+            color: #9ca3af;
+            margin-top: 14px;
+            border-top: 1px solid #f3f4f6;
+            padding-top: 10px;
+        }}
+        .print-btn {{
+            background: #2563eb;
+            color: white;
+            border: none;
+            padding: 10px 24px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            margin-top: 20px;
+            box-shadow: 0 2px 4px rgba(37, 99, 235, 0.2);
+            transition: all 0.2s;
+        }}
+        .print-btn:hover {{
+            background: #1d4ed8;
+            transform: translateY(-1px);
+        }}
+    </style>
+</head>
+<body>
+    <div class="card">
+        <div class="customer-name">{cust_name}</div>
+        <div class="branch-badge">🏢 {branch_title}</div>
+        <div class="qr-wrapper">
+            <img src="{qr_img}" alt="Branch QR Code" class="qr-img" />
+        </div>
+        <div class="info-row">{addr_info}</div>
+        <div class="info-row">{phone_info}</div>
+        <div class="scan-hint">امسح الكود لتحديد العميل وفرعه تلقائياً في نقاط البيع</div>
+    </div>
+    <button class="print-btn no-print" onclick="window.print()">طباعة البطاقة / الملصق 🖨️</button>
+</body>
+</html>"""
+    return html
+
+
+@frappe.whitelist()
+def resolve_customer_branch(qr_code_content):
+    """
+    Parses scanned QR and returns full customer and branch details for instant POS selection.
+    """
+    parsed = parse_branch_qr(qr_code_content)
+    customer_name = parsed.get("customer")
+    branch_address = parsed.get("branch_address")
+
+    if not frappe.db.exists("Customer", customer_name):
+        frappe.throw(_("Customer {0} not found").format(customer_name))
+
+    customer_doc = frappe.get_doc("Customer", customer_name)
+    branch_doc = frappe.get_doc("Address", branch_address) if branch_address and frappe.db.exists("Address", branch_address) else None
+
+    branch_title = ""
+    if branch_doc:
+        branch_title = branch_doc.address_title or branch_doc.address_line1 or branch_doc.name
+
+    return {
+        "status": "success",
+        "customer": {
+            "name": customer_doc.name,
+            "customer_name": customer_doc.customer_name,
+            "customer_group": customer_doc.customer_group,
+            "territory": customer_doc.territory,
+            "mobile_no": customer_doc.mobile_no,
+            "email_id": customer_doc.email_id,
+        },
+        "branch_address": branch_address,
+        "branch_title": branch_title,
+        "branch_city": branch_doc.city if branch_doc else "",
+        "branch_phone": branch_doc.phone if branch_doc else ""
+    }
 
 
 @frappe.whitelist()

@@ -23,6 +23,8 @@ export function useInvoice() {
 	// State
 	const invoiceItems = ref([])
 	const customer = ref(null)
+	const customerAddress = ref(null)
+	const customerBranches = ref([])
 	const payments = ref([])
 	const salesTeam = ref([]) // Sales team for Sales Invoice
 	const posProfile = ref(null)
@@ -921,6 +923,11 @@ export function useInvoice() {
 			update_stock: 1,
 		}
 
+		if (customerAddress.value) {
+			invoiceData.customer_address = customerAddress.value
+			invoiceData.shipping_address_name = customerAddress.value
+		}
+
 		if (targetDoctype === "Sales Order") {
 			const today = new Date().toISOString().split("T")[0]
 			invoiceData.delivery_date = today
@@ -988,6 +995,11 @@ export function useInvoice() {
 					coupon_code: couponCode.value,
 					is_pos: 1,
 					update_stock: 1, // Critical: Ensures stock is updated
+				}
+
+				if (customerAddress.value) {
+					invoiceData.customer_address = customerAddress.value
+					invoiceData.shipping_address_name = customerAddress.value
 				}
 
 				if (targetDoctype === "Sales Order" && deliveryDate) {
@@ -1251,6 +1263,8 @@ export function useInvoice() {
 		// State
 		invoiceItems,
 		customer,
+		customerAddress,
+		customerBranches,
 		payments,
 		salesTeam,
 		posProfile,

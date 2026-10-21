@@ -1,3 +1,4 @@
+import { call } from "@/utils/apiWrapper"
 import { useInvoice } from "@/composables/useInvoice"
 import { usePOSOffersStore } from "@/stores/posOffers"
 import { usePOSSettingsStore } from "@/stores/posSettings"
@@ -84,6 +85,8 @@ export const usePOSCartStore = defineStore("posCart", () => {
 	const {
 		invoiceItems,
 		customer,
+		customerAddress,
+		customerBranches,
 		subtotal,
 		totalTax,
 		totalDiscount,
@@ -226,6 +229,8 @@ export const usePOSCartStore = defineStore("posCart", () => {
 
 		clearInvoiceCart()
 		customer.value = null
+		customerAddress.value = null
+		customerBranches.value = []
 		appliedOffers.value = []
 		appliedCoupon.value = null
 		currentDraftId.value = null
@@ -313,8 +318,28 @@ export const usePOSCartStore = defineStore("posCart", () => {
 
 
 
-	function setCustomer(selectedCustomer) {
+	async function setCustomer(selectedCustomer) {
 		customer.value = selectedCustomer
+		customerAddress.value = null
+		customerBranches.value = []
+
+		if (selectedCustomer) {
+			const custId = selectedCustomer.name || selectedCustomer
+			try {
+				const branches = await call("pos_next.operations.customer_branches.get_customer_branches", { customer: custId })
+				if (branches && Array.isArray(branches) && branches.length > 0) {
+					customerBranches.value = branches
+					const primary = branches.find((b) => b.is_primary)
+					customerAddress.value = primary ? primary.address_name : branches[0].address_name
+				}
+			} catch (e) {
+				console.error("Failed to load customer branches:", e)
+			}
+		}
+	}
+
+	function setCustomerAddress(addressName) {
+		customerAddress.value = addressName
 	}
 
 	function setPendingItem(item, qty = 1, mode = "uom") {
@@ -1729,6 +1754,8 @@ export const usePOSCartStore = defineStore("posCart", () => {
 		// State
 		invoiceItems,
 		customer,
+		customerAddress,
+		customerBranches,
 		subtotal,
 		totalTax,
 		totalDiscount,
@@ -1760,6 +1787,7 @@ export const usePOSCartStore = defineStore("posCart", () => {
 		updateItemQuantity,
 		clearCart,
 		setCustomer,
+		setCustomerAddress,
 		setDefaultCustomer,
 		setPendingItem,
 		clearPendingItem,

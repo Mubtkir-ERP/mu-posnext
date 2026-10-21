@@ -1001,6 +1001,11 @@ def update_invoice(data):
             for item in invoice_doc.get("items", []):
                 item.branch = pos_profile_doc.branch
 
+        # Preserve customer branch / address if provided from POS
+        if data.get("customer_address"):
+            invoice_doc.customer_address = data.get("customer_address")
+            invoice_doc.shipping_address_name = data.get("customer_address")
+
         # Do not resolve payment accounts from caller data at this stage. ERPNext
         # fills normal POS defaults below, then Point 4 revalidates every payment
         # method and pins its account from the authorized POS Profile/company.
