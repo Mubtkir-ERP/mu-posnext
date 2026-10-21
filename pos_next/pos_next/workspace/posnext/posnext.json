@@ -1,6 +1,6 @@
 {
  "charts": [],
- "content": "[{\"id\": \"cDBfxZcI12\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Your Shortcuts</b></span>\", \"col\": 12}}, {\"id\": \"EuDVjJUKSQ\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Start POS\", \"col\": 3}}, {\"id\": \"uXQ4aBaRfk\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Item\", \"col\": 3}}, {\"id\": \"jEFYB2fX3t\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Pos Settings\", \"col\": 3}}, {\"id\": \"RoWvjX8Ocp\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Pos Profile\", \"col\": 3}}, {\"id\": \"p4KrSYzInK\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Pos Opening Shift\", \"col\": 3}}, {\"id\": \"VO-VLNdx_2\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Pos Closing Shift\", \"col\": 3}}, {\"id\": \"OYrA05uyCG\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Pos Offer\", \"col\": 3}}, {\"id\": \"FUd4_fFBgH\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Pos Coupon\", \"col\": 3}}, {\"id\": \"vbShortcut1\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Voucher Balance\", \"col\": 3}}, {\"id\": \"sc_mada_entry\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Mada Settlement Entry\", \"col\": 3}}, {\"id\": \"sc_mada_recon\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Mada Bank Reconciliation\", \"col\": 3}}, {\"id\": \"spacer1\", \"type\": \"spacer\", \"data\": {\"col\": 12}}, {\"id\": \"header2\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Reports &amp; Configuration</b></span>\", \"col\": 12}}, {\"id\": \"reports_card\", \"type\": \"card\", \"data\": {\"card_name\": \"Reports\", \"col\": 4}}, {\"id\": \"pos_card\", \"type\": \"card\", \"data\": {\"card_name\": \"POS\", \"col\": 4}}, {\"id\": \"config_card\", \"type\": \"card\", \"data\": {\"card_name\": \"Configuration\", \"col\": 4}}, {\"id\": \"shift_card\", \"type\": \"card\", \"data\": {\"card_name\": \"Shift Management\", \"col\": 4}}, {\"id\": \"offers_card\", \"type\": \"card\", \"data\": {\"card_name\": \"Offers & Coupons\", \"col\": 4}}, {\"id\": \"items_card\", \"type\": \"card\", \"data\": {\"card_name\": \"Items\", \"col\": 4}}, {\"id\": \"vouchers_card\", \"type\": \"card\", \"data\": {\"card_name\": \"Vouchers\", \"col\": 4}}, {\"id\": \"mada_card\", \"type\": \"card\", \"data\": {\"card_name\": \"Mada Reconciliation\", \"col\": 4}}]",
+ "content": "[{\"id\": \"cDBfxZcI12\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Your Shortcuts</b></span>\", \"col\": 12}}, {\"id\": \"EuDVjJUKSQ\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Start POS\", \"col\": 3}}, {\"id\": \"uXQ4aBaRfk\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Item\", \"col\": 3}}, {\"id\": \"jEFYB2fX3t\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Pos Settings\", \"col\": 3}}, {\"id\": \"RoWvjX8Ocp\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Pos Profile\", \"col\": 3}}, {\"id\": \"p4KrSYzInK\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Pos Opening Shift\", \"col\": 3}}, {\"id\": \"VO-VLNdx_2\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Pos Closing Shift\", \"col\": 3}}, {\"id\": \"OYrA05uyCG\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Pos Offer\", \"col\": 3}}, {\"id\": \"FUd4_fFBgH\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Pos Coupon\", \"col\": 3}}, {\"id\": \"vbShortcut1\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Voucher Balance\", \"col\": 3}}, {\"id\": \"spacer1\", \"type\": \"spacer\", \"data\": {\"col\": 12}}, {\"id\": \"header2\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Reports &amp; Configuration</b></span>\", \"col\": 12}}, {\"id\": \"reports_card\", \"type\": \"card\", \"data\": {\"card_name\": \"Reports\", \"col\": 4}}, {\"id\": \"pos_card\", \"type\": \"card\", \"data\": {\"card_name\": \"POS\", \"col\": 4}}, {\"id\": \"config_card\", \"type\": \"card\", \"data\": {\"card_name\": \"Configuration\", \"col\": 4}}, {\"id\": \"shift_card\", \"type\": \"card\", \"data\": {\"card_name\": \"Shift Management\", \"col\": 4}}, {\"id\": \"offers_card\", \"type\": \"card\", \"data\": {\"card_name\": \"Offers & Coupons\", \"col\": 4}}, {\"id\": \"items_card\", \"type\": \"card\", \"data\": {\"card_name\": \"Items\", \"col\": 4}}, {\"id\": \"vouchers_card\", \"type\": \"card\", \"data\": {\"card_name\": \"Vouchers\", \"col\": 4}}]",
  "creation": "2026-01-27 21:23:15.819052",
  "custom_blocks": [],
  "docstatus": 0,
@@ -215,55 +215,6 @@
    "link_type": "DocType",
    "onboard": 0,
    "type": "Link"
-  },
-  {
-   "hidden": 0,
-   "is_query_report": 0,
-   "label": "Mada Reconciliation",
-   "link_count": 4,
-   "link_type": "DocType",
-   "onboard": 0,
-   "type": "Card Break"
-  },
-  {
-   "hidden": 0,
-   "is_query_report": 0,
-   "label": "Mada Settlement Entry",
-   "link_count": 0,
-   "link_to": "Mada Settlement Entry",
-   "link_type": "DocType",
-   "onboard": 0,
-   "type": "Link"
-  },
-  {
-   "hidden": 0,
-   "is_query_report": 0,
-   "label": "Mada Bank Reconciliation",
-   "link_count": 0,
-   "link_to": "Mada Bank Reconciliation",
-   "link_type": "DocType",
-   "onboard": 0,
-   "type": "Link"
-  },
-  {
-   "hidden": 0,
-   "is_query_report": 0,
-   "label": "Mada Terminal",
-   "link_count": 0,
-   "link_to": "Mada Terminal",
-   "link_type": "DocType",
-   "onboard": 0,
-   "type": "Link"
-  },
-  {
-   "hidden": 0,
-   "is_query_report": 1,
-   "label": "Mada Reconciliation Status",
-   "link_count": 0,
-   "link_to": "Mada Reconciliation Status",
-   "link_type": "Report",
-   "onboard": 0,
-   "type": "Link"
   }
  ],
  "modified": "2026-10-19 15:48:00.000000",
@@ -345,22 +296,6 @@
    "doc_view": "List",
    "label": "Voucher Balance",
    "link_to": "Prepaid Voucher Balance",
-   "stats_filter": "[]",
-   "type": "DocType"
-  },
-  {
-   "color": "Blue",
-   "doc_view": "List",
-   "label": "Mada Settlement Entry",
-   "link_to": "Mada Settlement Entry",
-   "stats_filter": "[]",
-   "type": "DocType"
-  },
-  {
-   "color": "Green",
-   "doc_view": "List",
-   "label": "Mada Bank Reconciliation",
-   "link_to": "Mada Bank Reconciliation",
    "stats_filter": "[]",
    "type": "DocType"
   }
