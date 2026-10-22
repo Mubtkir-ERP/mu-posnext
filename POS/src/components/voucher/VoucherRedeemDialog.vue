@@ -44,6 +44,11 @@
             {{ loading ? '…' : balance }}
           </span>
         </div>
+        <div v-if="!loading && (branchBalance > 0 || (generalBalance > 0 && selectedBranch))" class="text-[11px] text-gray-500 text-center -mt-2 mb-1">
+          <span v-if="branchBalance > 0" class="text-blue-700 font-semibold">{{ __('Branch balance: {0}', [branchBalance]) }}</span>
+          <span v-if="branchBalance > 0 && generalBalance > 0" class="mx-1 text-gray-400">|</span>
+          <span v-if="generalBalance > 0" class="text-emerald-700">{{ __('General balance: {0}', [generalBalance]) }}</span>
+        </div>
 
         <p v-if="!loading && balance <= 0" class="text-sm text-red-600 text-center">
           {{ __('This customer has no voucher balance.') }}
@@ -211,19 +216,40 @@ function close() {
 
 const branches = ref([])
 const selectedBranch = ref("")
+const generalBalance = ref(0)
+const branchBalance = ref(0)
+
+watch(selectedBranch, async (newVal, oldVal) => {
+  if (newVal !== oldVal && customerId.value) {
+    await fetchBalanceOnly()
+  }
+})
+
+async function fetchBalanceOnly() {
+  if (!customerId.value) return
+  try {
+    const res = await call("pos_next.api.voucher.get_voucher_balance", {
+      customer: customerId.value,
+      pos_profile: props.posProfile,
+      branch: selectedBranch.value || undefined,
+    })
+    const data = (res && (res.message ?? res)) || {}
+    balance.value = Number(data.balance ?? 0)
+    generalBalance.value = Number(data.general_balance ?? 0)
+    branchBalance.value = Number(data.branch_balance ?? 0)
+    qty.value = balance.value > 0 ? 1 : 0
+  } catch (e) {
+    balance.value = 0
+    generalBalance.value = 0
+    branchBalance.value = 0
+  }
+}
 
 async function loadBalance() {
   if (!customerId.value) return
   loading.value = true
   try {
-    const res = await call("pos_next.api.voucher.get_voucher_balance", {
-      customer: customerId.value,
-      pos_profile: props.posProfile,
-    })
-    balance.value = Number((res && (res.message ?? res))?.balance ?? 0)
-    qty.value = balance.value > 0 ? 1 : 0
-
-    // Fetch branches (addresses) for the customer
+    // Fetch branches (addresses) for the customer first
     try {
       const bRes = await call("pos_next.operations.customer_branches.get_customer_branches", {
         customer: customerId.value,
@@ -238,6 +264,8 @@ async function loadBalance() {
       branches.value = []
       selectedBranch.value = ""
     }
+
+    await fetchBalanceOnly()
   } catch (e) {
     balance.value = 0
     showError(serverError(e, __("Could not load voucher balance")))

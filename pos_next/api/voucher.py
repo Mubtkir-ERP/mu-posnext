@@ -24,12 +24,23 @@ from pos_next.api.whatsapp_hook import notify_customer
 # Balance helpers
 # ---------------------------------------------------------------------------
 
-def _get_or_create_balance(customer, company=None):
-	name = frappe.db.exists("Prepaid Voucher Balance", {"customer": customer})
+def _get_or_create_balance(customer, company=None, branch=None):
+	if branch:
+		name = frappe.db.get_value("Prepaid Voucher Balance", {"customer": customer, "branch": branch})
+	else:
+		name = frappe.db.get_value("Prepaid Voucher Balance", {"customer": customer, "is_general": 1})
+		if not name:
+			name = frappe.db.get_value("Prepaid Voucher Balance", {"customer": customer, "branch": ("in", ["", None])})
+		if not name and frappe.db.exists("Prepaid Voucher Balance", customer):
+			name = customer
+
 	if name:
 		return frappe.get_doc("Prepaid Voucher Balance", name)
+
 	doc = frappe.new_doc("Prepaid Voucher Balance")
 	doc.customer = customer
+	doc.branch = branch or None
+	doc.is_general = 0 if branch else 1
 	doc.company = company
 	doc.total_purchased = 0
 	doc.total_redeemed = 0
@@ -37,33 +48,92 @@ def _get_or_create_balance(customer, company=None):
 	return doc
 
 
-def get_balance_value(customer):
-	"""Current remaining units for a customer (0 if none)."""
+def get_balance_value(customer, branch=None):
+	"""Current remaining units for a customer and optional branch.
+	If branch provided: returns sum of branch balance + general balance.
+	If no branch: returns general balance (or all balances if no branch distinction).
+	"""
 	if not customer:
 		return 0
-	val = frappe.db.get_value("Prepaid Voucher Balance", {"customer": customer}, "current_balance")
-	return cint(val)
+
+	try:
+		if branch:
+			gen = frappe.db.sql("""
+				select coalesce(sum(current_balance), 0)
+				from `tabPrepaid Voucher Balance`
+				where customer = %s and (is_general = 1 or branch is null or branch = '')
+			""", customer)
+			gen_val = cint(gen[0][0]) if gen else 0
+
+			br = frappe.db.sql("""
+				select coalesce(sum(current_balance), 0)
+				from `tabPrepaid Voucher Balance`
+				where customer = %s and branch = %s
+			""", (customer, branch))
+			br_val = cint(br[0][0]) if br else 0
+
+			return gen_val + br_val
+		else:
+			gen = frappe.db.sql("""
+				select coalesce(sum(current_balance), 0)
+				from `tabPrepaid Voucher Balance`
+				where customer = %s and (is_general = 1 or branch is null or branch = '')
+			""", customer)
+			return cint(gen[0][0]) if gen else 0
+	except Exception:
+		val = frappe.db.get_value("Prepaid Voucher Balance", {"customer": customer}, "current_balance")
+		return cint(val)
 
 
 @frappe.whitelist()
-def get_voucher_balance(customer, pos_profile=None):
-	"""Public: current balance + whether the voucher system is enabled."""
+def get_voucher_balance(customer, pos_profile=None, branch=None):
+	"""Public: current balance + breakdown + whether the voucher system is enabled."""
 	enabled = 0
 	if pos_profile:
 		require_pos_profile_access(pos_profile)
 		enabled = cint(frappe.db.get_value("POS Profile", pos_profile, "mu_voucher_enabled"))
+
+	general_bal = 0
+	branch_bal = 0
+	if customer:
+		try:
+			gen = frappe.db.sql("""
+				select coalesce(sum(current_balance), 0)
+				from `tabPrepaid Voucher Balance`
+				where customer = %s and (is_general = 1 or branch is null or branch = '')
+			""", customer)
+			general_bal = cint(gen[0][0]) if gen else 0
+
+			if branch:
+				br = frappe.db.sql("""
+					select coalesce(sum(current_balance), 0)
+					from `tabPrepaid Voucher Balance`
+					where customer = %s and branch = %s
+				""", (customer, branch))
+				branch_bal = cint(br[0][0]) if br else 0
+		except Exception:
+			general_bal = cint(frappe.db.get_value("Prepaid Voucher Balance", {"customer": customer}, "current_balance"))
+
+	total = (general_bal + branch_bal) if branch else general_bal
 	return {
 		"customer": customer,
-		"balance": get_balance_value(customer) if customer else 0,
+		"branch": branch,
+		"balance": total,
+		"general_balance": general_bal,
+		"branch_balance": branch_bal,
 		"enabled": enabled,
 	}
 
 
 def _record_transaction(customer, qty, txn_type, balance_after, company=None,
 	pos_profile=None, pos_opening_shift=None, reference_doctype=None,
-	reference_name=None, stock_entry=None, remarks=None):
+	reference_name=None, stock_entry=None, branch=None, remarks=None):
 	txn = frappe.new_doc("Prepaid Voucher Transaction")
 	txn.customer = customer
+	try:
+		txn.branch = branch
+	except Exception:
+		pass
 	txn.transaction_type = txn_type
 	txn.quantity = qty
 	txn.balance_after = balance_after
@@ -103,7 +173,13 @@ def on_sales_invoice_submit(doc, method=None):
 	units = _voucher_units_in_invoice(doc)
 	if units <= 0:
 		return
-	bal = _get_or_create_balance(doc.customer, doc.company)
+
+	# Determine branch allocation
+	branch = None
+	if doc.get("mu_voucher_branch_only") and doc.get("customer_address"):
+		branch = doc.get("customer_address")
+
+	bal = _get_or_create_balance(doc.customer, doc.company, branch=branch)
 	bal.total_purchased = cint(bal.total_purchased) + units
 	bal.low_balance_notified = 0  # topped up -> allow future low-balance alert
 	bal.save(ignore_permissions=True)
@@ -111,7 +187,10 @@ def on_sales_invoice_submit(doc, method=None):
 		doc.customer, units, "Purchase", cint(bal.current_balance),
 		company=doc.company, pos_profile=doc.get("pos_profile"),
 		reference_doctype="Sales Invoice", reference_name=doc.name,
-		remarks=_("Voucher book purchase"),
+		branch=branch,
+		remarks=_("Voucher book purchase - {0}").format(
+			_("Dedicated to branch: {0}").format(branch) if branch else _("General")
+		),
 	)
 
 
@@ -122,16 +201,19 @@ def on_sales_invoice_cancel(doc, method=None):
 	units = _voucher_units_in_invoice(doc)
 	if units <= 0:
 		return
-	name = frappe.db.exists("Prepaid Voucher Balance", {"customer": doc.customer})
-	if not name:
-		return
-	bal = frappe.get_doc("Prepaid Voucher Balance", name)
+
+	branch = None
+	if doc.get("mu_voucher_branch_only") and doc.get("customer_address"):
+		branch = doc.get("customer_address")
+
+	bal = _get_or_create_balance(doc.customer, doc.company, branch=branch)
 	bal.total_purchased = max(0, cint(bal.total_purchased) - units)
 	bal.save(ignore_permissions=True)
 	_record_transaction(
 		doc.customer, -units, "Purchase", cint(bal.current_balance),
 		company=doc.company, pos_profile=doc.get("pos_profile"),
 		reference_doctype="Sales Invoice", reference_name=doc.name,
+		branch=branch,
 		remarks=_("Reversal of cancelled voucher-book invoice"),
 	)
 
@@ -257,19 +339,27 @@ def redeem_voucher(pos_profile, customer, pos_opening_shift, qty=1, otp_code=Non
 
 	company = cfg.get("company") or shift.company
 
-	name = frappe.db.exists("Prepaid Voucher Balance", {"customer": customer})
-	if not name:
-		frappe.throw(_("This customer has no voucher balance."))
-	bal = frappe.get_doc("Prepaid Voucher Balance", name)
-	# Clear any stale lock left by a previous version that called bal.lock()
-	# (a lingering lock file surfaces as DocumentLockedError on the next click).
-	try:
-		bal.unlock()
-	except Exception:
-		pass
-	# The balance doc's own validate() blocks a negative balance, which is enough
-	# to prevent over-redemption on a single terminal. No explicit lock is taken.
-	available = cint(bal.current_balance)
+	# Look up branch-specific and general balance documents
+	branch_bal_doc = None
+	gen_bal_doc = None
+
+	if branch_address:
+		branch_bal_name = frappe.db.get_value("Prepaid Voucher Balance", {"customer": customer, "branch": branch_address})
+		if branch_bal_name:
+			branch_bal_doc = frappe.get_doc("Prepaid Voucher Balance", branch_bal_name)
+
+	gen_name = frappe.db.get_value("Prepaid Voucher Balance", {"customer": customer, "is_general": 1})
+	if not gen_name:
+		gen_name = frappe.db.get_value("Prepaid Voucher Balance", {"customer": customer, "branch": ("in", ["", None])})
+	if not gen_name and frappe.db.exists("Prepaid Voucher Balance", customer):
+		gen_name = customer
+	if gen_name:
+		gen_bal_doc = frappe.get_doc("Prepaid Voucher Balance", gen_name)
+
+	branch_avail = cint(branch_bal_doc.current_balance) if branch_bal_doc else 0
+	gen_avail = cint(gen_bal_doc.current_balance) if gen_bal_doc else 0
+	available = branch_avail + gen_avail
+
 	if available <= 0:
 		frappe.throw(_("This customer has no remaining voucher units."))
 	if qty > available:
@@ -300,11 +390,6 @@ def redeem_voucher(pos_profile, customer, pos_opening_shift, qty=1, otp_code=Non
 		otp.verify("voucher_redeem", otp_ref, otp_code)
 
 	# Physical hand-over first; if stock fails, nothing is decremented.
-	# Any unexpected failure here (missing stock, account/cost-center config,
-	# a validation deep inside Stock Entry) would otherwise surface to the
-	# cashier as an opaque error. Capture the REAL reason: log the full
-	# traceback to the Error Log (viewable in the desk UI, no SSH) and re-throw
-	# the actual message so the POS toast shows what truly went wrong.
 	try:
 		# Only move stock for an inventoried item; a service redemption skips it.
 		stock_entry = None
@@ -314,17 +399,29 @@ def redeem_voucher(pos_profile, customer, pos_opening_shift, qty=1, otp_code=Non
 				company, customer, qty=qty,
 			)
 
-		bal.total_redeemed = cint(bal.total_redeemed) + qty
-		bal.last_redeemed_on = now_datetime()
-		bal.save(ignore_permissions=True)
-		remaining = cint(bal.current_balance)
+		# Deduct from branch_bal_doc first, then gen_bal_doc for remainder
+		qty_from_branch = min(qty, branch_avail)
+		qty_from_gen = qty - qty_from_branch
+
+		if qty_from_branch > 0 and branch_bal_doc:
+			branch_bal_doc.total_redeemed = cint(branch_bal_doc.total_redeemed) + qty_from_branch
+			branch_bal_doc.last_redeemed_on = now_datetime()
+			branch_bal_doc.save(ignore_permissions=True)
+
+		if qty_from_gen > 0 and gen_bal_doc:
+			gen_bal_doc.total_redeemed = cint(gen_bal_doc.total_redeemed) + qty_from_gen
+			gen_bal_doc.last_redeemed_on = now_datetime()
+			gen_bal_doc.save(ignore_permissions=True)
+
+		remaining = (cint(branch_bal_doc.current_balance) if branch_bal_doc else 0) + (cint(gen_bal_doc.current_balance) if gen_bal_doc else 0)
 
 		_record_transaction(
 			customer, -qty, "Redeem", remaining, company=company, pos_profile=pos_profile,
 			pos_opening_shift=pos_opening_shift,
 			reference_doctype="Stock Entry" if stock_entry else None,
 			reference_name=stock_entry, stock_entry=stock_entry,
-			remarks=_("Voucher redemption ({0})").format(qty),
+			branch=branch_address,
+			remarks=_("Voucher redemption ({0}) - Branch: {1}").format(qty, branch_address) if branch_address else _("Voucher redemption ({0})").format(qty),
 		)
 	except frappe.ValidationError:
 		# Clean, user-facing validation messages pass through unchanged.
