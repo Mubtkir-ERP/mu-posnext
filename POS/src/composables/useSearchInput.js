@@ -143,40 +143,6 @@ export function useSearchInput({ itemStore, onItemFound, showWarning, isAnyDialo
 	 * @param {boolean} forceAutoAdd - When true, item is added without user click
 	 */
 	function processBarcodeScan(barcode, forceAutoAdd) {
-		const rawBarcode = String(barcode || "").trim()
-
-		// Intercept Customer Branch QR Scan
-		if (rawBarcode.startsWith("MUBTKIR_BRANCH::") || rawBarcode.includes("MUBTKIR_BRANCH::")) {
-			barcodeQueue.withLock(async () => {
-				try {
-					const { call } = await import("@/utils/apiWrapper")
-					const { usePOSCartStore } = await import("@/stores/posCart")
-					const { useToast } = await import("@/composables/useToast")
-					const { showSuccess } = useToast()
-					const cartStore = usePOSCartStore()
-
-					const res = await call("pos_next.operations.customer_branches.resolve_customer_branch", {
-						qr_code_content: rawBarcode,
-					})
-
-					if (res && res.status === "success" && res.customer) {
-						await cartStore.setCustomer(res.customer)
-						if (res.branch_address) {
-							cartStore.setCustomerAddress(res.branch_address)
-						}
-						showSuccess(__("Customer {0} - Branch {1} selected", [res.customer.customer_name || res.customer.name, res.branch_title]))
-						focusSearchInput()
-						return
-					}
-				} catch (err) {
-					console.error("Customer branch QR scan error:", err)
-					showWarning(__("Invalid or unknown Branch QR code"))
-					focusSearchInput()
-				}
-			})
-			return
-		}
-
 		const shouldAutoAdd = forceAutoAdd || (scannerEnabled.value && autoAddEnabled.value)
 
 		barcodeQueue.withLock(async () => {
