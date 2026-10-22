@@ -15,12 +15,35 @@ import base64
 
 
 def generate_branch_qr_data_url(qr_text):
-    """Generates base64 PNG data URL for QR code using qrcode library."""
+    """Generates vector SVG or PNG base64 data URL for QR code with zero external dependencies."""
     if not qr_text:
         return ""
+
+    # Priority 1: Vendored pyqrcode (100% pure Python, zero dependencies, crisp vector SVG)
+    try:
+        from pos_next.operations import pyqrcode
+        qr = pyqrcode.create(qr_text, error='M')
+        buf = io.BytesIO()
+        qr.svg(buf, scale=5)
+        svg_b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
+        return f"data:image/svg+xml;base64,{svg_b64}"
+    except Exception as e:
+        frappe.log_error(f"Vendored pyqrcode failed: {e}", "Customer Branch QR")
+
+    # Priority 2: System pyqrcode if available
+    try:
+        import pyqrcode
+        qr = pyqrcode.create(qr_text, error='M')
+        buf = io.BytesIO()
+        qr.svg(buf, scale=5)
+        svg_b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
+        return f"data:image/svg+xml;base64,{svg_b64}"
+    except Exception:
+        pass
+
+    # Priority 3: qrcode library if installed
     try:
         import qrcode
-
         qr = qrcode.QRCode(
             version=1,
             error_correction=qrcode.constants.ERROR_CORRECT_M,
@@ -34,9 +57,10 @@ def generate_branch_qr_data_url(qr_text):
         img.save(buf, format="PNG")
         b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
         return f"data:image/png;base64,{b64}"
-    except Exception as e:
-        frappe.log_error(f"Failed to generate QR code: {e}", "Customer Branch QR")
-        return ""
+    except Exception:
+        pass
+
+    return ""
 
 
 @frappe.whitelist()

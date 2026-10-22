@@ -21,7 +21,7 @@ frappe.ui.form.on("Customer", {
 								<div class="text-xs text-gray-500">${b.address_line1 || ""} ${b.city || ""} ${b.phone ? " | " + b.phone : ""}</div>
 							</div>
 							<div class="flex items-center gap-2">
-								<img src="${b.qr_image}" class="w-12 h-12 border rounded bg-white p-0.5" />
+								<img src="${b.qr_image}" alt="QR" style="width: 52px; height: 52px; min-width: 52px; object-fit: contain; background: white; border: 1px solid #e2e8f0; border-radius: 6px; padding: 2px;" />
 								<button class="btn btn-sm btn-primary btn-print-qr" data-address="${b.address_name}">
 									${__("Print QR Card")}
 								</button>
