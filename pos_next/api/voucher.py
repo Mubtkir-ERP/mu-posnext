@@ -24,6 +24,14 @@ from pos_next.api.whatsapp_hook import notify_customer
 # Balance helpers
 # ---------------------------------------------------------------------------
 
+def _lock_voucher_balance(balance_name):
+	"""Serialize redemption against this balance record inside the current DB transaction."""
+	if not balance_name:
+		return
+	table = '"tabPrepaid Voucher Balance"' if getattr(frappe.db, "db_type", None) == "postgres" else "`tabPrepaid Voucher Balance`"
+	frappe.db.sql(f"SELECT name FROM {table} WHERE name = %s FOR UPDATE", (balance_name,))
+
+
 def _get_or_create_balance(customer, company=None, branch=None):
 	if branch:
 		name = frappe.db.get_value("Prepaid Voucher Balance", {"customer": customer, "branch": branch})
@@ -346,6 +354,7 @@ def redeem_voucher(pos_profile, customer, pos_opening_shift, qty=1, otp_code=Non
 	if branch_address:
 		branch_bal_name = frappe.db.get_value("Prepaid Voucher Balance", {"customer": customer, "branch": branch_address})
 		if branch_bal_name:
+			_lock_voucher_balance(branch_bal_name)
 			branch_bal_doc = frappe.get_doc("Prepaid Voucher Balance", branch_bal_name)
 
 	gen_name = frappe.db.get_value("Prepaid Voucher Balance", {"customer": customer, "is_general": 1})
@@ -354,6 +363,7 @@ def redeem_voucher(pos_profile, customer, pos_opening_shift, qty=1, otp_code=Non
 	if not gen_name and frappe.db.exists("Prepaid Voucher Balance", customer):
 		gen_name = customer
 	if gen_name:
+		_lock_voucher_balance(gen_name)
 		gen_bal_doc = frappe.get_doc("Prepaid Voucher Balance", gen_name)
 
 	branch_avail = cint(branch_bal_doc.current_balance) if branch_bal_doc else 0

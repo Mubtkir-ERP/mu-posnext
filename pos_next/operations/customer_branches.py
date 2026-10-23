@@ -6,6 +6,7 @@ import frappe
 from frappe import _
 from frappe.utils import nowdate, now_datetime, get_first_day, get_last_day, flt, cint
 from pos_next.api.whatsapp_hook import send_whatsapp
+from pos_next.api.security import require_pos_profile_access
 import secrets
 import json
 
@@ -471,7 +472,11 @@ def create_branch_sales_order(customer, branch_address, items, pos_profile=None)
     if isinstance(items, str):
         items = json.loads(items)
 
-    profile_doc = frappe.get_cached_doc("POS Profile", pos_profile) if pos_profile else None
+    profile_doc = None
+    if pos_profile:
+        require_pos_profile_access(pos_profile)
+        profile_doc = frappe.get_cached_doc("POS Profile", pos_profile)
+
     company = profile_doc.company if profile_doc else frappe.defaults.get_user_default("Company")
 
     so = frappe.new_doc("Sales Order")
@@ -534,51 +539,3 @@ def confirm_branch_sales_order(sales_order, otp):
         "message": _("Sales Order {0} confirmed and submitted successfully").format(so.name)
     }
 
-
-@frappe.whitelist()
-def create_monthly_consolidated_invoice(customer, branch_address=None, from_date=None, to_date=None):
-    """
-    Consolidates all submitted unbilled Sales Orders for a customer/branch into a single monthly Sales Invoice.
-    """
-    if not from_date:
-        from_date = get_first_day(nowdate())
-    if not to_date:
-        to_date = get_last_day(nowdate())
-
-    filters = {
-        "customer": customer,
-        "docstatus": 1,
-        "status": ["not in", ["Closed", "Completed", "Cancelled"]],
-        "transaction_date": ["between", [from_date, to_date]],
-        "per_billed": ["<", 100]
-    }
-    if branch_address:
-        filters["shipping_address_name"] = branch_address
-
-    sales_orders = frappe.get_all("Sales Order", filters=filters, pluck="name")
-    if not sales_orders:
-        frappe.throw(_("No unbilled Sales Orders found for this customer/branch in the selected period"))
-
-    from erpnext.selling.doctype.sales_order.sales_order import make_sales_invoice
-
-    # Create base invoice from the first order
-    si = make_sales_invoice(sales_orders[0])
-    
-    # Merge items from subsequent sales orders
-    for so_name in sales_orders[1:]:
-        sub_si = make_sales_invoice(so_name)
-        for it in sub_si.items:
-            si.append("items", it)
-
-    si.posting_date = to_date
-    si.remarks = _("Monthly consolidated invoice for {0} ({1} to {2}) across {3} orders: {4}").format(
-        customer, from_date, to_date, len(sales_orders), ", ".join(sales_orders[:5])
-    )
-    si.save(ignore_permissions=True)
-
-    return {
-        "status": "success",
-        "sales_invoice": si.name,
-        "consolidated_orders_count": len(sales_orders),
-        "total_amount": si.grand_total
-    }
