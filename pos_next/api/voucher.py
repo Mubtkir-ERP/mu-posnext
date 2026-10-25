@@ -418,15 +418,30 @@ def redeem_voucher(pos_profile, customer, pos_opening_shift, qty=1, otp_code=Non
 				"Daily redemption limit exceeded ({0} vouchers). Remaining allowed today: {1}."
 			).format(daily_limit, remaining_today), frappe.ValidationError)
 
-	# WhatsApp OTP gate (sent to the customer). All checks above have passed, so
+	# WhatsApp OTP gate (sent to branch if selected, otherwise to customer). All checks above have passed, so
 	# we only send a code for a redemption that would otherwise succeed.
 	if cint(cfg.get("mu_voucher_otp_enabled")):
 		from pos_next.api import otp
-		from pos_next.api.whatsapp_hook import get_customer_mobile
-		otp_ref = f"{pos_opening_shift}:{customer}"
+		from pos_next.api.whatsapp_hook import get_branch_mobile, get_customer_mobile
+		otp_ref = f"{pos_opening_shift}:{customer}:{branch_address}" if branch_address else f"{pos_opening_shift}:{customer}"
 		if not otp_code:
+			if branch_address:
+				recipient_mobile = get_branch_mobile(branch_address)
+				if not recipient_mobile:
+					frappe.throw(
+						_("No mobile number found for branch '{0}'. Please add a mobile/phone number to this branch address to send the verification code.").format(branch_address),
+						title=_("Branch Phone Required"),
+					)
+			else:
+				recipient_mobile = get_customer_mobile(customer)
+				if not recipient_mobile:
+					frappe.throw(
+						_("No mobile number found for customer '{0}' to send the verification code.").format(customer),
+						title=_("Customer Phone Required"),
+					)
+
 			return otp.generate_and_send(
-				"voucher_redeem", otp_ref, get_customer_mobile(customer),
+				"voucher_redeem", otp_ref, recipient_mobile,
 				label=_("Voucher Redemption"), digits=5,
 				templates=cfg.get("mu_otp_message_templates"),
 			)
@@ -486,18 +501,21 @@ def redeem_voucher(pos_profile, customer, pos_opening_shift, qty=1, otp_code=Non
 		if whatsapp_on:
 			cust_name = frappe.db.get_value("Customer", customer, "customer_name") or customer
 			msg = _("Dear {0}, {1} vouchers have been redeemed. Your remaining balance is: {2} vouchers.").format(cust_name, qty, remaining)
-			notify_customer(customer, msg)
-			branch_phone = frappe.db.get_value("Address", branch_address, "phone") if branch_address else None
-			if branch_phone:
-				from pos_next.api.whatsapp_hook import send_whatsapp
-				send_whatsapp(branch_phone, msg)
+			notify_customer(customer, msg, branch_address=branch_address)
+			if branch_address:
+				from pos_next.api.whatsapp_hook import get_branch_mobile, send_whatsapp
+				br_phone = get_branch_mobile(branch_address)
+				cust_phone = frappe.db.get_value("Customer", customer, "mobile_no")
+				if br_phone and cust_phone and br_phone != cust_phone:
+					send_whatsapp(cust_phone, msg)
 
 			threshold = cint(cfg.get("mu_voucher_low_balance_threshold"))
-			if threshold > 0 and remaining <= threshold and not cint(bal.low_balance_notified):
+			target_bal_doc = branch_bal_doc or gen_bal_doc
+			if threshold > 0 and remaining <= threshold and target_bal_doc and not cint(getattr(target_bal_doc, "low_balance_notified", 0)):
 				notify_customer(customer, _(
 					"Notice: Your voucher balance is running low ({0} remaining). Please consider renewing your book."
-				).format(remaining))
-				bal.db_set("low_balance_notified", 1)
+				).format(remaining), branch_address=branch_address)
+				target_bal_doc.db_set("low_balance_notified", 1)
 				low_alert = True
 	except Exception:
 		frappe.log_error(frappe.get_traceback(), "Voucher post-redemption notify failed")

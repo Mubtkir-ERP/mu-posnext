@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.22.1] - 2026-10-25
+
+### Added
+- **Branch-Specific OTP & WhatsApp Notifications**:
+  - Sent voucher redemption verification code (OTP) directly to the selected branch's phone number (`Address.phone` / linked contact) instead of the customer's primary number.
+  - Required a valid mobile number on the branch address when branch redemption is selected, with clear user-facing error message.
+  - Bound the OTP session reference to the selected branch (`shift:customer:branch`).
+  - Passed `branch_address` in frontend OTP resend and updated UI messages to indicate that the code was sent to the branch's WhatsApp.
+
 ## [1.22.0] - 2026-10-25
 
 ### Added

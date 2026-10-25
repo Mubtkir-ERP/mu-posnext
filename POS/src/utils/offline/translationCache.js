@@ -23,7 +23,7 @@ const log = logger.create("TranslationCache")
 const CACHE_TTL = 24 * 60 * 60 * 1000
 
 /** Bump whenever bundled translations change so stale IndexedDB dictionaries are discarded. */
-const CACHE_SCHEMA_VERSION = 6
+const CACHE_SCHEMA_VERSION = 7
 
 /** @type {Map<string, TranslationEntry>} In-memory cache for fast lookups */
 const memoryCache = new Map()

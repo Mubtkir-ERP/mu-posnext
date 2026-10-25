@@ -78,8 +78,42 @@ def get_customer_mobile(customer):
 		return ""
 
 
-def notify_customer(customer, message):
-	"""Resolve a customer's mobile and send a WhatsApp message (best-effort).
+def get_branch_mobile(branch_address):
+	"""Return a branch/address best-known phone or mobile number, or '' if none."""
+	if not branch_address:
+		return ""
+	try:
+		# 1) Direct phone on Address doctype
+		addr_phone = frappe.db.get_value("Address", branch_address, "phone")
+		if addr_phone:
+			return str(addr_phone).strip()
+
+		# 2) Check for a linked Contact to this Address
+		contact_name = frappe.db.get_value(
+			"Dynamic Link",
+			{"link_doctype": "Address", "link_name": branch_address, "parenttype": "Contact"},
+			"parent",
+		)
+		if contact_name:
+			mobile = frappe.db.get_value("Contact", contact_name, "mobile_no") or frappe.db.get_value("Contact", contact_name, "phone")
+			if mobile:
+				return str(mobile).strip()
+	except Exception:
+		frappe.log_error(frappe.get_traceback(), "get_branch_mobile failed")
+	return ""
+
+
+def get_recipient_mobile(customer, branch_address=None):
+	"""Resolve recipient phone: branch mobile if branch selected, else customer mobile."""
+	if branch_address:
+		bm = get_branch_mobile(branch_address)
+		if bm:
+			return bm
+	return get_customer_mobile(customer)
+
+
+def notify_customer(customer, message, branch_address=None):
+	"""Resolve customer/branch mobile and send a WhatsApp message (best-effort).
 
 	Never raises into the caller — the redemption/voucher flow must not fail
 	because of WhatsApp or a contact lookup.
@@ -87,7 +121,7 @@ def notify_customer(customer, message):
 	if not customer or not message:
 		return False
 	try:
-		mobile = get_customer_mobile(customer)
+		mobile = get_recipient_mobile(customer, branch_address=branch_address)
 		if not mobile:
 			return False
 		return send_whatsapp(mobile, message)

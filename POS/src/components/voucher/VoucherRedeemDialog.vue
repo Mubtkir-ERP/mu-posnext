@@ -91,7 +91,7 @@
         <!-- OTP verification step -->
         <div v-if="otpRequired" class="p-3 rounded-lg border border-blue-200 bg-blue-50 space-y-2">
           <p class="text-sm text-blue-800 text-center">
-            {{ __('A verification code was sent to the customer WhatsApp') }}
+            {{ selectedBranch ? __('A verification code was sent to the branch WhatsApp') : __('A verification code was sent to the customer WhatsApp') }}
             <span v-if="otpMasked" class="font-bold" dir="ltr">{{ otpMasked }}</span>
           </p>
           <input
@@ -334,7 +334,11 @@ async function doRedeem() {
       otpMasked.value = data.masked_mobile || ""
       if (data.digits) otpDigits.value = Number(data.digits)
       startOtpCountdown()
-      showSuccess(__("A verification code was sent to the customer WhatsApp {0}", [otpMasked.value]))
+      showSuccess(
+        selectedBranch.value
+          ? __("A verification code was sent to the branch WhatsApp {0}", [otpMasked.value])
+          : __("A verification code was sent to the customer WhatsApp {0}", [otpMasked.value])
+      )
       return
     }
 
@@ -365,13 +369,18 @@ async function resendOtp() {
       customer: customerId.value,
       pos_opening_shift: props.openingShift,
       qty: qty.value,
+      branch_address: selectedBranch.value || undefined,
     })
     const data = (res && (res.message ?? res)) || {}
     if (data.otp_required) {
       otpMasked.value = data.masked_mobile || otpMasked.value
       if (data.digits) otpDigits.value = Number(data.digits)
       startOtpCountdown()
-      showSuccess(__("A new code was sent to the customer WhatsApp"))
+      showSuccess(
+        selectedBranch.value
+          ? __("A new code was sent to the branch WhatsApp")
+          : __("A new code was sent to the customer WhatsApp")
+      )
     }
   } catch (e) {
     showError(serverError(e, __("Could not resend the code")))
