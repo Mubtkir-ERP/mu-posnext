@@ -677,11 +677,13 @@ def make_closing_shift_from_opening(opening_shift):
     closing_shift.set("taxes", taxes)
     closing_shift.set("pos_payments", pos_payments_table)
 
-    # Check POS Profile non-taxable configuration
-    enable_non_taxable = 0
+    # Check POS Profile non-taxable configuration (enabled by default)
+    enable_non_taxable = 1
     pos_profile_name = opening_shift.get("pos_profile")
     if pos_profile_name:
-        enable_non_taxable = cint(frappe.db.get_value("POS Profile", pos_profile_name, "mu_enable_non_taxable_charges"))
+        val = frappe.db.get_value("POS Profile", pos_profile_name, "mu_enable_non_taxable_charges")
+        if val is not None:
+            enable_non_taxable = cint(val)
 
     non_tax_sales = max(0.0, flt(summary.get("non_taxable_sales", 0)))
 

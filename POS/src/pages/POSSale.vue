@@ -1424,7 +1424,7 @@ const showCustomerOrders = ref(false);
 const voucherBalance = ref(0);
 async function refreshVoucherBalance(announce = false) {
 	const customerId = cartStore.customer?.name || cartStore.customer;
-	if (!profilePrintOptions.value.voucherEnabled || !customerId) {
+	if (!customerId) {
 		voucherBalance.value = 0;
 		return;
 	}

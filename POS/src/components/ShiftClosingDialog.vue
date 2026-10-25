@@ -60,7 +60,6 @@
 
               <!-- Non-Taxable Amount (المبالغ غير الضريبية) -->
               <div
-                v-if="closingData.mu_enable_non_taxable_charges || nonTaxableAmount > 0"
                 class="text-start bg-indigo-50 border border-indigo-200 rounded-lg p-3 md:p-4"
               >
                 <div class="text-indigo-600 text-xs uppercase font-medium mb-1">{{ __('Non-Taxable Amount') }}</div>
@@ -212,7 +211,6 @@
 
           <!-- Non-Taxable Charges Section (المبالغ غير الضريبية - توصيل / دافور) -->
           <div
-            v-if="closingData.mu_enable_non_taxable_charges"
             class="bg-white border border-indigo-200 rounded-lg overflow-hidden shadow-sm"
           >
             <div class="px-3 py-3 md:px-6 md:py-4 bg-indigo-50/70 border-b border-indigo-200 flex items-center justify-between">
