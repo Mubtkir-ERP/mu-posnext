@@ -82,12 +82,12 @@ def get_balance_value(customer, branch=None):
 
 			return gen_val + br_val
 		else:
-			gen = frappe.db.sql("""
+			all_bal = frappe.db.sql("""
 				select coalesce(sum(current_balance), 0)
 				from `tabPrepaid Voucher Balance`
-				where customer = %s and (is_general = 1 or branch is null or branch = '')
+				where customer = %s
 			""", customer)
-			return cint(gen[0][0]) if gen else 0
+			return cint(all_bal[0][0]) if all_bal else 0
 	except Exception:
 		val = frappe.db.get_value("Prepaid Voucher Balance", {"customer": customer}, "current_balance")
 		return cint(val)
@@ -138,7 +138,8 @@ def get_voucher_balance(customer, pos_profile=None, branch=None):
 		except Exception:
 			general_bal = cint(frappe.db.get_value("Prepaid Voucher Balance", {"customer": customer}, "current_balance"))
 
-	total = (general_bal + branch_bal) if branch else general_bal
+	total_all = general_bal + sum(branch_balance_map.values())
+	total = (general_bal + branch_bal) if branch else total_all
 	return {
 		"customer": customer,
 		"branch": branch,

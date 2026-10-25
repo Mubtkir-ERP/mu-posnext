@@ -513,9 +513,35 @@ def _process_invoice(invoice, invoice_field, company_currency, cash_mode, paymen
         summary["sales_count"] += 1
 
     # Process taxes
+    inv_tax_total = 0.0
     for t in invoice.taxes:
         tax_amount = get_base_value(t, "tax_amount", "base_tax_amount", conversion_rate)
+        inv_tax_total += flt(tax_amount)
         _aggregate_tax(taxes, t.account_head, t.rate, tax_amount)
+
+    # Track non-taxable sales
+    if inv_tax_total == 0 and base_net_total > 0:
+        if is_return:
+            summary["non_taxable_sales"] = summary.get("non_taxable_sales", 0) - abs(base_net_total)
+        else:
+            summary["non_taxable_sales"] = summary.get("non_taxable_sales", 0) + base_net_total
+    elif invoice.get("items"):
+        item_non_tax = 0.0
+        for it in invoice.get("items") or []:
+            itr = it.get("item_tax_rate")
+            if itr:
+                try:
+                    rates = json.loads(itr) if isinstance(itr, str) else itr
+                    if sum(flt(v) for v in rates.values()) == 0:
+                        it_amt = get_base_value(it, "base_net_amount", "net_amount", conversion_rate) or (flt(it.get("qty", 0)) * flt(it.get("rate", 0)))
+                        item_non_tax += flt(it_amt)
+                except Exception:
+                    pass
+        if item_non_tax > 0:
+            if is_return:
+                summary["non_taxable_sales"] = summary.get("non_taxable_sales", 0) - abs(item_non_tax)
+            else:
+                summary["non_taxable_sales"] = summary.get("non_taxable_sales", 0) + item_non_tax
 
     # Process payments
     #
@@ -651,6 +677,14 @@ def make_closing_shift_from_opening(opening_shift):
     closing_shift.set("taxes", taxes)
     closing_shift.set("pos_payments", pos_payments_table)
 
+    # Check POS Profile non-taxable configuration
+    enable_non_taxable = 0
+    pos_profile_name = opening_shift.get("pos_profile")
+    if pos_profile_name:
+        enable_non_taxable = cint(frappe.db.get_value("POS Profile", pos_profile_name, "mu_enable_non_taxable_charges"))
+
+    non_tax_sales = max(0.0, flt(summary.get("non_taxable_sales", 0)))
+
     # Build response with display-only fields
     result = closing_shift.as_dict()
     result.update({
@@ -658,6 +692,10 @@ def make_closing_shift_from_opening(opening_shift):
         "returns_count": summary["returns_count"],
         "sales_total": summary["sales_total"],
         "sales_count": summary["sales_count"],
+        "non_taxable_sales": non_tax_sales,
+        "mu_enable_non_taxable_charges": enable_non_taxable,
+        "mu_non_taxable_amount": flt(closing_shift.get("mu_non_taxable_amount") or non_tax_sales),
+        "mu_non_taxable_remarks": closing_shift.get("mu_non_taxable_remarks") or "",
         "pos_transactions": pos_transactions,  # Include return info for display
         "cash_disbursements": disbursements,   # For display in closing dialog
         "total_disbursed": flt(total_disbursed) if disbursements else 0,
@@ -739,6 +777,13 @@ def submit_closing_shift(closing_shift):
     closing_shift_doc.pos_profile = shift.pos_profile
     closing_shift_doc.company = shift.company
     closing_shift_doc.user = shift.user
+
+    if "mu_non_taxable_amount" in payload:
+        closing_shift_doc.mu_non_taxable_amount = flt(payload.get("mu_non_taxable_amount"))
+    if "mu_non_taxable_remarks" in payload:
+        closing_shift_doc.mu_non_taxable_remarks = payload.get("mu_non_taxable_remarks")
+
+    closing_shift_doc.update_payment_reconciliation()
 
     # POS cashiers may not have broad Desk create/submit rights. The bypass is
     # bounded by the shift/profile/user/company authorization above.

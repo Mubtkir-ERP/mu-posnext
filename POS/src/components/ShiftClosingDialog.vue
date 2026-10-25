@@ -58,6 +58,16 @@
                 <div class="text-amber-600 text-xs">{{ __('Deducted from drawer') }}</div>
               </div>
 
+              <!-- Non-Taxable Amount (المبالغ غير الضريبية) -->
+              <div
+                v-if="closingData.mu_enable_non_taxable_charges || nonTaxableAmount > 0"
+                class="text-start bg-indigo-50 border border-indigo-200 rounded-lg p-3 md:p-4"
+              >
+                <div class="text-indigo-600 text-xs uppercase font-medium mb-1">{{ __('Non-Taxable Amount') }}</div>
+                <div class="text-lg md:text-2xl font-bold text-indigo-900 mb-0.5 md:mb-1 truncate">{{ formatCurrency(nonTaxableAmount) }}</div>
+                <div class="text-indigo-600 text-xs">{{ __('Delivery / Dafour') }}</div>
+              </div>
+
               <!-- Tax Collected -->
               <div class="text-start bg-gray-50 border border-gray-200 rounded-lg p-3 md:p-4">
                 <div class="text-gray-600 text-xs uppercase font-medium mb-1">{{ __('Tax Collected') }}</div>
@@ -196,6 +206,66 @@
                     </tr>
                   </tfoot>
                 </table>
+              </div>
+            </div>
+          </div>
+
+          <!-- Non-Taxable Charges Section (المبالغ غير الضريبية - توصيل / دافور) -->
+          <div
+            v-if="closingData.mu_enable_non_taxable_charges"
+            class="bg-white border border-indigo-200 rounded-lg overflow-hidden shadow-sm"
+          >
+            <div class="px-3 py-3 md:px-6 md:py-4 bg-indigo-50/70 border-b border-indigo-200 flex items-center justify-between">
+              <div>
+                <h3 class="text-start text-sm md:text-base font-semibold text-indigo-950 flex items-center gap-2">
+                  <span class="text-base md:text-lg">🛵</span>
+                  <span>{{ __('Non-Taxable Charges (Delivery / Dafour)') }}</span>
+                </h3>
+                <p class="text-start text-xs md:text-sm text-indigo-700 mt-0.5">
+                  {{ __('Charges collected in cash outside taxable invoices (adds to expected cash)') }}
+                </p>
+              </div>
+              <div v-if="nonTaxableAmount > 0" class="text-start sm:text-end">
+                <div class="text-xs text-indigo-600 uppercase font-medium">{{ __('Total') }}</div>
+                <div class="text-base md:text-lg font-bold text-indigo-900">{{ formatCurrency(nonTaxableAmount) }}</div>
+              </div>
+            </div>
+
+            <div class="p-3 md:p-6 grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-4 bg-white">
+              <div class="text-start">
+                <label class="block text-xs font-semibold text-gray-700 uppercase mb-1">
+                  {{ __('Non-Taxable Amount') }}
+                </label>
+                <Input
+                  :modelValue="closingData.mu_non_taxable_amount"
+                  @update:modelValue="onNonTaxableAmountChange"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  placeholder="0.00"
+                  :disabled="showSuccessReport || submitResource.loading"
+                  class="text-base md:text-lg font-semibold"
+                />
+                <div class="text-xs text-gray-500 mt-1">
+                  {{ __('Cash collected for delivery or dafour') }}
+                </div>
+              </div>
+
+              <div class="text-start">
+                <label class="block text-xs font-semibold text-gray-700 uppercase mb-1">
+                  {{ __('Remarks / Details') }}
+                </label>
+                <Input
+                  :modelValue="closingData.mu_non_taxable_remarks"
+                  @update:modelValue="(val) => { closingData.mu_non_taxable_remarks = val }"
+                  type="text"
+                  :placeholder="__('e.g. Delivery fees or dafour gas charges')"
+                  :disabled="showSuccessReport || submitResource.loading"
+                  class="text-sm"
+                />
+                <div class="text-xs text-gray-500 mt-1">
+                  {{ __('Optional notes on non-taxable collections') }}
+                </div>
               </div>
             </div>
           </div>
@@ -564,13 +634,39 @@ const errorMessage = ref('') // User-friendly error message
 const showIdleWarning = ref(false)
 let _idleWarningTimer = null
 
+function isCashMode(mode) {
+	if (!mode) return false
+	const m = String(mode).toLowerCase()
+	return m.includes("cash") || m.includes("نقد")
+}
+
+function recalculateAllExpectedAndDifferences(data) {
+	if (!data || !data.payment_reconciliation) return
+	const nonTax = Number.parseFloat(data.mu_non_taxable_amount || 0)
+	let nonTaxAdded = false
+	data.payment_reconciliation.forEach((payment) => {
+		const base = payment._base_expected_amount !== undefined ? payment._base_expected_amount : Number.parseFloat(payment.expected_amount || 0)
+		if (isCashMode(payment.mode_of_payment) && !nonTaxAdded) {
+			payment.expected_amount = base + nonTax
+			nonTaxAdded = true
+		} else if (payment._base_expected_amount !== undefined) {
+			payment.expected_amount = base
+		}
+		calculateDifference(payment)
+	})
+}
+
 function makeReactiveClosingData(data, touchedFromCache = false) {
 	if (!data) return null
 	const cloned = JSON.parse(JSON.stringify(data))
+	cloned.mu_non_taxable_amount = cloned.mu_non_taxable_amount !== undefined ? cloned.mu_non_taxable_amount : 0
+	cloned.mu_non_taxable_remarks = cloned.mu_non_taxable_remarks || ""
+	cloned.mu_enable_non_taxable_charges = Boolean(cloned.mu_enable_non_taxable_charges)
 	if (cloned.payment_reconciliation) {
 		cloned.payment_reconciliation = cloned.payment_reconciliation.map((payment) =>
 			reactive({
 				...payment,
+				_base_expected_amount: Number(payment.expected_amount || 0),
 				closing_amount: payment.closing_amount ?? null,
 				difference: Number(payment.difference || 0),
 				_touched:
@@ -580,7 +676,7 @@ function makeReactiveClosingData(data, touchedFromCache = false) {
 					payment.closing_amount !== "",
 			}),
 		)
-		cloned.payment_reconciliation.forEach((payment) => calculateDifference(payment))
+		recalculateAllExpectedAndDifferences(cloned)
 	}
 	return cloned
 }
@@ -735,6 +831,18 @@ function updateClosingAmount(payment, value) {
 		saveClosingShiftDraft(props.openingShift, closingData.value).catch(() => {})
 	}
 }
+
+function onNonTaxableAmountChange(value) {
+	if (!closingData.value) return
+	closingData.value.mu_non_taxable_amount = value
+	recalculateAllExpectedAndDifferences(closingData.value)
+	saveClosingShiftDraft(props.openingShift, closingData.value).catch(() => {})
+}
+
+const nonTaxableAmount = computed(() => {
+	if (!closingData.value) return 0
+	return Number.parseFloat(closingData.value.mu_non_taxable_amount || 0)
+})
 
 const canSubmit = computed(() => {
 	if (!closingData.value || !closingData.value.payment_reconciliation)

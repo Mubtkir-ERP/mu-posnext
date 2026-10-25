@@ -162,31 +162,6 @@
 						</div>
 					</div>
 
-					<!-- Branch / Address Row (if customer has branches) -->
-					<div
-						v-if="cartStore.customerBranches && cartStore.customerBranches.length > 0"
-						class="mt-1.5 flex items-center justify-between gap-1.5 bg-blue-50/80 border border-blue-200/70 rounded-xl px-2.5 py-1 text-xs"
-					>
-						<div class="flex items-center gap-1.5 min-w-0 flex-1">
-							<span class="text-blue-700 font-semibold flex items-center gap-1 flex-shrink-0">
-								<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" /></svg>
-								<span>{{ __('Branch') }}:</span>
-							</span>
-							<select
-								:value="cartStore.customerAddress"
-								@change="cartStore.setCustomerAddress($event.target.value)"
-								class="bg-transparent border-none text-blue-900 font-bold focus:ring-0 p-0 text-xs flex-1 truncate cursor-pointer"
-							>
-								<option
-									v-for="b in cartStore.customerBranches"
-									:key="b.address_name"
-									:value="b.address_name"
-								>
-									{{ b.branch_title }} {{ b.city ? `(${b.city})` : '' }}
-								</option>
-							</select>
-						</div>
-					</div>
 				</div>
 				<div v-else>
 					<div class="flex gap-1.5">
