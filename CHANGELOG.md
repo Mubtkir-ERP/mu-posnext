@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.22.0] - 2026-10-25
+
+### Added
+- **Mandatory Branch Selection for Dedicated Vouchers in POS**:
+  - Enforced server-side validation during voucher redemption in POS (`redeem_voucher`): if a customer has vouchers dedicated to a specific branch/address, selecting a branch is strictly mandatory.
+  - Returns customer's active branch balances breakdown and `has_branch_vouchers` flag in `get_voucher_balance`.
+  - Added UI indicator, branch voucher balance badge in the dropdown, and validation preventing voucher redemption until a branch is selected.
+  - Pre-populates the selected branch in `VoucherRedeemDialog` from cart customer address when available.
+
 ## [1.21.0] - 2026-10-12
 
 ### Added

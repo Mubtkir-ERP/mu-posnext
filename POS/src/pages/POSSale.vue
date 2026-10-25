@@ -736,6 +736,7 @@
 				:pos-profile="shiftStore.profileName || ''"
 				:opening-shift="shiftStore.currentShift?.name || ''"
 				:customer="cartStore.customer"
+				:initial-address="cartStore.customerAddress"
 				@redeemed="onVoucherRedeemed"
 			/>
 

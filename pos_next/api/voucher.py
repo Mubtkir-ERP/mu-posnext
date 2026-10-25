@@ -103,6 +103,9 @@ def get_voucher_balance(customer, pos_profile=None, branch=None):
 
 	general_bal = 0
 	branch_bal = 0
+	has_branch_vouchers = False
+	branch_balance_map = {}
+
 	if customer:
 		try:
 			gen = frappe.db.sql("""
@@ -112,13 +115,26 @@ def get_voucher_balance(customer, pos_profile=None, branch=None):
 			""", customer)
 			general_bal = cint(gen[0][0]) if gen else 0
 
+			# Check all active branch-dedicated balances for this customer
+			branch_rows = frappe.db.sql("""
+				select branch, current_balance
+				from `tabPrepaid Voucher Balance`
+				where customer = %s and branch is not null and branch != '' and current_balance > 0
+			""", customer, as_dict=True)
+			if branch_rows:
+				has_branch_vouchers = True
+				for r in branch_rows:
+					branch_balance_map[r.branch] = cint(r.current_balance)
+
 			if branch:
-				br = frappe.db.sql("""
-					select coalesce(sum(current_balance), 0)
-					from `tabPrepaid Voucher Balance`
-					where customer = %s and branch = %s
-				""", (customer, branch))
-				branch_bal = cint(br[0][0]) if br else 0
+				branch_bal = branch_balance_map.get(branch, 0)
+				if not branch_bal:
+					br = frappe.db.sql("""
+						select coalesce(sum(current_balance), 0)
+						from `tabPrepaid Voucher Balance`
+						where customer = %s and branch = %s
+					""", (customer, branch))
+					branch_bal = cint(br[0][0]) if br else 0
 		except Exception:
 			general_bal = cint(frappe.db.get_value("Prepaid Voucher Balance", {"customer": customer}, "current_balance"))
 
@@ -129,6 +145,8 @@ def get_voucher_balance(customer, pos_profile=None, branch=None):
 		"balance": total,
 		"general_balance": general_bal,
 		"branch_balance": branch_bal,
+		"has_branch_vouchers": has_branch_vouchers,
+		"branch_balance_map": branch_balance_map,
 		"enabled": enabled,
 	}
 
@@ -351,6 +369,19 @@ def redeem_voucher(pos_profile, customer, pos_opening_shift, qty=1, otp_code=Non
 	branch_bal_doc = None
 	gen_bal_doc = None
 
+	# If customer has active branch-dedicated vouchers, branch selection is mandatory
+	has_branch_vouchers = bool(frappe.db.sql("""
+		select 1 from `tabPrepaid Voucher Balance`
+		where customer = %s and branch is not null and branch != '' and current_balance > 0
+		limit 1
+	""", customer))
+
+	if has_branch_vouchers and not branch_address:
+		frappe.throw(
+			_("Selecting a branch/address is mandatory for this customer because they have branch-dedicated vouchers."),
+			title=_("Branch Selection Required"),
+		)
+
 	if branch_address:
 		branch_bal_name = frappe.db.get_value("Prepaid Voucher Balance", {"customer": customer, "branch": branch_address})
 		if branch_bal_name:
@@ -371,6 +402,8 @@ def redeem_voucher(pos_profile, customer, pos_opening_shift, qty=1, otp_code=Non
 	available = branch_avail + gen_avail
 
 	if available <= 0:
+		if branch_address and has_branch_vouchers:
+			frappe.throw(_("This customer has no remaining voucher units for this branch."))
 		frappe.throw(_("This customer has no remaining voucher units."))
 	if qty > available:
 		frappe.throw(_("Requested {0} vouchers but only {1} remain.").format(qty, available))

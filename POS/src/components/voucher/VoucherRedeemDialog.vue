@@ -24,17 +24,33 @@
         <!-- Branch / Address selection for customer -->
         <div v-if="branches.length > 1" class="p-3 rounded-lg bg-blue-50/60 border border-blue-200">
           <div class="text-xs font-semibold text-blue-800 mb-1 flex items-center justify-between">
-            <span>{{ __('Branch / Address') }}</span>
+            <span class="flex items-center gap-1">
+              <span>{{ __('Branch / Address') }}</span>
+              <span v-if="hasBranchVouchers" class="text-red-500 font-bold">* ({{ __('Mandatory') }})</span>
+            </span>
             <span class="text-[11px] font-normal text-blue-600">{{ __('Branches: {0}', [branches.length]) }}</span>
           </div>
-          <select v-model="selectedBranch" class="w-full text-sm font-semibold rounded-lg border-gray-300 p-2 bg-white text-gray-800 shadow-sm">
+          <select
+            v-model="selectedBranch"
+            class="w-full text-sm font-semibold rounded-lg border-gray-300 p-2 bg-white text-gray-800 shadow-sm"
+            :class="hasBranchVouchers && !selectedBranch ? 'border-red-400 ring-1 ring-red-400' : ''"
+          >
+            <option value="">
+              {{ hasBranchVouchers ? __('— Select Branch (Mandatory) —') : __('— Select Branch (Optional) —') }}
+            </option>
             <option v-for="b in branches" :key="b.address_name" :value="b.address_name">
-              {{ b.branch_title }} {{ b.phone ? ' - ' + b.phone : '' }}
+              {{ b.branch_title }}{{ b.phone ? ' - ' + b.phone : '' }}{{ branchBalanceMap[b.address_name] !== undefined ? ` [${__('Balance')}: ${branchBalanceMap[b.address_name]}]` : '' }}
             </option>
           </select>
+          <p v-if="hasBranchVouchers && !selectedBranch" class="text-[11px] text-red-600 mt-1 font-medium">
+            {{ __('Please select a branch. This customer has branch-dedicated vouchers.') }}
+          </p>
         </div>
-        <div v-else-if="branches.length === 1" class="text-xs text-gray-500 px-1">
-          <span class="font-medium">{{ __('Branch') }}:</span> {{ branches[0].branch_title }}
+        <div v-else-if="branches.length === 1" class="text-xs text-gray-600 px-1 flex items-center justify-between">
+          <span><span class="font-medium text-gray-700">{{ __('Branch') }}:</span> {{ branches[0].branch_title }}</span>
+          <span v-if="branchBalanceMap[branches[0].address_name] !== undefined" class="text-blue-700 font-semibold text-[11px]">
+            {{ __('Branch balance: {0}', [branchBalanceMap[branches[0].address_name]]) }}
+          </span>
         </div>
 
         <div class="flex items-center justify-between p-4 rounded-lg border"
@@ -107,7 +123,7 @@
             :disabled="otpRequired ? (!otpCode || redeeming) : !canRedeem"
             @click="doRedeem"
           >
-            {{ redeeming ? __('Processing…') : (otpRequired ? __('Confirm code & redeem') : __('Confirm redeem {0} voucher(s)', [qty])) }}
+            {{ redeeming ? __('Processing…') : (otpRequired ? __('Confirm code & redeem') : (hasBranchVouchers && !selectedBranch ? __('Select branch to redeem') : __('Confirm redeem {0} voucher(s)', [qty]))) }}
           </button>
           <button
             class="px-5 py-3 rounded-lg font-semibold text-gray-700 bg-gray-100 hover:bg-gray-200 transition-colors"
@@ -135,6 +151,7 @@ const props = defineProps({
   posProfile: String,
   openingShift: String,
   customer: [String, Object],
+  initialAddress: String,
 })
 const emit = defineEmits(["update:modelValue", "redeemed"])
 const { showSuccess, showError } = useToast()
@@ -207,7 +224,7 @@ const customerId = computed(() => {
   return typeof c === "string" ? c : (c.name || "")
 })
 const canRedeem = computed(
-  () => !loading.value && !redeeming.value && balance.value > 0 && qty.value >= 1 && qty.value <= balance.value
+  () => !loading.value && !redeeming.value && balance.value > 0 && qty.value >= 1 && qty.value <= balance.value && (!hasBranchVouchers.value || !!selectedBranch.value)
 )
 
 function close() {
@@ -218,6 +235,8 @@ const branches = ref([])
 const selectedBranch = ref("")
 const generalBalance = ref(0)
 const branchBalance = ref(0)
+const hasBranchVouchers = ref(false)
+const branchBalanceMap = ref({})
 
 watch(selectedBranch, async (newVal, oldVal) => {
   if (newVal !== oldVal && customerId.value) {
@@ -237,11 +256,15 @@ async function fetchBalanceOnly() {
     balance.value = Number(data.balance ?? 0)
     generalBalance.value = Number(data.general_balance ?? 0)
     branchBalance.value = Number(data.branch_balance ?? 0)
+    hasBranchVouchers.value = Boolean(data.has_branch_vouchers)
+    branchBalanceMap.value = data.branch_balance_map || {}
     qty.value = balance.value > 0 ? 1 : 0
   } catch (e) {
     balance.value = 0
     generalBalance.value = 0
     branchBalance.value = 0
+    hasBranchVouchers.value = false
+    branchBalanceMap.value = {}
   }
 }
 
@@ -255,7 +278,9 @@ async function loadBalance() {
         customer: customerId.value,
       })
       branches.value = (bRes && (bRes.message ?? bRes)) || []
-      if (branches.value.length > 0) {
+      if (props.initialAddress && branches.value.some(b => b.address_name === props.initialAddress)) {
+        selectedBranch.value = props.initialAddress
+      } else if (branches.value.length === 1) {
         selectedBranch.value = branches.value[0].address_name
       } else {
         selectedBranch.value = ""
@@ -266,6 +291,10 @@ async function loadBalance() {
     }
 
     await fetchBalanceOnly()
+
+    if (!selectedBranch.value && branches.value.length === 1) {
+      selectedBranch.value = branches.value[0].address_name
+    }
   } catch (e) {
     balance.value = 0
     showError(serverError(e, __("Could not load voucher balance")))
@@ -275,6 +304,10 @@ async function loadBalance() {
 }
 
 async function doRedeem() {
+  if (hasBranchVouchers.value && !selectedBranch.value) {
+    showError(__("Selecting a branch/address is mandatory for this customer because they have branch-dedicated vouchers."))
+    return
+  }
   // In OTP mode the confirm button submits the code; otherwise it needs a
   // valid quantity selection.
   if (!otpRequired.value && !canRedeem.value) return

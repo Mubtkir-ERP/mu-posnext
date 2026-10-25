@@ -2321,4 +2321,10 @@ Voucher book purchase - Dedicated to branch: {0},شراء دفتر قسائم - 
 Voucher book purchase - General,شراء دفتر قسائم - عام,
 Voucher redemption ({0}) - Branch: {1},استبدال قسائم ({0}) - الفرع: {1},
 This customer has no remaining voucher units for this branch.,لا يوجد رصيد قسائم متاح لهذا العميل في هذا الفرع.,
-
+Selecting a branch/address is mandatory for this customer because they have branch-dedicated vouchers.,اختيار الفرع/العنوان إجباري لهذا العميل لوجود قسائم مخصصة للفرع.,
+Branch Selection Required,اختيار الفرع مطلوب,
+— Select Branch (Mandatory) —,— اختر الفرع / العنوان (إجباري) —,
+— Select Branch (Optional) —,— اختر الفرع / العنوان (اختياري) —,
+Please select a branch. This customer has branch-dedicated vouchers.,يرجى اختيار الفرع؛ هذا العميل لديه قسائم مخصصة لفرع محدد.,
+Select branch to redeem,اختر الفرع لإتمام الصرف,
+Mandatory,إجباري,
