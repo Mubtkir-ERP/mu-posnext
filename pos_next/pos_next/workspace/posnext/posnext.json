@@ -1,6 +1,6 @@
 {
  "charts": [],
- "content": "[{\"id\": \"cDBfxZcI12\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Your Shortcuts</b></span>\", \"col\": 12}}, {\"id\": \"EuDVjJUKSQ\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Start POS\", \"col\": 3}}, {\"id\": \"uXQ4aBaRfk\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Item\", \"col\": 3}}, {\"id\": \"jEFYB2fX3t\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Pos Settings\", \"col\": 3}}, {\"id\": \"RoWvjX8Ocp\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Pos Profile\", \"col\": 3}}, {\"id\": \"p4KrSYzInK\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Pos Opening Shift\", \"col\": 3}}, {\"id\": \"VO-VLNdx_2\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Pos Closing Shift\", \"col\": 3}}, {\"id\": \"OYrA05uyCG\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Pos Offer\", \"col\": 3}}, {\"id\": \"FUd4_fFBgH\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Pos Coupon\", \"col\": 3}}, {\"id\": \"vbShortcut1\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Voucher Balance\", \"col\": 3}}, {\"id\": \"spacer1\", \"type\": \"spacer\", \"data\": {\"col\": 12}}, {\"id\": \"header2\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>التقارير والإعدادات</b></span>\", \"col\": 12}}, {\"id\": \"reports_card\", \"type\": \"card\", \"data\": {\"card_name\": \"Reports\", \"col\": 4}}, {\"id\": \"pos_card\", \"type\": \"card\", \"data\": {\"card_name\": \"POS\", \"col\": 4}}, {\"id\": \"config_card\", \"type\": \"card\", \"data\": {\"card_name\": \"Configuration\", \"col\": 4}}, {\"id\": \"shift_card\", \"type\": \"card\", \"data\": {\"card_name\": \"Shift Management\", \"col\": 4}}, {\"id\": \"offers_card\", \"type\": \"card\", \"data\": {\"card_name\": \"Offers & Coupons\", \"col\": 4}}, {\"id\": \"items_card\", \"type\": \"card\", \"data\": {\"card_name\": \"Items\", \"col\": 4}}, {\"id\": \"vouchers_card\", \"type\": \"card\", \"data\": {\"card_name\": \"Vouchers\", \"col\": 4}}]",
+ "content": "[{\"id\": \"cDBfxZcI12\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Your Shortcuts</b></span>\", \"col\": 12}}, {\"id\": \"EuDVjJUKSQ\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Start POS\", \"col\": 3}}, {\"id\": \"uXQ4aBaRfk\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Item\", \"col\": 3}}, {\"id\": \"jEFYB2fX3t\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Pos Settings\", \"col\": 3}}, {\"id\": \"RoWvjX8Ocp\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Pos Profile\", \"col\": 3}}, {\"id\": \"p4KrSYzInK\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Pos Opening Shift\", \"col\": 3}}, {\"id\": \"VO-VLNdx_2\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Pos Closing Shift\", \"col\": 3}}, {\"id\": \"OYrA05uyCG\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Pos Offer\", \"col\": 3}}, {\"id\": \"FUd4_fFBgH\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Pos Coupon\", \"col\": 3}}, {\"id\": \"vbShortcut1\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Voucher Balance\", \"col\": 3}}, {\"id\": \"spacer1\", \"type\": \"spacer\", \"data\": {\"col\": 12}}, {\"id\": \"header_operations\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>العمليات ونقاط البيع</b></span>\", \"col\": 12}}, {\"id\": \"shift_card\", \"type\": \"card\", \"data\": {\"card_name\": \"Shift Management\", \"col\": 4}}, {\"id\": \"vouchers_card\", \"type\": \"card\", \"data\": {\"card_name\": \"Vouchers\", \"col\": 4}}, {\"id\": \"items_card\", \"type\": \"card\", \"data\": {\"card_name\": \"Items\", \"col\": 4}}, {\"id\": \"offers_card\", \"type\": \"card\", \"data\": {\"card_name\": \"Offers & Coupons\", \"col\": 4}}, {\"id\": \"spacer2\", \"type\": \"spacer\", \"data\": {\"col\": 12}}, {\"id\": \"header_settings_reports\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>الإعدادات والتقارير</b></span>\", \"col\": 12}}, {\"id\": \"config_card\", \"type\": \"card\", \"data\": {\"card_name\": \"Configuration\", \"col\": 4}}, {\"id\": \"reports_card\", \"type\": \"card\", \"data\": {\"card_name\": \"Reports\", \"col\": 4}}]",
  "creation": "2026-01-27 21:23:15.819052",
  "custom_blocks": [],
  "docstatus": 0,
@@ -12,6 +12,151 @@
  "is_hidden": 0,
  "label": "POSNext",
  "links": [
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Shift Management",
+   "link_count": 2,
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "POS Opening Shift",
+   "link_count": 0,
+   "link_to": "POS Opening Shift",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "POS Closing Shift",
+   "link_count": 0,
+   "link_to": "POS Closing Shift",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Vouchers",
+   "link_count": 3,
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 1,
+   "label": "Prepaid Voucher Report",
+   "link_count": 0,
+   "link_to": "Prepaid Voucher Report",
+   "link_type": "Report",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Prepaid Voucher Balance",
+   "link_count": 0,
+   "link_to": "Prepaid Voucher Balance",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Prepaid Voucher Transaction",
+   "link_count": 0,
+   "link_to": "Prepaid Voucher Transaction",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Items",
+   "link_count": 1,
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Item",
+   "link_count": 0,
+   "link_to": "Item",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Offers & Coupons",
+   "link_count": 2,
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "POS Offer",
+   "link_count": 0,
+   "link_to": "POS Offer",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "POS Coupon",
+   "link_count": 0,
+   "link_to": "POS Coupon",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Configuration",
+   "link_count": 2,
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "POS Settings",
+   "link_count": 0,
+   "link_to": "POS Settings",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "POS Profile",
+   "link_count": 0,
+   "link_to": "POS Profile",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
   {
    "hidden": 0,
    "is_query_report": 0,
@@ -68,151 +213,6 @@
    "link_count": 0,
    "link_to": "Offline Sync and System Health Report",
    "link_type": "Report",
-   "onboard": 0,
-   "type": "Link"
-  },
-  {
-   "hidden": 0,
-   "is_query_report": 0,
-   "label": "Configuration",
-   "link_count": 2,
-   "link_type": "DocType",
-   "onboard": 0,
-   "type": "Card Break"
-  },
-  {
-   "hidden": 0,
-   "is_query_report": 0,
-   "label": "POS Settings",
-   "link_count": 0,
-   "link_to": "POS Settings",
-   "link_type": "DocType",
-   "onboard": 0,
-   "type": "Link"
-  },
-  {
-   "hidden": 0,
-   "is_query_report": 0,
-   "label": "POS Profile",
-   "link_count": 0,
-   "link_to": "POS Profile",
-   "link_type": "DocType",
-   "onboard": 0,
-   "type": "Link"
-  },
-  {
-   "hidden": 0,
-   "is_query_report": 0,
-   "label": "Shift Management",
-   "link_count": 2,
-   "link_type": "DocType",
-   "onboard": 0,
-   "type": "Card Break"
-  },
-  {
-   "hidden": 0,
-   "is_query_report": 0,
-   "label": "POS Opening Shift",
-   "link_count": 0,
-   "link_to": "POS Opening Shift",
-   "link_type": "DocType",
-   "onboard": 0,
-   "type": "Link"
-  },
-  {
-   "hidden": 0,
-   "is_query_report": 0,
-   "label": "POS Closing Shift",
-   "link_count": 0,
-   "link_to": "POS Closing Shift",
-   "link_type": "DocType",
-   "onboard": 0,
-   "type": "Link"
-  },
-  {
-   "hidden": 0,
-   "is_query_report": 0,
-   "label": "Offers & Coupons",
-   "link_count": 2,
-   "link_type": "DocType",
-   "onboard": 0,
-   "type": "Card Break"
-  },
-  {
-   "hidden": 0,
-   "is_query_report": 0,
-   "label": "POS Offer",
-   "link_count": 0,
-   "link_to": "POS Offer",
-   "link_type": "DocType",
-   "onboard": 0,
-   "type": "Link"
-  },
-  {
-   "hidden": 0,
-   "is_query_report": 0,
-   "label": "POS Coupon",
-   "link_count": 0,
-   "link_to": "POS Coupon",
-   "link_type": "DocType",
-   "onboard": 0,
-   "type": "Link"
-  },
-  {
-   "hidden": 0,
-   "is_query_report": 0,
-   "label": "Items",
-   "link_count": 1,
-   "link_type": "DocType",
-   "onboard": 0,
-   "type": "Card Break"
-  },
-  {
-   "hidden": 0,
-   "is_query_report": 0,
-   "label": "Item",
-   "link_count": 0,
-   "link_to": "Item",
-   "link_type": "DocType",
-   "onboard": 0,
-   "type": "Link"
-  },
-  {
-   "hidden": 0,
-   "is_query_report": 0,
-   "label": "Vouchers",
-   "link_count": 3,
-   "link_type": "DocType",
-   "onboard": 0,
-   "type": "Card Break"
-  },
-  {
-   "hidden": 0,
-   "is_query_report": 1,
-   "label": "Prepaid Voucher Report",
-   "link_count": 0,
-   "link_to": "Prepaid Voucher Report",
-   "link_type": "Report",
-   "onboard": 0,
-   "type": "Link"
-  },
-  {
-   "hidden": 0,
-   "is_query_report": 0,
-   "label": "Prepaid Voucher Balance",
-   "link_count": 0,
-   "link_to": "Prepaid Voucher Balance",
-   "link_type": "DocType",
-   "onboard": 0,
-   "type": "Link"
-  },
-  {
-   "hidden": 0,
-   "is_query_report": 0,
-   "label": "Prepaid Voucher Transaction",
-   "link_count": 0,
-   "link_to": "Prepaid Voucher Transaction",
-   "link_type": "DocType",
    "onboard": 0,
    "type": "Link"
   }
