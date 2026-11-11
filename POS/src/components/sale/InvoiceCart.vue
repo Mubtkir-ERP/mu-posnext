@@ -113,6 +113,16 @@
 								</button>
 								<button
 									type="button"
+									@click.stop="$emit('scan-customer-qr')"
+									class="w-7 h-7 flex items-center justify-center text-emerald-600 hover:bg-emerald-50 active:bg-emerald-100 rounded-lg transition-colors touch-manipulation"
+									:title="__('Scan Customer QR')"
+								>
+									<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+										<path stroke-linecap="round" stroke-linejoin="round" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z"/>
+									</svg>
+								</button>
+								<button
+									type="button"
 									@click.stop="removeCustomer"
 									class="w-7 h-7 flex items-center justify-center text-red-500 hover:bg-red-50 active:bg-red-100 rounded-lg transition-colors touch-manipulation"
 									:title="__('Remove customer')"
@@ -228,6 +238,29 @@
 									stroke-linecap="round"
 									stroke-linejoin="round"
 									d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z"
+								/>
+							</svg>
+						</button>
+
+						<!-- Quick Scan Customer QR Button -->
+						<button
+							type="button"
+							@click="$emit('scan-customer-qr')"
+							class="flex items-center justify-center w-10 h-10 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 rounded-xl text-white transition-colors shadow-sm hover:shadow touch-manipulation flex-shrink-0"
+							:title="__('Scan Customer QR')"
+							:aria-label="__('Scan Customer QR')"
+						>
+							<svg
+								class="w-5 h-5"
+								fill="none"
+								stroke="currentColor"
+								viewBox="0 0 24 24"
+								stroke-width="2"
+							>
+								<path
+									stroke-linecap="round"
+									stroke-linejoin="round"
+									d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z"
 								/>
 							</svg>
 						</button>
@@ -1351,6 +1384,8 @@ const emit = defineEmits([
 	"update-quantity", // (itemCode, newQty, uom?) - Update item quantity
 	"remove-item", // (itemCode, uom?) - Remove item from cart
 	"select-customer", // (customer) - Select/change customer
+	"scan-customer-qr", // () - Open QR scanner for customer
+	"scan-customer-qr-raw", // (rawText) - Direct scanned raw QR code text
 	"edit-customer", // (customer) - Open edit customer dialog
 	"create-customer", // (searchText) - Open create customer dialog
 	"proceed-to-payment", // () - Navigate to payment screen
@@ -1661,6 +1696,13 @@ function handleKeydown(event) {
 	if (event.key === "Enter") {
 		event.preventDefault();
 		event.stopPropagation();
+		const query = customerSearch.value?.trim();
+		if (query && (query.includes("MUBTKIR_BRANCH") || query.includes("customer=") || query.includes("/gas-delivery"))) {
+			emit("scan-customer-qr-raw", query);
+			customerSearch.value = "";
+			customerSearchFocused.value = false;
+			return;
+		}
 		if (selectedIndex.value >= 0 && selectedIndex.value < customerResults.value.length) {
 			selectCustomer(customerResults.value[selectedIndex.value]);
 		} else if (customerResults.value.length === 1) {

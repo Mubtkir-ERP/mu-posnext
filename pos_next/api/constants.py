@@ -95,6 +95,8 @@ POS_SETTINGS_FIELDS = [
 	"cd_enable_thank_you",
 	"customer_display_thank_you_title",
 	"customer_display_thank_you_message",
+	"mu_enable_order_status",
+	"mu_enable_gas_mode",
 ]
 
 # Default POS Settings values
@@ -183,6 +185,8 @@ DEFAULT_POS_SETTINGS = {
 	"cd_enable_thank_you": 1,
 	"customer_display_thank_you_title": "Thank You",
 	"customer_display_thank_you_message": "Thank you for shopping with us",
+	"mu_enable_order_status": 1,
+	"mu_enable_gas_mode": 0,
 }
 
 

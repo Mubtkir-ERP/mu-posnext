@@ -266,6 +266,11 @@
 												:label="__('Enable Order Status')"
 												:description="__('Show order status selector on invoice cards')"
 											/>
+											<CheckboxField
+												v-model="settings.mu_enable_gas_mode"
+												:label="__('Enable Gas Mode')"
+												:description="__('Activate Gas distribution workflow (Customer QR scanning, vouchers & credit deliveries)')"
+											/>
 										</div>
 									</div>
 
@@ -628,6 +633,7 @@ const settings = ref({
 	enable_auto_stock_sync: 0,
 	stock_sync_interval: 60,
 	mu_enable_order_status: 1,
+	mu_enable_gas_mode: 0,
 	customer_display_enabled: 0,
 	customer_display_company_name: "MUBTKIR",
 	customer_display_welcome_text: "Welcome",
@@ -819,6 +825,7 @@ async function saveSettings() {
 			enable_auto_stock_sync: stockSyncEnabled.value ? 1 : 0,
 			stock_sync_interval: Number(stockSyncIntervalSeconds.value) || 60,
 			mu_enable_order_status: settings.value.mu_enable_order_status ? 1 : 0,
+			mu_enable_gas_mode: settings.value.mu_enable_gas_mode ? 1 : 0,
 			customer_display_enabled: settings.value.customer_display_enabled ? 1 : 0,
 			customer_display_company_name: settings.value.customer_display_company_name || "",
 			customer_display_welcome_text: settings.value.customer_display_welcome_text || "",

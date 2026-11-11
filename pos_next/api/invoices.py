@@ -1208,10 +1208,11 @@ def update_invoice(data):
         raise
 
 
-def _submit_invoice_response(invoice_doc, offline_id=None, already_synced=False):
+def _submit_invoice_response(invoice_doc, offline_id=None, already_synced=False, delivery_note=None):
     """Return a stable response shape for normal and idempotent submissions."""
     response = {
         "name": invoice_doc.name,
+        "doctype": getattr(invoice_doc, "doctype", "Sales Invoice"),
         "status": invoice_doc.docstatus,
         "grand_total": invoice_doc.grand_total,
         "total": invoice_doc.total,
@@ -1220,6 +1221,8 @@ def _submit_invoice_response(invoice_doc, offline_id=None, already_synced=False)
         "paid_amount": getattr(invoice_doc, "paid_amount", 0),
         "change_amount": getattr(invoice_doc, "change_amount", 0),
     }
+    if delivery_note:
+        response["delivery_note"] = delivery_note
     if offline_id:
         response["offline_id"] = offline_id
         response["already_synced"] = bool(already_synced)
@@ -1538,8 +1541,23 @@ def submit_invoice(invoice=None, data=None):
                     indicator="orange"
                 )
 
+        # In Gas Mode, auto-create and submit Delivery Note for Sales Order so vehicle stock is deducted immediately
+        delivery_note_name = None
+        if doctype == "Sales Order":
+            gas_mode = cint(frappe.db.get_value("POS Settings", {"pos_profile": pos_profile}, "mu_enable_gas_mode"))
+            if gas_mode:
+                try:
+                    from erpnext.selling.doctype.sales_order.sales_order import make_delivery_note
+                    dn = make_delivery_note(invoice_doc.name)
+                    dn.flags.ignore_permissions = True
+                    dn.insert(ignore_permissions=True)
+                    dn.submit()
+                    delivery_note_name = dn.name
+                except Exception as dn_err:
+                    frappe.log_error(f"Error auto-creating Delivery Note for Sales Order {invoice_doc.name}: {dn_err}", "Gas Auto Delivery Note")
+
         # Return complete invoice details
-        return _submit_invoice_response(invoice_doc, offline_id=offline_id)
+        return _submit_invoice_response(invoice_doc, offline_id=offline_id, delivery_note=delivery_note_name)
     except Exception as e:
         # Preserve the identifier for a safe future retry. Failed attempts are
         # allowed to reuse the same offline_id and, when possible, the same draft.

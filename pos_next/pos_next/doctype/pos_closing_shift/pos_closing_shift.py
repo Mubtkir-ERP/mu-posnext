@@ -70,11 +70,16 @@ class POSClosingShift(Document):
         self.set_vouchers_redeemed()
 
     def set_vouchers_redeemed(self):
-        """Count prepaid-voucher redemptions made during this shift."""
+        """Count prepaid-voucher redemptions and credit sales orders made during this shift."""
         if self.meta.has_field("mu_vouchers_redeemed") and self.pos_opening_shift:
             self.mu_vouchers_redeemed = frappe.db.count(
                 "Prepaid Voucher Transaction",
                 {"pos_opening_shift": self.pos_opening_shift, "transaction_type": "Redeem"},
+            )
+        if self.meta.has_field("mu_credit_deliveries") and self.pos_opening_shift:
+            self.mu_credit_deliveries = frappe.db.count(
+                "Sales Order",
+                {"posa_pos_opening_shift": self.pos_opening_shift, "docstatus": ["!=", 2]},
             )
 
     def update_payment_reconciliation(self):
@@ -687,6 +692,11 @@ def make_closing_shift_from_opening(opening_shift):
 
     non_tax_sales = max(0.0, flt(summary.get("non_taxable_sales", 0)))
 
+    # Count vouchers and credit deliveries
+    closing_shift.set_vouchers_redeemed()
+    vouchers_count = cint(closing_shift.get("mu_vouchers_redeemed") or 0)
+    credit_deliveries_count = cint(closing_shift.get("mu_credit_deliveries") or 0)
+
     # Build response with display-only fields
     result = closing_shift.as_dict()
     result.update({
@@ -698,6 +708,8 @@ def make_closing_shift_from_opening(opening_shift):
         "mu_enable_non_taxable_charges": enable_non_taxable,
         "mu_non_taxable_amount": flt(closing_shift.get("mu_non_taxable_amount") or non_tax_sales),
         "mu_non_taxable_remarks": closing_shift.get("mu_non_taxable_remarks") or "",
+        "mu_vouchers_redeemed": vouchers_count,
+        "mu_credit_deliveries": credit_deliveries_count,
         "pos_transactions": pos_transactions,  # Include return info for display
         "cash_disbursements": disbursements,   # For display in closing dialog
         "total_disbursed": flt(total_disbursed) if disbursements else 0,

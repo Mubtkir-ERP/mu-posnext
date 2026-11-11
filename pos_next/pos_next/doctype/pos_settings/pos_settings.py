@@ -172,6 +172,7 @@ def update_pos_settings(pos_profile, settings):
 		"enable_auto_stock_sync",
 		"stock_sync_interval",
 		"mu_enable_order_status",
+		"mu_enable_gas_mode",
 		"customer_display_enabled",
 		"customer_display_company_name",
 		"customer_display_welcome_text",

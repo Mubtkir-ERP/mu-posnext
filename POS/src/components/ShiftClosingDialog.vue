@@ -73,6 +73,20 @@
                 <div class="text-lg md:text-2xl font-bold text-gray-900 mb-0.5 md:mb-1 truncate">{{ formatCurrency(totalTax) }}</div>
                 <div class="text-gray-600 text-xs">{{ __('Net tax') }}</div>
               </div>
+
+              <!-- Redeemed Vouchers (القسائم المستبدلة) -->
+              <div v-if="(closingData.mu_vouchers_redeemed || 0) > 0" class="text-start bg-emerald-50 border border-emerald-200 rounded-lg p-3 md:p-4">
+                <div class="text-emerald-700 text-xs uppercase font-medium mb-1">{{ __('Redeemed Vouchers') }}</div>
+                <div class="text-lg md:text-2xl font-bold text-emerald-800 mb-0.5 md:mb-1 truncate">{{ closingData.mu_vouchers_redeemed }}</div>
+                <div class="text-emerald-600 text-xs">{{ __('Units redeemed') }}</div>
+              </div>
+
+              <!-- Credit Deliveries / Sales Orders (استلامات الآجل) -->
+              <div v-if="(closingData.mu_credit_deliveries || 0) > 0" class="text-start bg-orange-50 border border-orange-200 rounded-lg p-3 md:p-4">
+                <div class="text-orange-700 text-xs uppercase font-medium mb-1">{{ __('Credit Deliveries') }}</div>
+                <div class="text-lg md:text-2xl font-bold text-orange-800 mb-0.5 md:mb-1 truncate">{{ closingData.mu_credit_deliveries }}</div>
+                <div class="text-orange-600 text-xs">{{ __('Sales Orders / Credit') }}</div>
+              </div>
             </div>
           </div>
 

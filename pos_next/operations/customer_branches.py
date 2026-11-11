@@ -533,9 +533,181 @@ def confirm_branch_sales_order(sales_order, otp):
     so.submit()
     frappe.cache.delete_value(cache_key)
 
+    dn_name = None
+    try:
+        from erpnext.selling.doctype.sales_order.sales_order import make_delivery_note
+        dn = make_delivery_note(so.name)
+        dn.flags.ignore_permissions = True
+        dn.insert(ignore_permissions=True)
+        dn.submit()
+        dn_name = dn.name
+    except Exception as dn_err:
+        frappe.log_error(f"Failed to auto-create Delivery Note for {so.name}: {dn_err}", "Gas Auto Delivery Note")
+
     return {
         "status": "confirmed",
         "sales_order": so.name,
-        "message": _("Sales Order {0} confirmed and submitted successfully").format(so.name)
+        "delivery_note": dn_name,
+        "message": _("Sales Order {0} and Delivery Note {1} confirmed successfully").format(so.name, dn_name or "") if dn_name else _("Sales Order {0} confirmed successfully").format(so.name)
     }
+
+
+@frappe.whitelist()
+def resolve_customer_qr(qr_text, pos_profile=None):
+    """Resolve customer and branch from scanned QR code string.
+
+    Supports:
+    - MUBTKIR_BRANCH::{customer}::{branch}
+    - Web URL with ?customer=...&branch=...
+    - Query string customer=...&branch=...
+    - JSON object {"customer": ..., "branch": ...}
+    - Direct Customer name, customer_name, or mobile_no
+    """
+    import urllib.parse
+    import json
+
+    if not qr_text or not isinstance(qr_text, str):
+        frappe.throw(_("Invalid QR Code content"), title=_("Scan Error"))
+
+    text = qr_text.strip()
+    cust_param = None
+    branch_param = None
+
+    # Pattern 1: MUBTKIR_BRANCH::{customer}::{branch}
+    if text.startswith("MUBTKIR_BRANCH::"):
+        parts = text.split("::")
+        if len(parts) >= 2:
+            cust_param = parts[1].strip()
+        if len(parts) >= 3:
+            branch_param = parts[2].strip()
+
+    # Pattern 2: URL containing customer query parameter
+    elif "?" in text or text.startswith("http://") or text.startswith("https://") or "/gas-delivery" in text:
+        try:
+            url_to_parse = text if text.startswith("http") else f"http://dummy.local/{text.lstrip('/')}"
+            parsed = urllib.parse.urlparse(url_to_parse)
+            qs = urllib.parse.parse_qs(parsed.query)
+            if "customer" in qs:
+                cust_param = qs["customer"][0].strip()
+            if "branch" in qs:
+                branch_param = qs["branch"][0].strip()
+        except Exception:
+            pass
+
+    # Pattern 3: Key-value query string (customer=...&branch=...)
+    elif "customer=" in text:
+        try:
+            qs = urllib.parse.parse_qs(text)
+            if "customer" in qs:
+                cust_param = qs["customer"][0].strip()
+            if "branch" in qs:
+                branch_param = qs["branch"][0].strip()
+        except Exception:
+            pass
+
+    # Pattern 4: JSON string
+    elif text.startswith("{") and text.endswith("}"):
+        try:
+            data = json.loads(text)
+            cust_param = data.get("customer")
+            branch_param = data.get("branch")
+        except Exception:
+            pass
+
+    # Pattern 5: Raw text fallback
+    if not cust_param:
+        cust_param = text
+
+    # Look up Customer in Database
+    # Try by name (ID)
+    customer_doc = frappe.db.get_value(
+        "Customer",
+        {"name": cust_param},
+        ["name", "customer_name", "mobile_no", "customer_group", "territory", "tax_id"],
+        as_dict=True,
+    )
+    # If not found by name, try customer_name
+    if not customer_doc:
+        customer_doc = frappe.db.get_value(
+            "Customer",
+            {"customer_name": cust_param},
+            ["name", "customer_name", "mobile_no", "customer_group", "territory", "tax_id"],
+            as_dict=True,
+        )
+    # If not found, try mobile_no
+    if not customer_doc:
+        customer_doc = frappe.db.get_value(
+            "Customer",
+            {"mobile_no": cust_param},
+            ["name", "customer_name", "mobile_no", "customer_group", "territory", "tax_id"],
+            as_dict=True,
+        )
+
+    if not customer_doc:
+        frappe.throw(
+            _("No customer found matching '{0}'").format(cust_param),
+            title=_("Customer Not Found"),
+        )
+
+    actual_customer = customer_doc["name"]
+
+    # Match Branch / Address if provided
+    matched_branch = None
+    branch_title = None
+
+    if branch_param:
+        addr = frappe.db.sql("""
+            SELECT addr.name, addr.address_title, addr.phone
+            FROM `tabAddress` addr
+            INNER JOIN `tabDynamic Link` dl ON dl.parent = addr.name
+            WHERE dl.link_doctype = 'Customer' AND dl.link_name = %s
+              AND (addr.name = %s OR addr.address_title = %s)
+            LIMIT 1
+        """, (actual_customer, branch_param, branch_param), as_dict=True)
+
+        if addr:
+            matched_branch = addr[0]["name"]
+            branch_title = addr[0]["address_title"] or addr[0]["name"]
+        else:
+            addr_like = frappe.db.sql("""
+                SELECT addr.name, addr.address_title, addr.phone
+                FROM `tabAddress` addr
+                INNER JOIN `tabDynamic Link` dl ON dl.parent = addr.name
+                WHERE dl.link_doctype = 'Customer' AND dl.link_name = %s
+                  AND addr.address_title LIKE %s
+                LIMIT 1
+            """, (actual_customer, f"%{branch_param}%"), as_dict=True)
+            if addr_like:
+                matched_branch = addr_like[0]["name"]
+                branch_title = addr_like[0]["address_title"] or addr_like[0]["name"]
+
+    # If no branch matched or specified, check if customer has a single/primary branch
+    if not matched_branch:
+        default_addr = frappe.db.sql("""
+            SELECT addr.name, addr.address_title
+            FROM `tabAddress` addr
+            INNER JOIN `tabDynamic Link` dl ON dl.parent = addr.name
+            WHERE dl.link_doctype = 'Customer' AND dl.link_name = %s
+            ORDER BY addr.is_primary_address DESC, addr.creation ASC
+            LIMIT 1
+        """, (actual_customer,), as_dict=True)
+        if default_addr:
+            matched_branch = default_addr[0]["name"]
+            branch_title = default_addr[0]["address_title"] or default_addr[0]["name"]
+
+    # Fetch voucher balance
+    from pos_next.api.voucher import get_voucher_balance
+    voucher_info = get_voucher_balance(actual_customer, pos_profile=pos_profile, branch=matched_branch)
+    voucher_balance = cint(voucher_info.get("balance", 0))
+
+    return {
+        "success": True,
+        "customer": customer_doc,
+        "branch": matched_branch,
+        "branch_title": branch_title or matched_branch,
+        "voucher_balance": voucher_balance,
+        "has_branch_vouchers": bool(voucher_info.get("has_branch_vouchers")),
+        "voucher_info": voucher_info,
+    }
+
 

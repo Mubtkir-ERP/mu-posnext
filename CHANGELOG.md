@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.22.4] - 2026-11-11
+
+### Added
+- **Gas Distribution System Integration in POS**:
+  - Added `mu_enable_gas_mode` toggle in General Settings (`POS Settings`) and frontend state.
+  - Added Customer QR code scanning button and modal (`CustomerQrScanDialog.vue`) supporting camera streaming with target reticle and hardware barcode guns.
+  - Added backend resolution API (`resolve_customer_qr`) supporting QR URLs, branch identifiers, and raw customer codes.
+  - Smart customer routing: automatic voucher balance check and popup (`VoucherRedeemDialog`), or automatic routing to `Sales Order` for credit customers.
+  - Auto-generation and submission of `Delivery Note` from POS `Sales Order` in Gas Mode to immediately deduct stock from driver vehicle warehouse.
+  - Added `mu_credit_deliveries` tracking in `POS Closing Shift` to record and display on-account delivery counts alongside `mu_vouchers_redeemed` and payment methods.
+
 ## [1.22.1] - 2026-10-25
 
 ### Added

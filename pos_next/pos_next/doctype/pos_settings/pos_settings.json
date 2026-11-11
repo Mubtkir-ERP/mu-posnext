@@ -58,6 +58,7 @@
   "allow_delete_offline_invoice",
   "allow_change_posting_date",
   "mu_enable_order_status",
+  "mu_enable_gas_mode",
   "section_break_pricing",
   "decimal_precision",
   "column_break_pricing",
@@ -444,6 +445,13 @@
    "fieldname": "mu_enable_order_status",
    "fieldtype": "Check",
    "label": "Enable Order Status"
+  },
+  {
+   "default": "0",
+   "description": "Enable Gas Distribution Mode (Customer QR scan, vouchers & credit deliveries)",
+   "fieldname": "mu_enable_gas_mode",
+   "fieldtype": "Check",
+   "label": "Enable Gas Mode"
   },
   {
    "collapsible": 1,

@@ -409,6 +409,8 @@
 								@select-customer="handleCustomerSelected"
 								@create-customer="handleCreateCustomer"
 								@edit-customer="handleEditCustomer"
+								@scan-customer-qr="showCustomerQrScanner = true"
+								@scan-customer-qr-raw="handleRawQrScanned"
 								@proceed-to-payment="handleProceedToPayment"
 								@clear-cart="handleClearCart"
 								@save-draft="handleSaveDraft"
@@ -738,6 +740,13 @@
 				:customer="cartStore.customer"
 				:initial-address="cartStore.customerAddress"
 				@redeemed="onVoucherRedeemed"
+			/>
+
+			<!-- Customer QR Scanner Dialog -->
+			<CustomerQrScanDialog
+				v-model="showCustomerQrScanner"
+				:pos-profile="shiftStore.profileName || ''"
+				@scan-success="handleCustomerQrSuccess"
 			/>
 
 			<!-- Customer Ordered Items (self-contained customer search) -->
@@ -1074,6 +1083,7 @@ import POSHeader from "@/components/pos/POSHeader.vue";
 import BatchSerialDialog from "@/components/sale/BatchSerialDialog.vue";
 import CouponDialog from "@/components/sale/CouponDialog.vue";
 import CreateCustomerDialog from "@/components/sale/CreateCustomerDialog.vue";
+import CustomerQrScanDialog from "@/components/customer/CustomerQrScanDialog.vue";
 import CustomerOrdersDialog from "@/components/customer/CustomerOrdersDialog.vue";
 import CustomerDialog from "@/components/sale/CustomerDialog.vue";
 import DraftInvoicesDialog from "@/components/sale/DraftInvoicesDialog.vue";
@@ -1419,6 +1429,61 @@ watch(() => shiftStore.profileName, async (profileName) => {
 const showCashDisbursement = ref(false);
 const showVoucherRedeem = ref(false);
 const showCustomerOrders = ref(false);
+const showCustomerQrScanner = ref(false);
+
+async function handleCustomerQrSuccess(data) {
+	if (!data || !data.customer) return;
+
+	// 1. Set Customer in Cart Store
+	await cartStore.setCustomer(data.customer);
+
+	// 2. Set Branch Address in Cart Store if resolved
+	if (data.branch) {
+		cartStore.setCustomerAddress(data.branch);
+	}
+
+	await customerDisplayStore.refreshCustomerFinancials(data.customer);
+	customerDisplayStore.syncCartNow();
+
+	const voucherBal = Number(data.voucher_balance ?? 0);
+	const hasBranchVouchers = Boolean(data.has_branch_vouchers);
+
+	// 3. Smart routing: Vouchers vs Credit / Gas Mode
+	if (voucherBal > 0 || hasBranchVouchers) {
+		voucherBalance.value = voucherBal;
+		showVoucherRedeem.value = true;
+	} else if (posSettingsStore.enableGasMode) {
+		// Gas Mode active: route to Sales Order (Credit)
+		cartStore.setTargetDoctype("Sales Order");
+		showSuccess(
+			__("{0} ({1}) selected - Sales Order mode active", [
+				data.customer.customer_name || data.customer.name,
+				data.branch_title || data.branch || __("Main"),
+			])
+		);
+	} else {
+		showSuccess(
+			__("{0} selected", [data.customer.customer_name || data.customer.name])
+		);
+	}
+}
+
+async function handleRawQrScanned(rawText) {
+	try {
+		const res = await call("pos_next.operations.customer_branches.resolve_customer_qr", {
+			qr_text: rawText,
+			pos_profile: shiftStore.profileName || "",
+		});
+		const data = res && (res.message ?? res);
+		if (data && data.success && data.customer) {
+			await handleCustomerQrSuccess(data);
+		} else {
+			showError(data?.error || __("Failed to resolve customer"));
+		}
+	} catch (e) {
+		showError(e?.messages?.[0] || e?.message || __("Failed to resolve customer"));
+	}
+}
 
 // Prepaid voucher balance for the currently selected customer (header badge + alert)
 const voucherBalance = ref(0);
@@ -2459,6 +2524,16 @@ async function handlePaymentCompleted(paymentData) {
 				const invoiceName = result.name || result.message?.name || __("Unknown");
 				const invoiceTotal = result.grand_total || result.total || 0;
 				const paidAmount = paymentData.paid_amount || invoiceTotal;
+				const deliveryNoteName = result.delivery_note || result.message?.delivery_note;
+
+				if (deliveryNoteName) {
+					showSuccess(
+						__("Sales Order {0} and Delivery Note {1} completed successfully", [
+							invoiceName,
+							deliveryNoteName,
+						])
+					);
+				}
 
 				customerDisplayStore.showCompleted({ invoice: result, payment: paymentData });
 				uiStore.showPaymentDialog = false;
