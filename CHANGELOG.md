@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.22.5] - 2026-11-11
+
+### Changed
+- **Shift Closing Metrics Visibility**:
+  - Always display `Redeemed Vouchers` and `Credit Deliveries` metric cards by default (even when counts are 0) in `ShiftClosingDialog.vue`.
+  - Renamed Non-Taxable charges UI copy and descriptions to `Delivery Charges` (`رسوم توصيل`).
+  - Updated Arabic translations for delivery charges and collections.
+
 ## [1.22.4] - 2026-11-11
 
 ### Added

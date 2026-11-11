@@ -58,13 +58,13 @@
                 <div class="text-amber-600 text-xs">{{ __('Deducted from drawer') }}</div>
               </div>
 
-              <!-- Non-Taxable Amount (المبالغ غير الضريبية) -->
+              <!-- Delivery Charges (رسوم التوصيل) -->
               <div
                 class="text-start bg-indigo-50 border border-indigo-200 rounded-lg p-3 md:p-4"
               >
-                <div class="text-indigo-600 text-xs uppercase font-medium mb-1">{{ __('Non-Taxable Amount') }}</div>
+                <div class="text-indigo-600 text-xs uppercase font-medium mb-1">{{ __('Delivery Charges') }}</div>
                 <div class="text-lg md:text-2xl font-bold text-indigo-900 mb-0.5 md:mb-1 truncate">{{ formatCurrency(nonTaxableAmount) }}</div>
-                <div class="text-indigo-600 text-xs">{{ __('Delivery / Dafour') }}</div>
+                <div class="text-indigo-600 text-xs">{{ __('Delivery') }}</div>
               </div>
 
               <!-- Tax Collected -->
@@ -75,16 +75,16 @@
               </div>
 
               <!-- Redeemed Vouchers (القسائم المستبدلة) -->
-              <div v-if="(closingData.mu_vouchers_redeemed || 0) > 0" class="text-start bg-emerald-50 border border-emerald-200 rounded-lg p-3 md:p-4">
+              <div class="text-start bg-emerald-50 border border-emerald-200 rounded-lg p-3 md:p-4">
                 <div class="text-emerald-700 text-xs uppercase font-medium mb-1">{{ __('Redeemed Vouchers') }}</div>
-                <div class="text-lg md:text-2xl font-bold text-emerald-800 mb-0.5 md:mb-1 truncate">{{ closingData.mu_vouchers_redeemed }}</div>
+                <div class="text-lg md:text-2xl font-bold text-emerald-800 mb-0.5 md:mb-1 truncate">{{ closingData.mu_vouchers_redeemed || 0 }}</div>
                 <div class="text-emerald-600 text-xs">{{ __('Units redeemed') }}</div>
               </div>
 
               <!-- Credit Deliveries / Sales Orders (استلامات الآجل) -->
-              <div v-if="(closingData.mu_credit_deliveries || 0) > 0" class="text-start bg-orange-50 border border-orange-200 rounded-lg p-3 md:p-4">
+              <div class="text-start bg-orange-50 border border-orange-200 rounded-lg p-3 md:p-4">
                 <div class="text-orange-700 text-xs uppercase font-medium mb-1">{{ __('Credit Deliveries') }}</div>
-                <div class="text-lg md:text-2xl font-bold text-orange-800 mb-0.5 md:mb-1 truncate">{{ closingData.mu_credit_deliveries }}</div>
+                <div class="text-lg md:text-2xl font-bold text-orange-800 mb-0.5 md:mb-1 truncate">{{ closingData.mu_credit_deliveries || 0 }}</div>
                 <div class="text-orange-600 text-xs">{{ __('Sales Orders / Credit') }}</div>
               </div>
             </div>
@@ -223,7 +223,7 @@
             </div>
           </div>
 
-          <!-- Non-Taxable Charges Section (المبالغ غير الضريبية - توصيل / دافور) -->
+          <!-- Delivery Charges Section (رسوم التوصيل) -->
           <div
             class="bg-white border border-indigo-200 rounded-lg overflow-hidden shadow-sm"
           >
@@ -231,7 +231,7 @@
               <div>
                 <h3 class="text-start text-sm md:text-base font-semibold text-indigo-950 flex items-center gap-2">
                   <span class="text-base md:text-lg">🛵</span>
-                  <span>{{ __('Non-Taxable Charges (Delivery / Dafour)') }}</span>
+                  <span>{{ __('Delivery Charges') }}</span>
                 </h3>
                 <p class="text-start text-xs md:text-sm text-indigo-700 mt-0.5">
                   {{ __('Charges collected in cash outside taxable invoices (adds to expected cash)') }}
@@ -246,7 +246,7 @@
             <div class="p-3 md:p-6 grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-4 bg-white">
               <div class="text-start">
                 <label class="block text-xs font-semibold text-gray-700 uppercase mb-1">
-                  {{ __('Non-Taxable Amount') }}
+                  {{ __('Delivery Charges') }}
                 </label>
                 <Input
                   :modelValue="closingData.mu_non_taxable_amount"
@@ -259,7 +259,7 @@
                   class="text-base md:text-lg font-semibold"
                 />
                 <div class="text-xs text-gray-500 mt-1">
-                  {{ __('Cash collected for delivery or dafour') }}
+                  {{ __('Cash collected for delivery') }}
                 </div>
               </div>
 
@@ -271,12 +271,12 @@
                   :modelValue="closingData.mu_non_taxable_remarks"
                   @update:modelValue="(val) => { closingData.mu_non_taxable_remarks = val }"
                   type="text"
-                  :placeholder="__('e.g. Delivery fees or dafour gas charges')"
+                  :placeholder="__('e.g. Delivery fees or notes')"
                   :disabled="showSuccessReport || submitResource.loading"
                   class="text-sm"
                 />
                 <div class="text-xs text-gray-500 mt-1">
-                  {{ __('Optional notes on non-taxable collections') }}
+                  {{ __('Optional notes on delivery collections') }}
                 </div>
               </div>
             </div>
