@@ -2372,6 +2372,19 @@ function handleProceedToPayment() {
 		return;
 	}
 
+	// If targetDoctype is Sales Order and direct credit is enabled, submit directly on account without payment dialog
+	if (cartStore.targetDoctype === "Sales Order" && posSettingsStore.directCreditSalesOrder) {
+		handlePaymentCompleted({
+			payments: [],
+			change_amount: 0,
+			is_partial_payment: false,
+			is_credit_sale: true,
+			paid_amount: 0,
+			outstanding_amount: cartStore.grandTotal,
+		});
+		return;
+	}
+
 	uiStore.showPaymentDialog = true;
 }
 

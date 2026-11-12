@@ -72,10 +72,12 @@ class POSClosingShift(Document):
     def set_vouchers_redeemed(self):
         """Count prepaid-voucher redemptions and credit sales orders made during this shift."""
         if self.meta.has_field("mu_vouchers_redeemed") and self.pos_opening_shift:
-            self.mu_vouchers_redeemed = frappe.db.count(
-                "Prepaid Voucher Transaction",
-                {"pos_opening_shift": self.pos_opening_shift, "transaction_type": "Redeem"},
-            )
+            val = frappe.db.sql("""
+                SELECT ABS(COALESCE(SUM(quantity), 0))
+                FROM `tabPrepaid Voucher Transaction`
+                WHERE pos_opening_shift = %s AND transaction_type = 'Redeem'
+            """, (self.pos_opening_shift,))
+            self.mu_vouchers_redeemed = cint(val[0][0]) if val and val[0] else 0
         if self.meta.has_field("mu_credit_deliveries") and self.pos_opening_shift:
             self.mu_credit_deliveries = frappe.db.count(
                 "Sales Order",
@@ -87,6 +89,10 @@ class POSClosingShift(Document):
         # get default precision for site
         precision = frappe.get_cached_value("System Settings", None, "currency_precision") or 3
         non_taxable_added = False
+        if self.get("mu_cash_charges"):
+            charges_sum = sum(flt(d.amount) for d in self.mu_cash_charges)
+            if charges_sum > 0:
+                self.mu_non_taxable_amount = charges_sum
         non_taxable = flt(self.get("mu_non_taxable_amount") or 0)
         for d in self.payment_reconciliation:
             expected = flt(d.expected_amount, precision)
@@ -708,6 +714,7 @@ def make_closing_shift_from_opening(opening_shift):
         "mu_enable_non_taxable_charges": enable_non_taxable,
         "mu_non_taxable_amount": flt(closing_shift.get("mu_non_taxable_amount") or non_tax_sales),
         "mu_non_taxable_remarks": closing_shift.get("mu_non_taxable_remarks") or "",
+        "mu_cash_charges": [row.as_dict() for row in closing_shift.get("mu_cash_charges", [])],
         "mu_vouchers_redeemed": vouchers_count,
         "mu_credit_deliveries": credit_deliveries_count,
         "pos_transactions": pos_transactions,  # Include return info for display
@@ -792,7 +799,20 @@ def submit_closing_shift(closing_shift):
     closing_shift_doc.company = shift.company
     closing_shift_doc.user = shift.user
 
-    if "mu_non_taxable_amount" in payload:
+    if "mu_cash_charges" in payload and isinstance(payload.get("mu_cash_charges"), list):
+        closing_shift_doc.set("mu_cash_charges", [])
+        total_charges = 0.0
+        for item in payload.get("mu_cash_charges"):
+            amt = flt(item.get("amount") or 0)
+            name = item.get("charge_name") or item.get("description") or ""
+            if amt > 0 or name:
+                closing_shift_doc.append("mu_cash_charges", {
+                    "charge_name": name,
+                    "amount": amt,
+                })
+                total_charges += amt
+        closing_shift_doc.mu_non_taxable_amount = total_charges
+    elif "mu_non_taxable_amount" in payload:
         closing_shift_doc.mu_non_taxable_amount = flt(payload.get("mu_non_taxable_amount"))
     if "mu_non_taxable_remarks" in payload:
         closing_shift_doc.mu_non_taxable_remarks = payload.get("mu_non_taxable_remarks")

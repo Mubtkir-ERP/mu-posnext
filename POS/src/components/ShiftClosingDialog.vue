@@ -58,13 +58,13 @@
                 <div class="text-amber-600 text-xs">{{ __('Deducted from drawer') }}</div>
               </div>
 
-              <!-- Delivery Charges (رسوم التوصيل) -->
+              <!-- Cash Amounts (المبالغ النقدية) -->
               <div
                 class="text-start bg-indigo-50 border border-indigo-200 rounded-lg p-3 md:p-4"
               >
-                <div class="text-indigo-600 text-xs uppercase font-medium mb-1">{{ __('Delivery Charges') }}</div>
+                <div class="text-indigo-600 text-xs uppercase font-medium mb-1">{{ __('Cash Amounts') }}</div>
                 <div class="text-lg md:text-2xl font-bold text-indigo-900 mb-0.5 md:mb-1 truncate">{{ formatCurrency(nonTaxableAmount) }}</div>
-                <div class="text-indigo-600 text-xs">{{ __('Delivery') }}</div>
+                <div class="text-indigo-600 text-xs">{{ __('Delivery / Other') }}</div>
               </div>
 
               <!-- Tax Collected -->
@@ -223,61 +223,84 @@
             </div>
           </div>
 
-          <!-- Delivery Charges Section (رسوم التوصيل) -->
+          <!-- Cash Amounts Section (المبالغ النقدية - أسطر متعددة) -->
           <div
             class="bg-white border border-indigo-200 rounded-lg overflow-hidden shadow-sm"
           >
             <div class="px-3 py-3 md:px-6 md:py-4 bg-indigo-50/70 border-b border-indigo-200 flex items-center justify-between">
               <div>
                 <h3 class="text-start text-sm md:text-base font-semibold text-indigo-950 flex items-center gap-2">
-                  <span class="text-base md:text-lg">🛵</span>
-                  <span>{{ __('Delivery Charges') }}</span>
+                  <span class="text-base md:text-lg">💵</span>
+                  <span>{{ __('Cash Amounts') }}</span>
                 </h3>
-                <p class="text-start text-xs md:text-sm text-indigo-700 mt-0.5">
-                  {{ __('Charges collected in cash outside taxable invoices (adds to expected cash)') }}
-                </p>
               </div>
-              <div v-if="nonTaxableAmount > 0" class="text-start sm:text-end">
+              <div class="text-start sm:text-end">
                 <div class="text-xs text-indigo-600 uppercase font-medium">{{ __('Total') }}</div>
                 <div class="text-base md:text-lg font-bold text-indigo-900">{{ formatCurrency(nonTaxableAmount) }}</div>
               </div>
             </div>
 
-            <div class="p-3 md:p-6 grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-4 bg-white">
-              <div class="text-start">
-                <label class="block text-xs font-semibold text-gray-700 uppercase mb-1">
-                  {{ __('Delivery Charges') }}
-                </label>
-                <Input
-                  :modelValue="closingData.mu_non_taxable_amount"
-                  @update:modelValue="onNonTaxableAmountChange"
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  placeholder="0.00"
-                  :disabled="showSuccessReport || submitResource.loading"
-                  class="text-base md:text-lg font-semibold"
-                />
-                <div class="text-xs text-gray-500 mt-1">
-                  {{ __('Cash collected for delivery') }}
+            <div class="p-3 md:p-6 bg-white space-y-3">
+              <div
+                v-for="(row, idx) in cashChargeRows"
+                :key="idx"
+                class="flex flex-col sm:flex-row gap-2 items-center bg-gray-50/70 p-2.5 rounded-lg border border-gray-200"
+              >
+                <div class="w-full sm:flex-1">
+                  <label v-if="idx === 0" class="block text-xs font-semibold text-gray-700 uppercase mb-1">
+                    {{ __('Description') }}
+                  </label>
+                  <Input
+                    v-model="row.charge_name"
+                    type="text"
+                    :placeholder="__('e.g. Delivery, Dafour...')"
+                    :disabled="showSuccessReport || submitResource.loading"
+                    class="text-sm w-full"
+                  />
+                </div>
+                <div class="w-full sm:w-44">
+                  <label v-if="idx === 0" class="block text-xs font-semibold text-gray-700 uppercase mb-1">
+                    {{ __('Amount') }}
+                  </label>
+                  <Input
+                    :modelValue="row.amount"
+                    @update:modelValue="(val) => { row.amount = val; onCashChargesUpdated(); }"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    placeholder="0.00"
+                    :disabled="showSuccessReport || submitResource.loading"
+                    class="text-sm font-semibold w-full"
+                  />
+                </div>
+                <div :class="['flex items-center', idx === 0 ? 'sm:pt-5' : '']">
+                  <button
+                    type="button"
+                    @click="removeCashChargeRow(idx)"
+                    :disabled="showSuccessReport || submitResource.loading"
+                    class="p-2 text-red-500 hover:text-red-700 hover:bg-red-50 rounded-lg transition-colors"
+                    :title="__('Remove')"
+                  >
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                    </svg>
+                  </button>
                 </div>
               </div>
 
-              <div class="text-start">
-                <label class="block text-xs font-semibold text-gray-700 uppercase mb-1">
-                  {{ __('Remarks / Details') }}
-                </label>
-                <Input
-                  :modelValue="closingData.mu_non_taxable_remarks"
-                  @update:modelValue="(val) => { closingData.mu_non_taxable_remarks = val }"
-                  type="text"
-                  :placeholder="__('e.g. Delivery fees or notes')"
+              <!-- Add Row Button -->
+              <div class="pt-1 flex items-center justify-between">
+                <button
+                  type="button"
+                  @click="addCashChargeRow"
                   :disabled="showSuccessReport || submitResource.loading"
-                  class="text-sm"
-                />
-                <div class="text-xs text-gray-500 mt-1">
-                  {{ __('Optional notes on delivery collections') }}
-                </div>
+                  class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 rounded-lg border border-indigo-200 transition-colors"
+                >
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+                  </svg>
+                  <span>{{ __('+ Add Cash Amount') }}</span>
+                </button>
               </div>
             </div>
           </div>
@@ -674,6 +697,27 @@ function makeReactiveClosingData(data, touchedFromCache = false) {
 	cloned.mu_non_taxable_amount = cloned.mu_non_taxable_amount !== undefined ? cloned.mu_non_taxable_amount : 0
 	cloned.mu_non_taxable_remarks = cloned.mu_non_taxable_remarks || ""
 	cloned.mu_enable_non_taxable_charges = Boolean(cloned.mu_enable_non_taxable_charges)
+	if (!cloned.mu_cash_charges || !Array.isArray(cloned.mu_cash_charges) || cloned.mu_cash_charges.length === 0) {
+		if (Number(cloned.mu_non_taxable_amount || 0) > 0) {
+			cloned.mu_cash_charges = [
+				reactive({
+					charge_name: cloned.mu_non_taxable_remarks || "",
+					amount: Number(cloned.mu_non_taxable_amount || 0),
+				})
+			]
+		} else {
+			cloned.mu_cash_charges = [
+				reactive({ charge_name: "", amount: 0 })
+			]
+		}
+	} else {
+		cloned.mu_cash_charges = cloned.mu_cash_charges.map((row) =>
+			reactive({
+				charge_name: row.charge_name || row.description || "",
+				amount: Number(row.amount || 0),
+			})
+		)
+	}
 	if (cloned.payment_reconciliation) {
 		cloned.payment_reconciliation = cloned.payment_reconciliation.map((payment) =>
 			reactive({
@@ -844,6 +888,36 @@ function updateClosingAmount(payment, value) {
 	}
 }
 
+const cashChargeRows = computed(() => {
+	if (!closingData.value || !closingData.value.mu_cash_charges) return []
+	return closingData.value.mu_cash_charges
+})
+
+function addCashChargeRow() {
+	if (!closingData.value) return
+	if (!closingData.value.mu_cash_charges) closingData.value.mu_cash_charges = []
+	closingData.value.mu_cash_charges.push(reactive({ charge_name: "", amount: 0 }))
+	onCashChargesUpdated()
+}
+
+function removeCashChargeRow(index) {
+	if (!closingData.value || !closingData.value.mu_cash_charges) return
+	closingData.value.mu_cash_charges.splice(index, 1)
+	if (closingData.value.mu_cash_charges.length === 0) {
+		closingData.value.mu_cash_charges.push(reactive({ charge_name: "", amount: 0 }))
+	}
+	onCashChargesUpdated()
+}
+
+function onCashChargesUpdated() {
+	if (!closingData.value) return
+	const rows = closingData.value.mu_cash_charges || []
+	const sum = rows.reduce((acc, r) => acc + (Number(r.amount) || 0), 0)
+	closingData.value.mu_non_taxable_amount = sum
+	recalculateAllExpectedAndDifferences(closingData.value)
+	saveClosingShiftDraft(props.openingShift, closingData.value).catch(() => {})
+}
+
 function onNonTaxableAmountChange(value) {
 	if (!closingData.value) return
 	closingData.value.mu_non_taxable_amount = value
@@ -853,6 +927,9 @@ function onNonTaxableAmountChange(value) {
 
 const nonTaxableAmount = computed(() => {
 	if (!closingData.value) return 0
+	if (closingData.value.mu_cash_charges && closingData.value.mu_cash_charges.length > 0) {
+		return closingData.value.mu_cash_charges.reduce((acc, r) => acc + (Number(r.amount) || 0), 0)
+	}
 	return Number.parseFloat(closingData.value.mu_non_taxable_amount || 0)
 })
 

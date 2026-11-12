@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.23.0] - 2026-11-12
+
+### Added
+- **Multi-Line Cash Amounts in Shift Closing**:
+  - Added `POS Closing Cash Charge` child table DocType allowing multiple distinct cash charge lines (e.g., Delivery 500, Dafour 300, etc.) in `POS Closing Shift`.
+  - Added interactive dynamic rows with add/remove capability in `ShiftClosingDialog.vue`.
+  - Automatically calculates total cash amounts and adds to expected drawer cash.
+- **Direct Credit for Sales Orders**:
+  - Added `direct_credit_sales_order` setting in `POS Settings` and `POS Profile`.
+  - When enabled, Sales Orders are directly submitted on credit (on account) without opening the payment modal.
+
+### Changed
+- Renamed all Non-Taxable charges UI copy to `Cash Amounts` (`المبالغ النقدية`) across POS closing dialog, profile settings, and DocTypes.
+- Removed the phrase "مبالغ تم تحصيلها نقداً خارج الفواتير الضريبية" completely.
+- Accurately summed units redeemed from `Prepaid Voucher Transaction` for voucher metric cards in shift closing.
+- Updated Arabic translations comprehensively in `translations/ar.csv`.
+
 ## [1.22.5] - 2026-11-11
 
 ### Changed
