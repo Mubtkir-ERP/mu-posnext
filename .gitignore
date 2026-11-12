@@ -6,9 +6,6 @@ tags
 node_modules
 __pycache__
 
-# Build artifacts
-pos_next/public/pos/
-pos_next/www/
 
 # IDE and editor files
 .vscode/

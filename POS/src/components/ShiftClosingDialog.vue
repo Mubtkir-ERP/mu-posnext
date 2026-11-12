@@ -989,7 +989,20 @@ async function submitClosing() {
 		}
 	} catch (error) {
 		console.error("Error submitting closing shift:", error)
-		errorMessage.value = 'Failed to close shift. Please verify all amounts and try again.'
+		let detail = ''
+		if (error && error.messages && error.messages.length) {
+			detail = error.messages.join(' | ')
+		} else if (error && error._server_messages) {
+			try {
+				const msgs = JSON.parse(error._server_messages)
+				detail = msgs.map(m => {
+					try { return JSON.parse(m).message } catch (_) { return m }
+				}).join(' | ')
+			} catch (_) {}
+		} else if (error && error.message) {
+			detail = error.message
+		}
+		errorMessage.value = detail || __('Failed to close shift. Please verify all amounts and try again.')
 	}
 }
 

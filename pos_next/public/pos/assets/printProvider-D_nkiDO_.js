@@ -1,0 +1,1 @@
+const e="pos_print_terminal_id";function r(){try{return localStorage.getItem(e)||""}catch(t){return""}}function n(t){try{t?localStorage.setItem(e,String(t).trim()):localStorage.removeItem(e)}catch(o){}}const a={getPrintTerminalId:r,setPrintTerminalId:n};export{a as default,r as getPrintTerminalId,n as setPrintTerminalId};

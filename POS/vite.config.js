@@ -52,6 +52,7 @@ export default defineConfig({
 			jinjaBootData: true,
 			lucideIcons: true,
 			buildConfig: {
+				baseUrl: "/assets/pos_next/pos/",
 				indexHtmlPath: "../pos_next/www/pos.html",
 				outDir: "../pos_next/public/pos",
 				emptyOutDir: true,
@@ -226,6 +227,7 @@ export default defineConfig({
 		alias: {
 			"@": path.resolve(__dirname, "src"),
 			"tailwind.config.js": path.resolve(__dirname, "tailwind.config.js"),
+			"../../../../sites/common_site_config.json": path.resolve(__dirname, "src/fallback_site_config.json"),
 		},
 	},
 	define: {
