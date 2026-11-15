@@ -16,6 +16,10 @@ class PrepaidVoucherBalance(Document):
 	def validate(self):
 		if not self.branch:
 			self.is_general = 1
-		self.current_balance = cint(self.total_purchased) - cint(self.total_redeemed)
+		self.current_balance = (
+			cint(self.total_purchased)
+			- cint(self.total_redeemed)
+			- cint(self.get("total_expired"))
+		)
 		if self.current_balance < 0:
 			frappe.throw("Voucher balance cannot be negative")

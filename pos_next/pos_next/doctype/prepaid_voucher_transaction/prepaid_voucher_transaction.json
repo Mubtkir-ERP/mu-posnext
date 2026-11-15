@@ -54,7 +54,7 @@
    "fieldtype": "Select",
    "in_list_view": 1,
    "label": "Transaction Type",
-   "options": "Purchase\nRedeem",
+   "options": "Purchase\nRedeem\nExpire",
    "reqd": 1
   },
   {

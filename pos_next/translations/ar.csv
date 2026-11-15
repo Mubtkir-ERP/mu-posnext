@@ -2388,3 +2388,34 @@ Hide Customer Debt / Outstanding Balance in the checkout dialog,إخفاء مد�
 Sales Order Mode,وضع أمر التسليم
 "Payment methods are not required for Sales Orders. Payment is collected when creating a Sales Invoice.","لا يتطلب أمر التسليم اختيار طريقة دفع. يتم التحصيل والدفع عند إصدار فاتورة المبيعات."
 Create Sales Order,إنشاء أمر التسليم
+Customer QR Card,بطاقة QR العميل
+Loading QR Card...,جاري تحميل بطاقة QR...
+Send via WhatsApp,إرسال عبر الواتساب
+WhatsApp,واتساب
+Card / Print,البطاقة / طباعة
+Select a branch or print/send the customer QR card:,اختر الفرع أو اطبع/أرسل بطاقة QR العميل:
+Send Main Card (WhatsApp),إرسال البطاقة الرئيسية (واتساب)
+Voucher Balance,رصيد القسائم
+Open Digital Balance Page,فتح صفحة الرصيد الرقمية
+Print A6 Sticker 🖨️,طباعة ملصق A6 🖨️
+Sending WhatsApp message...,جاري إرسال رسالة الواتساب...
+"QR Card sent via WhatsApp to {0}","تم إرسال بطاقة QR عبر الواتساب إلى {0}"
+Customer record not found.,لم يتم العثور على بيانات العميل.
+Invalid or expired card link. Please request a new QR card from the store.,رابط البطاقة غير صالح أو منتهي. يرجى طلب بطاقة جديدة من المتجر.
+"No mobile number found for this customer/branch. Please update the mobile number first.","لا يوجد رقم جوال مسجل لهذا العميل أو الفرع. يرجى تحديث رقم الجوال أولاً."
+"Could not send WhatsApp message. Please verify WhatsApp integration settings.","تعذر إرسال رسالة الواتساب. يرجى التحقق من إعدادات الربط مع الواتساب."
+
+Validity Days (0 = Unlimited),مدة الصلاحية بالأيام (0 = بدون مدة),
+Number of days the voucher balance remains valid after purchase (0 = unlimited).,عدد الأيام التي يظل فيها رصيد القسائم صالحاً بعد الشراء (0 = مفتوح بدون مدة).,
+Voucher Expiry Reminder Days,أيام التنبيه قبل انتهاء القسائم,
+Number of days before voucher expiry to send a WhatsApp reminder (default: 3).,عدد الأيام قبل انتهاء القسائم لإرسال تنبيه واتساب للعميل (الافتراضي: 3).,
+Total Expired,إجمالي المنتهي,
+Expiry Date,تاريخ الانتهاء,
+Expiry Reminded,تم إرسال تنبيه الانتهاء,
+Expire,منتهي,
+This customer's voucher balance has expired.,انتهت صلاحية رصيد القسائم لهذا العميل.,
+"Voucher balance expired ({0} units)","انتهت صلاحية رصيد القسائم ({0} وحدة)",
+"Dear {0}, your voucher package ({1} remaining units) has expired and the balance is now 0.","عزيزي {0}، انتهت صلاحية باقة القسائم الخاصة بك ({1} وحدة متبقية) وأصبح الرصيد 0.",
+" Valid until: {0}."," صالحة حتى: {0}.",
+"Dear {0}, {1} vouchers have been added to your account. Current balance: {2} vouchers.{3}\nDigital QR Card: {4}","عزيزي {0}، تم إضافة {1} قسيمة إلى حسابك. رصيدك الحالي: {2} قسيمة.{3}\nبطاقتك الرقمية: {4}",
+"Reminder {0}: You have {1} voucher units expiring in {2} day(s) (on {3}). Use them before expiry.\nDigital QR Card: {4}","تذكير {0}: لديك {1} قسيمة ستنتهي صلاحيتها خلال {2} يوم (بتاريخ {3}). يرجى استخدامها قبل الانتهاء.\nبطاقتك الرقمية: {4}",

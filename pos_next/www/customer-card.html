@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html dir="rtl" lang="ar">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+	<title>{% if authorized %}{{ customer_name }} - بطاقة القسائم{% else %}بطاقة العميل{% endif %}</title>
+	<script src="https://cdn.tailwindcss.com"></script>
+	<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800;900&display=swap" rel="stylesheet">
+	<style>
+		body { font-family: 'Cairo', sans-serif; background-color: #f1f5f9; }
+	</style>
+</head>
+<body class="min-h-screen flex flex-col justify-between text-slate-800 p-4">
+	<main class="max-w-md w-full mx-auto my-auto space-y-4">
+		{% if not authorized %}
+		<div class="bg-white rounded-2xl p-6 shadow-sm border border-red-200 text-center space-y-3">
+			<div class="w-12 h-12 rounded-full bg-red-50 text-red-600 flex items-center justify-center mx-auto text-2xl">⚠️</div>
+			<h1 class="text-lg font-extrabold text-slate-900">تعذر عرض البطاقة</h1>
+			<p class="text-sm text-slate-600">{{ error_message }}</p>
+		</div>
+		{% else %}
+		<!-- Main Digital Voucher & QR Card -->
+		<div class="bg-white rounded-3xl shadow-md border border-slate-200 overflow-hidden">
+			<!-- Header -->
+			<div class="bg-gradient-to-l from-blue-600 to-indigo-700 text-white px-5 py-4 text-center">
+				{% if company_name %}
+				<div class="text-xs font-bold text-blue-100 mb-1">{{ company_name }}</div>
+				{% endif %}
+				<h1 class="text-lg font-black">{{ customer_name }}</h1>
+				{% if branch_title %}
+				<div class="inline-block mt-1.5 bg-white/15 backdrop-blur-sm text-white text-xs font-bold px-3 py-1 rounded-full">
+					🏢 {{ branch_title }}
+				</div>
+				{% endif %}
+				{% if address_line1 or city %}
+				<div class="text-[11px] text-blue-100 mt-1">📍 {{ address_line1 }} {{ city }}</div>
+				{% endif %}
+			</div>
+
+			<!-- Voucher Balance Section -->
+			<div class="px-5 pt-5 pb-3">
+				<div class="bg-emerald-50 border border-emerald-200 rounded-2xl p-4 text-center">
+					<div class="text-xs font-bold text-emerald-700 mb-1">🎟️ رصيد القسائم المتاح</div>
+					<div class="text-4xl font-black text-emerald-800">{{ voucher_balance }}</div>
+					<div class="text-[11px] text-emerald-600 mt-1">وحدة / قسيمة صالحة للاستخدام</div>
+					{% if expiry_date %}
+					<div class="mt-2 inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold {% if days_remaining is not none and days_remaining <= 3 %}bg-amber-100 text-amber-800 border border-amber-300{% else %}bg-white text-emerald-700 border border-emerald-200{% endif %}">
+						⏳ ينتهي في {{ expiry_date }}
+						{% if days_remaining is not none %}
+						(متبقي {{ days_remaining }} يوم)
+						{% endif %}
+					</div>
+					{% elif voucher_balance > 0 %}
+					<div class="mt-2 inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold bg-white text-emerald-700 border border-emerald-200">
+						♾️ صلاحية مفتوحة (بدون مدة)
+					</div>
+					{% endif %}
+				</div>
+			</div>
+
+			<!-- QR Code Section -->
+			<div class="px-5 py-3 text-center">
+				<div class="bg-slate-50 border border-slate-200 rounded-2xl p-4 inline-flex flex-col items-center justify-center">
+					{% if qr_image %}
+					<img src="{{ qr_image }}" alt="Customer QR" class="w-52 h-52 object-contain bg-white p-2 rounded-xl border border-slate-100" />
+					{% endif %}
+				</div>
+				<p class="text-xs text-slate-500 mt-2.5 font-medium">أبرز رمز الـ QR للموظف عند الزيارة لاستخدام رصيدك</p>
+			</div>
+
+			<!-- Recent Transactions -->
+			{% if transactions and transactions|length > 0 %}
+			<div class="px-5 pb-5 pt-2 border-t border-slate-100">
+				<h2 class="text-xs font-extrabold text-slate-700 mb-2">آخر الحركات</h2>
+				<div class="space-y-1.5">
+					{% for t in transactions %}
+					<div class="flex items-center justify-between text-xs bg-slate-50 rounded-xl px-3 py-2 border border-slate-100">
+						<div class="flex items-center gap-2">
+							{% if t.txn_type == 'Redeem' %}
+							<span class="text-red-600 font-bold">استبدال</span>
+							{% elif t.txn_type == 'Expire' %}
+							<span class="text-slate-500 font-bold">منتهي</span>
+							{% elif t.txn_type == 'Cancel' %}
+							<span class="text-amber-600 font-bold">إلغاء</span>
+							{% else %}
+							<span class="text-emerald-600 font-bold">إضافة</span>
+							{% endif %}
+							<span class="text-slate-400 text-[11px]">{{ t.posting_date or '' }}</span>
+						</div>
+						<div class="font-extrabold {% if t.qty < 0 %}text-red-600{% else %}text-emerald-700{% endif %}" dir="ltr">
+							{% if t.qty > 0 %}+{% endif %}{{ t.qty | int }} (الرصيد: {{ t.balance_after | int }})
+						</div>
+					</div>
+					{% endfor %}
+				</div>
+			</div>
+			{% endif %}
+		</div>
+		{% endif %}
+	</main>
+
+	<footer class="text-center text-xs font-semibold text-slate-400 py-3">
+		Powered By Mubtkir ERP
+	</footer>
+</body>
+</html>

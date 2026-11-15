@@ -573,8 +573,8 @@ def resolve_customer_qr(qr_text, pos_profile=None):
     cust_param = None
     branch_param = None
 
-    # Pattern 1: MUBTKIR_BRANCH::{customer}::{branch}
-    if text.startswith("MUBTKIR_BRANCH::"):
+    # Pattern 1: MUBTKIR_BRANCH::{customer}::{branch} or MUBTKIR_CUSTOMER::{customer}
+    if text.startswith("MUBTKIR_BRANCH::") or text.startswith("MUBTKIR_CUSTOMER::"):
         parts = text.split("::")
         if len(parts) >= 2:
             cust_param = parts[1].strip()
@@ -582,7 +582,7 @@ def resolve_customer_qr(qr_text, pos_profile=None):
             branch_param = parts[2].strip()
 
     # Pattern 2: URL containing customer query parameter
-    elif "?" in text or text.startswith("http://") or text.startswith("https://") or "/gas-delivery" in text:
+    elif "?" in text or text.startswith("http://") or text.startswith("https://") or "/gas-delivery" in text or "/customer-card" in text:
         try:
             url_to_parse = text if text.startswith("http") else f"http://dummy.local/{text.lstrip('/')}"
             parsed = urllib.parse.urlparse(url_to_parse)
@@ -709,5 +709,140 @@ def resolve_customer_qr(qr_text, pos_profile=None):
         "has_branch_vouchers": bool(voucher_info.get("has_branch_vouchers")),
         "voucher_info": voucher_info,
     }
+
+
+def _get_card_hmac_secret():
+    """Return a site-scoped secret key for signing customer digital card URLs."""
+    return str(frappe.local.conf.get("encryption_key") or frappe.local.site or "mubtkir-erp-card")
+
+
+def generate_customer_card_token(customer, address_name=None):
+    """Generate a deterministic HMAC-SHA256 token for customer digital voucher card access."""
+    import hmac
+    import hashlib
+
+    payload = f"{customer or ''}::{address_name or ''}".encode("utf-8")
+    secret = _get_card_hmac_secret().encode("utf-8")
+    return hmac.new(secret, payload, hashlib.sha256).hexdigest()[:24]
+
+
+def verify_customer_card_token(customer, token, address_name=None):
+    """Verify the HMAC token for customer digital voucher card access."""
+    import hmac
+
+    if not customer or not token:
+        return False
+    expected = generate_customer_card_token(customer, address_name)
+    return hmac.compare_digest(str(expected), str(token))
+
+
+def get_customer_card_url(customer, address_name=None):
+    """Build the signed public URL for the customer digital voucher balance & QR page."""
+    import urllib.parse
+
+    site_url = (frappe.utils.get_url() or "").rstrip("/")
+    token = generate_customer_card_token(customer, address_name)
+    params = {"customer": customer or "", "token": token}
+    if address_name:
+        params["branch"] = address_name
+    return f"{site_url}/customer-card?{urllib.parse.urlencode(params)}"
+
+
+@frappe.whitelist()
+def get_customer_qr_card_data(customer, address_name=None):
+    """Return unified QR card data (customer/branch, company name, voucher balance, digital card URL)."""
+    if not customer or not frappe.db.exists("Customer", customer):
+        frappe.throw(_("Customer not found"))
+
+    company_name = (
+        frappe.defaults.get_user_default("Company")
+        or frappe.db.get_single_value("Global Defaults", "default_company")
+        or ""
+    )
+    customer_name = frappe.db.get_value("Customer", customer, "customer_name") or customer
+
+    branch_title = ""
+    address_line1 = ""
+    city = ""
+    phone = ""
+
+    if address_name and frappe.db.exists("Address", address_name):
+        addr = frappe.get_doc("Address", address_name)
+        branch_title = addr.address_title or addr.address_line1 or address_name
+        address_line1 = addr.address_line1 or ""
+        city = addr.city or ""
+        phone = addr.phone or ""
+        qr_text = f"MUBTKIR_BRANCH::{customer}::{address_name}"
+    else:
+        qr_text = f"MUBTKIR_CUSTOMER::{customer}"
+
+    qr_image = generate_branch_qr_data_url(qr_text)
+    card_url = get_customer_card_url(customer, address_name)
+
+    from pos_next.api.voucher import get_balance_value, get_balance_expiry_info
+    from pos_next.api.whatsapp_hook import get_recipient_mobile
+
+    voucher_balance = cint(get_balance_value(customer, branch=address_name))
+    expiry_info = get_balance_expiry_info(customer, branch=address_name)
+    mobile_no = get_recipient_mobile(customer, branch_address=address_name)
+
+    return {
+        "company_name": company_name,
+        "customer": customer,
+        "customer_name": customer_name,
+        "address_name": address_name or "",
+        "branch_title": branch_title,
+        "address_line1": address_line1,
+        "city": city,
+        "phone": phone,
+        "mobile_no": mobile_no or "",
+        "voucher_balance": voucher_balance,
+        "expiry_date": expiry_info.get("expiry_date"),
+        "days_remaining": expiry_info.get("days_remaining"),
+        "qr_data": qr_text,
+        "qr_image": qr_image,
+        "card_url": card_url,
+    }
+
+
+@frappe.whitelist()
+def send_customer_qr_whatsapp(customer, address_name=None, mobile_no=None):
+    """Send customer's digital voucher & QR card URL via WhatsApp."""
+    data = get_customer_qr_card_data(customer, address_name)
+    recipient = (mobile_no or data.get("mobile_no") or "").strip()
+
+    if not recipient:
+        frappe.throw(
+            _("No mobile number found for this customer/branch. Please update the mobile number first."),
+            title=_("Missing Mobile Number"),
+        )
+
+    company_line = f"*{data['company_name']}*\n" if data.get("company_name") else ""
+    branch_line = f"🏢 الفرع: {data['branch_title']}\n" if data.get("branch_title") else ""
+    balance_line = f"🎟️ رصيد القسائم المتاح: *{data['voucher_balance']}*\n"
+
+    message = (
+        f"{company_line}"
+        f"مرحباً {data['customer_name']}،\n"
+        f"{branch_line}"
+        f"{balance_line}"
+        f"📱 يمكنك عرض رمز الـ QR الخاص بك ومتابعة رصيد قسائمك مباشرة عبر الرابط التالي:\n"
+        f"{data['card_url']}\n\n"
+        f"أبرز هذا الرمز للموظف عند زيارتك لاستخدام رصيدك بسهولة."
+    )
+
+    sent = send_whatsapp(recipient, message)
+    if not sent:
+        frappe.throw(
+            _("Could not send WhatsApp message. Please verify WhatsApp integration settings."),
+            title=_("WhatsApp Failed"),
+        )
+
+    return {
+        "sent": True,
+        "mobile_no": recipient,
+        "card_url": data["card_url"],
+    }
+
 
 

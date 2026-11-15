@@ -14,7 +14,7 @@ physical item via a Stock Entry (Material Issue).
 
 import frappe
 from frappe import _
-from frappe.utils import cint, now_datetime
+from frappe.utils import add_days, cint, date_diff, getdate, now_datetime
 
 from pos_next.api.security import require_pos_profile_access, require_shift_access
 from pos_next.api.whatsapp_hook import notify_customer
@@ -140,6 +140,7 @@ def get_voucher_balance(customer, pos_profile=None, branch=None):
 
 	total_all = general_bal + sum(branch_balance_map.values())
 	total = (general_bal + branch_bal) if branch else total_all
+	expiry_info = get_balance_expiry_info(customer, branch=branch)
 	return {
 		"customer": customer,
 		"branch": branch,
@@ -149,7 +150,86 @@ def get_voucher_balance(customer, pos_profile=None, branch=None):
 		"has_branch_vouchers": has_branch_vouchers,
 		"branch_balance_map": branch_balance_map,
 		"enabled": enabled,
+		"expiry_date": expiry_info.get("expiry_date"),
+		"days_remaining": expiry_info.get("days_remaining"),
+		"is_expired": expiry_info.get("is_expired", False),
 	}
+
+
+def get_balance_expiry_info(customer, branch=None):
+	"""Return expiry_date (YYYY-MM-DD or None), days_remaining (int or None), and is_expired."""
+	if not customer or not frappe.db.has_column("Prepaid Voucher Balance", "expiry_date"):
+		return {"expiry_date": None, "days_remaining": None, "is_expired": False}
+
+	filters = {"customer": customer, "current_balance": (">", 0)}
+	if branch:
+		filters["branch"] = branch
+	rows = frappe.get_all(
+		"Prepaid Voucher Balance",
+		filters=filters,
+		fields=["expiry_date"],
+		order_by="expiry_date asc",
+		limit_page_length=10,
+	)
+	if not rows and branch:
+		rows = frappe.get_all(
+			"Prepaid Voucher Balance",
+			filters={"customer": customer, "is_general": 1, "current_balance": (">", 0)},
+			fields=["expiry_date"],
+			limit_page_length=5,
+		)
+
+	dates = [getdate(r.expiry_date) for r in rows if r.get("expiry_date")]
+	if not dates:
+		return {"expiry_date": None, "days_remaining": None, "is_expired": False}
+
+	nearest = min(dates)
+	days_left = date_diff(nearest, getdate())
+	return {
+		"expiry_date": str(nearest),
+		"days_remaining": days_left,
+		"is_expired": days_left < 0,
+	}
+
+
+def _expire_balance_doc(bal_doc, notify=True):
+	"""Zero out an expired Prepaid Voucher Balance and record an Expire transaction."""
+	if not bal_doc:
+		return 0
+	expired_qty = cint(bal_doc.current_balance)
+	if expired_qty <= 0:
+		if bal_doc.get("expiry_date"):
+			bal_doc.expiry_date = None
+			bal_doc.expiry_reminded = 0
+			bal_doc.save(ignore_permissions=True)
+		return 0
+
+	bal_doc.total_expired = cint(bal_doc.get("total_expired")) + expired_qty
+	bal_doc.expiry_date = None
+	bal_doc.expiry_reminded = 0
+	bal_doc.save(ignore_permissions=True)
+
+	_record_transaction(
+		bal_doc.customer,
+		-expired_qty,
+		"Expire",
+		cint(bal_doc.current_balance),
+		company=bal_doc.company,
+		branch=bal_doc.branch,
+		remarks=_("Voucher balance expired ({0} units)").format(expired_qty),
+	)
+
+	if notify:
+		try:
+			cust_name = frappe.db.get_value("Customer", bal_doc.customer, "customer_name") or bal_doc.customer
+			msg = _("Dear {0}, your voucher package ({1} remaining units) has expired and the balance is now 0.").format(
+				cust_name, expired_qty
+			)
+			notify_customer(bal_doc.customer, msg, branch_address=bal_doc.branch)
+		except Exception:
+			frappe.log_error(frappe.get_traceback(), "Voucher expiry notification failed")
+
+	return expired_qty
 
 
 def _record_transaction(customer, qty, txn_type, balance_after, company=None,
@@ -181,15 +261,30 @@ def _record_transaction(customer, qty, txn_type, balance_after, company=None,
 # Purchase side — hooked on Sales Invoice submit / cancel
 # ---------------------------------------------------------------------------
 
+def _voucher_purchase_info(doc):
+	"""Return (total_units, max_validity_days) for voucher items in a Sales Invoice."""
+	total = 0
+	max_validity_days = 0
+	has_validity_col = frappe.db.has_column("Item", "mu_voucher_validity_days")
+	fields = ["mu_is_voucher_item", "mu_voucher_units"]
+	if has_validity_col:
+		fields.append("mu_voucher_validity_days")
+
+	for row in doc.get("items", []):
+		vals = frappe.db.get_value("Item", row.item_code, fields) or (0, 0)
+		flag = cint(vals[0])
+		units = cint(vals[1])
+		validity = cint(vals[2]) if has_validity_col and len(vals) > 2 else 0
+		if flag and units:
+			total += units * cint(row.qty)
+			if validity > max_validity_days:
+				max_validity_days = validity
+	return total, max_validity_days
+
+
 def _voucher_units_in_invoice(doc):
 	"""Sum voucher units sold in this invoice: qty * Item.mu_voucher_units."""
-	total = 0
-	for row in doc.get("items", []):
-		flag, units = frappe.db.get_value(
-			"Item", row.item_code, ["mu_is_voucher_item", "mu_voucher_units"]
-		) or (0, 0)
-		if cint(flag) and cint(units):
-			total += cint(units) * cint(row.qty)
+	total, _ = _voucher_purchase_info(doc)
 	return total
 
 
@@ -197,7 +292,7 @@ def on_sales_invoice_submit(doc, method=None):
 	"""Credit the customer's voucher balance when a voucher book is sold."""
 	if not doc.get("customer"):
 		return
-	units = _voucher_units_in_invoice(doc)
+	units, validity_days = _voucher_purchase_info(doc)
 	if units <= 0:
 		return
 
@@ -207,8 +302,31 @@ def on_sales_invoice_submit(doc, method=None):
 		branch = doc.get("customer_address")
 
 	bal = _get_or_create_balance(doc.customer, doc.company, branch=branch)
+
+	# Clear any previously expired balance before crediting the new purchase
+	if (
+		cint(bal.current_balance) > 0
+		and bal.get("expiry_date")
+		and getdate(bal.expiry_date) < getdate()
+	):
+		_expire_balance_doc(bal, notify=False)
+
 	bal.total_purchased = cint(bal.total_purchased) + units
 	bal.low_balance_notified = 0  # topped up -> allow future low-balance alert
+
+	if frappe.db.has_column("Prepaid Voucher Balance", "expiry_date"):
+		if validity_days > 0:
+			new_expiry = add_days(getdate(), validity_days)
+			if bal.get("expiry_date") and getdate(bal.expiry_date) > new_expiry:
+				pass
+			else:
+				bal.expiry_date = new_expiry
+			bal.expiry_reminded = 0
+		else:
+			if not bal.get("expiry_date") or cint(bal.current_balance) <= 0:
+				bal.expiry_date = None
+				bal.expiry_reminded = 0
+
 	bal.save(ignore_permissions=True)
 	_record_transaction(
 		doc.customer, units, "Purchase", cint(bal.current_balance),
@@ -219,6 +337,28 @@ def on_sales_invoice_submit(doc, method=None):
 			_("Dedicated to branch: {0}").format(branch) if branch else _("General")
 		),
 	)
+
+	# Best-effort WhatsApp notification with digital card link on purchase
+	try:
+		whatsapp_on = 1
+		if doc.get("pos_profile"):
+			cfg = _voucher_settings(doc.get("pos_profile"))
+			whatsapp_on = cint(cfg.get("mu_voucher_whatsapp_enabled"))
+		if whatsapp_on:
+			from pos_next.operations.customer_branches import get_customer_card_url
+			cust_name = frappe.db.get_value("Customer", doc.customer, "customer_name") or doc.customer
+			card_url = get_customer_card_url(doc.customer, branch)
+			expiry_text = (
+				_(" Valid until: {0}.").format(bal.expiry_date)
+				if bal.get("expiry_date")
+				else ""
+			)
+			msg = _(
+				"Dear {0}, {1} vouchers have been added to your account. Current balance: {2} vouchers.{3}\nDigital QR Card: {4}"
+			).format(cust_name, units, cint(bal.current_balance), expiry_text, card_url)
+			notify_customer(doc.customer, msg, branch_address=branch)
+	except Exception:
+		frappe.log_error(frappe.get_traceback(), "Voucher purchase WhatsApp notify failed")
 
 
 def on_sales_invoice_cancel(doc, method=None):
@@ -398,11 +538,23 @@ def redeem_voucher(pos_profile, customer, pos_opening_shift, qty=1, otp_code=Non
 		_lock_voucher_balance(gen_name)
 		gen_bal_doc = frappe.get_doc("Prepaid Voucher Balance", gen_name)
 
+	# Auto-expire any expired balance before checking availability
+	expired_any = False
+	today = getdate()
+	if branch_bal_doc and cint(branch_bal_doc.current_balance) > 0 and branch_bal_doc.get("expiry_date") and getdate(branch_bal_doc.expiry_date) < today:
+		_expire_balance_doc(branch_bal_doc, notify=False)
+		expired_any = True
+	if gen_bal_doc and cint(gen_bal_doc.current_balance) > 0 and gen_bal_doc.get("expiry_date") and getdate(gen_bal_doc.expiry_date) < today:
+		_expire_balance_doc(gen_bal_doc, notify=False)
+		expired_any = True
+
 	branch_avail = cint(branch_bal_doc.current_balance) if branch_bal_doc else 0
 	gen_avail = cint(gen_bal_doc.current_balance) if gen_bal_doc else 0
 	available = branch_avail + gen_avail
 
 	if available <= 0:
+		if expired_any:
+			frappe.throw(_("This customer's voucher balance has expired."))
 		if branch_address and has_branch_vouchers:
 			frappe.throw(_("This customer has no remaining voucher units for this branch."))
 		frappe.throw(_("This customer has no remaining voucher units."))
@@ -523,3 +675,84 @@ def redeem_voucher(pos_profile, customer, pos_opening_shift, qty=1, otp_code=Non
 
 	return {"customer": customer, "balance": remaining, "quantity": qty,
 		"stock_entry": stock_entry, "low_balance_alert": low_alert}
+
+
+# ---------------------------------------------------------------------------
+# Daily expiry & pre-expiry reminder scheduler
+# ---------------------------------------------------------------------------
+
+def _get_expiry_reminder_days():
+	"""Return configured reminder days across enabled POS Profiles (default 3)."""
+	if frappe.db.has_column("POS Profile", "mu_voucher_expiry_reminder_days"):
+		rows = frappe.get_all(
+			"POS Profile",
+			filters={"mu_voucher_enabled": 1},
+			fields=["mu_voucher_expiry_reminder_days"],
+		)
+		vals = [cint(r.mu_voucher_expiry_reminder_days) for r in rows if cint(r.mu_voucher_expiry_reminder_days) > 0]
+		if vals:
+			return max(vals)
+	return 3
+
+
+@frappe.whitelist()
+def process_voucher_expiries():
+	"""Daily job:
+	1. Zero out any Prepaid Voucher Balance past its expiry_date (records Expire txn).
+	2. Send a WhatsApp reminder 3 days (configurable) before expiry_date.
+	"""
+	if not frappe.db.has_column("Prepaid Voucher Balance", "expiry_date"):
+		return {"expired": 0, "reminded": 0}
+
+	today = getdate()
+	expired_count = 0
+	reminded_count = 0
+
+	# 1. Auto-expire past-due balances
+	expired_rows = frappe.get_all(
+		"Prepaid Voucher Balance",
+		filters={
+			"current_balance": (">", 0),
+			"expiry_date": ["<", today],
+		},
+		pluck="name",
+	)
+	for name in expired_rows:
+		try:
+			_lock_voucher_balance(name)
+			bal_doc = frappe.get_doc("Prepaid Voucher Balance", name)
+			if cint(bal_doc.current_balance) > 0 and bal_doc.expiry_date and getdate(bal_doc.expiry_date) < today:
+				_expire_balance_doc(bal_doc, notify=True)
+				expired_count += 1
+		except Exception:
+			frappe.log_error(frappe.get_traceback(), f"Voucher auto-expire failed for {name}")
+
+	# 2. Send pre-expiry reminders (default 3 days before expiry)
+	reminder_days = _get_expiry_reminder_days()
+	if reminder_days > 0:
+		cutoff_date = add_days(today, reminder_days)
+		due_rows = frappe.get_all(
+			"Prepaid Voucher Balance",
+			filters={
+				"current_balance": (">", 0),
+				"expiry_date": ["between", [today, cutoff_date]],
+				"expiry_reminded": 0,
+			},
+			fields=["name", "customer", "branch", "current_balance", "expiry_date"],
+		)
+		for row in due_rows:
+			try:
+				from pos_next.operations.customer_branches import get_customer_card_url
+				cust_name = frappe.db.get_value("Customer", row.customer, "customer_name") or row.customer
+				days_left = max(0, date_diff(getdate(row.expiry_date), today))
+				card_url = get_customer_card_url(row.customer, row.branch)
+				msg = _(
+					"Reminder {0}: You have {1} voucher units expiring in {2} day(s) (on {3}). Use them before expiry.\nDigital QR Card: {4}"
+				).format(cust_name, cint(row.current_balance), days_left, row.expiry_date, card_url)
+				notify_customer(row.customer, msg, branch_address=row.branch)
+				frappe.db.set_value("Prepaid Voucher Balance", row.name, "expiry_reminded", 1)
+				reminded_count += 1
+			except Exception:
+				frappe.log_error(frappe.get_traceback(), f"Voucher expiry reminder failed for {row.name}")
+
+	return {"expired": expired_count, "reminded": reminded_count}
