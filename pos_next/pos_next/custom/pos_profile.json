@@ -3581,7 +3581,8 @@
    "name": "POS Profile-hide_unavailable_items-hidden",
    "property": "hidden",
    "property_type": "Check",
-   "value": "1"
+   "value": "1",
+   "doc_type": "POS Profile"
   },
   {
    "doc_or_field": "DocField",
@@ -3593,7 +3594,8 @@
    "name": "POS Profile-print_receipt_on_order_complete-hidden",
    "property": "hidden",
    "property_type": "Check",
-   "value": "1"
+   "value": "1",
+   "doc_type": "POS Profile"
   }
  ],
  "sync_on_migrate": 1
