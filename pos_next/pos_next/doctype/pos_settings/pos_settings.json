@@ -5,30 +5,34 @@
  "engine": "InnoDB",
  "field_order": [
   "pos_profile",
+  "column_break_top_1",
   "enabled",
-  "column_break_top",
+  "column_break_top_2",
   "allowed_locales",
-  "section_break_general",
+  "section_break_operations",
   "allow_credit_sale",
   "allow_customer_credit_payment",
   "allow_return",
   "allow_partial_payment",
   "use_exact_amount",
+  "column_break_operations",
   "enable_sales_persons",
-  "column_break_general",
-  "use_limit_search",
-  "search_limit",
   "input_qty",
-  "allow_negative_stock",
-  "enable_auto_stock_sync",
-  "stock_sync_interval",
-  "section_break_wallet",
-  "enable_loyalty_program",
-  "default_loyalty_program",
-  "wallet_account",
-  "column_break_wallet",
-  "auto_create_wallet",
-  "loyalty_to_wallet",
+  "allow_sales_order",
+  "allow_select_sales_order",
+  "create_only_sales_order",
+  "column_break_ops_2",
+  "direct_credit_sales_order",
+  "allow_return_without_invoice",
+  "allow_free_batch_return",
+  "allow_customer_purchase_order",
+  "allow_delete_draft_invoices",
+  "column_break_ops_3",
+  "allow_delete_offline_invoice",
+  "allow_change_posting_date",
+  "mu_hide_delivery_date",
+  "mu_hide_customer_debt",
+  "mu_enable_order_status",
   "section_break_display",
   "default_card_view",
   "display_item_code",
@@ -36,42 +40,27 @@
   "column_break_display",
   "display_discount_percentage",
   "display_discount_amount",
-  "column_break_prod_2",
-  "show_customer_balance",
   "hide_expected_amount",
+  "column_break_prod_2",
+  "use_limit_search",
+  "search_limit",
   "column_break_prod_3",
   "hide_unavailable_items",
   "return_validity_days",
-  "section_break_barcode",
-  "barcode_rules",
-  "section_break_operations",
-  "allow_sales_order",
-  "allow_select_sales_order",
-  "create_only_sales_order",
-  "direct_credit_sales_order",
-  "mu_hide_delivery_date",
-  "mu_hide_customer_debt",
-  "column_break_operations",
-  "allow_return_without_invoice",
-  "allow_free_batch_return",
-  "column_break_ops_2",
-  "allow_customer_purchase_order",
-  "allow_delete_draft_invoices",
-  "column_break_ops_3",
-  "allow_delete_offline_invoice",
-  "allow_change_posting_date",
-  "mu_enable_order_status",
-  "mu_enable_gas_mode",
-  "section_break_pricing",
-  "decimal_precision",
-  "column_break_pricing",
-  "tax_inclusive",
   "section_break_customer",
   "default_customer_group",
   "column_break_customer",
   "allow_duplicate_customer_names",
   "column_break_cust_2",
   "fetch_coupon",
+  "column_break_cust_3",
+  "show_customer_balance",
+  "section_break_pricing",
+  "decimal_precision",
+  "column_break_pricing",
+  "tax_inclusive",
+  "column_break_pricing_2",
+  "column_break_pricing_3",
   "section_break_printing",
   "allow_print_last_invoice",
   "column_break_printing",
@@ -80,15 +69,50 @@
   "silent_print",
   "column_break_print_3",
   "print_receipt_on_order_complete",
+  "section_break_special_apps",
+  "mu_enable_gas_mode",
+  "mu_voucher_enabled",
+  "column_break_special_apps_1",
+  "mu_voucher_redeem_item",
+  "mu_voucher_warehouse",
+  "column_break_special_apps_2",
+  "mu_voucher_low_balance_threshold",
+  "mu_voucher_daily_limit",
+  "mu_voucher_expiry_reminder_days",
+  "column_break_special_apps_3",
+  "mu_voucher_whatsapp_enabled",
+  "mu_voucher_otp_enabled",
+  "section_break_wallet",
+  "enable_loyalty_program",
+  "default_loyalty_program",
+  "column_break_wallet",
+  "wallet_account",
+  "column_break_wallet_2",
+  "auto_create_wallet",
+  "column_break_wallet_3",
+  "loyalty_to_wallet",
+  "section_break_barcode",
+  "barcode_rules",
   "section_break_delivery",
   "use_delivery_charges",
   "column_break_delivery",
   "auto_set_delivery_charges",
+  "column_break_delivery_2",
+  "column_break_delivery_3",
   "section_break_security",
   "enable_session_lock",
-  "allow_submissions_in_background_job",
   "column_break_security",
-  "session_lock_timeout"
+  "session_lock_timeout",
+  "column_break_security_2",
+  "allow_submissions_in_background_job",
+  "column_break_security_3",
+  "section_break_stock",
+  "allow_negative_stock",
+  "column_break_stock_1",
+  "enable_auto_stock_sync",
+  "column_break_stock_2",
+  "stock_sync_interval",
+  "column_break_stock_3"
  ],
  "fields": [
   {
@@ -101,6 +125,10 @@
    "unique": 1
   },
   {
+   "fieldname": "column_break_top_1",
+   "fieldtype": "Column Break"
+  },
+  {
    "default": "1",
    "description": "Enable custom POS settings for this profile",
    "fieldname": "enabled",
@@ -108,7 +136,7 @@
    "label": "Enabled"
   },
   {
-   "fieldname": "column_break_top",
+   "fieldname": "column_break_top_2",
    "fieldtype": "Column Break"
   },
   {
@@ -119,10 +147,10 @@
    "options": "POS Allowed Locale"
   },
   {
-   "fieldname": "section_break_general",
+   "collapsible": 1,
+   "fieldname": "section_break_operations",
    "fieldtype": "Section Break",
-   "label": "General Settings",
-   "collapsible": 1
+   "label": "Operations"
   },
   {
    "default": "0",
@@ -150,7 +178,8 @@
    "description": "Enable partial payment for invoices",
    "fieldname": "allow_partial_payment",
    "fieldtype": "Check",
-   "label": "Allow Partial Payment"
+   "label": "Allow Partial Payment",
+   "hidden": 1
   },
   {
    "default": "0",
@@ -158,6 +187,10 @@
    "fieldtype": "Check",
    "label": "Use Exact Amount for Non-Cash",
    "description": "When enabled, non-cash payments (card, bank transfer) require exact amount. Cash payments can still have change. Cannot be used with Credit Sale or Partial Payment."
+  },
+  {
+   "fieldname": "column_break_operations",
+   "fieldtype": "Column Break"
   },
   {
    "default": "Disabled",
@@ -168,24 +201,6 @@
    "options": "Disabled\nSingle\nMultiple"
   },
   {
-   "fieldname": "column_break_general",
-   "fieldtype": "Column Break"
-  },
-  {
-   "default": "0",
-   "description": "Limit search results for performance",
-   "fieldname": "use_limit_search",
-   "fieldtype": "Check",
-   "label": "Use Limit Search"
-  },
-  {
-   "default": "1000",
-   "description": "Maximum number of search results",
-   "fieldname": "search_limit",
-   "fieldtype": "Int",
-   "label": "Search Limit Number"
-  },
-  {
    "default": "0",
    "description": "Show quantity input field",
    "fieldname": "input_qty",
@@ -194,79 +209,101 @@
   },
   {
    "default": "0",
-   "description": "Read-only mirror of ERPNext Stock Settings > Allow Negative Stock. Item-level exceptions are controlled on the Item record.",
-   "fieldname": "allow_negative_stock",
+   "description": "Enable sales order creation",
+   "fieldname": "allow_sales_order",
    "fieldtype": "Check",
-   "label": "Allow Negative Stock",
-   "read_only": 1
+   "label": "Allow Create Sales Order"
   },
   {
    "default": "0",
-   "description": "Periodically sync stock quantities from the server in the background on cashier devices",
-   "fieldname": "enable_auto_stock_sync",
+   "description": "Select from existing sales orders",
+   "fieldname": "allow_select_sales_order",
    "fieldtype": "Check",
-   "label": "Enable Automatic Stock Sync"
-  },
-  {
-   "default": "60",
-   "depends_on": "enable_auto_stock_sync",
-   "description": "How often cashier devices check the server for stock updates (minimum 10 seconds)",
-   "fieldname": "stock_sync_interval",
-   "fieldtype": "Int",
-   "label": "Stock Sync Interval (seconds)"
-  },
-  {
-   "fieldname": "section_break_wallet",
-   "fieldtype": "Section Break",
-   "label": "Wallet & Loyalty",
-   "collapsible": 1
+   "label": "Allow Select Sales Order"
   },
   {
    "default": "0",
-   "description": "Enable loyalty program features for this POS profile",
-   "fieldname": "enable_loyalty_program",
+   "description": "Don't create invoices, only orders",
+   "fieldname": "create_only_sales_order",
    "fieldtype": "Check",
-   "label": "Enable Loyalty Program"
+   "label": "Create Only Sales Order"
   },
   {
-   "depends_on": "enable_loyalty_program",
-   "description": "Loyalty program for this POS profile",
-   "fieldname": "default_loyalty_program",
-   "fieldtype": "Link",
-   "label": "Loyalty Program",
-   "mandatory_depends_on": "enable_loyalty_program",
-   "options": "Loyalty Program"
-  },
-  {
-   "depends_on": "enable_loyalty_program",
-   "description": "Receivable account for customer wallets",
-   "fieldname": "wallet_account",
-   "fieldtype": "Link",
-   "label": "Wallet Account",
-   "mandatory_depends_on": "enable_loyalty_program",
-   "options": "Account"
-  },
-  {
-   "fieldname": "column_break_wallet",
+   "fieldname": "column_break_ops_2",
    "fieldtype": "Column Break"
   },
   {
-   "default": "1",
-   "depends_on": "enable_loyalty_program",
-   "description": "Automatically create wallet for new customers (always enabled when loyalty program is active)",
-   "fieldname": "auto_create_wallet",
+   "default": "0",
+   "description": "Submit Sales Orders directly on credit without opening payment dialog",
+   "fieldname": "direct_credit_sales_order",
    "fieldtype": "Check",
-   "label": "Auto Create Wallet",
-   "read_only_depends_on": "enable_loyalty_program"
+   "label": "Direct Credit for Sales Orders"
+  },
+  {
+   "default": "0",
+   "description": "Process returns without invoice reference",
+   "fieldname": "allow_return_without_invoice",
+   "fieldtype": "Check",
+   "label": "Allow Return Without Invoice"
+  },
+  {
+   "default": "0",
+   "fieldname": "allow_free_batch_return",
+   "fieldtype": "Check",
+   "label": "Allow Free Batch Return"
+  },
+  {
+   "default": "0",
+   "description": "Accept customer purchase orders",
+   "fieldname": "allow_customer_purchase_order",
+   "fieldtype": "Check",
+   "label": "Allow Customer Purchase Order"
+  },
+  {
+   "default": "0",
+   "description": "Allow deletion of draft (unsubmitted) invoices during shift closing",
+   "fieldname": "allow_delete_draft_invoices",
+   "fieldtype": "Check",
+   "label": "Allow Delete Draft Invoices"
+  },
+  {
+   "fieldname": "column_break_ops_3",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "0",
+   "description": "Delete offline saved invoices",
+   "fieldname": "allow_delete_offline_invoice",
+   "fieldtype": "Check",
+   "label": "Allow Delete Offline Invoice"
+  },
+  {
+   "default": "0",
+   "description": "Modify invoice posting date",
+   "fieldname": "allow_change_posting_date",
+   "fieldtype": "Check",
+   "label": "Allow Change Posting Date"
+  },
+  {
+   "default": "0",
+   "description": "Hide Delivery Date field in the checkout dialog",
+   "fieldname": "mu_hide_delivery_date",
+   "fieldtype": "Check",
+   "label": "Hide Delivery Date"
+  },
+  {
+   "default": "0",
+   "description": "Hide Customer Debt / Outstanding Balance in the checkout dialog",
+   "fieldname": "mu_hide_customer_debt",
+   "fieldtype": "Check",
+   "label": "Hide Customer Debt"
   },
   {
    "default": "1",
-   "depends_on": "enable_loyalty_program",
-   "description": "Automatically convert earned loyalty points to wallet balance. Uses Conversion Factor from Loyalty Program (always enabled when loyalty program is active)",
-   "fieldname": "loyalty_to_wallet",
+   "description": "Show the order-status selector on invoice cards",
+   "fieldname": "mu_enable_order_status",
    "fieldtype": "Check",
-   "label": "Convert Loyalty Points to Wallet",
-   "read_only_depends_on": "enable_loyalty_program"
+   "label": "Enable Order Status"
   },
   {
    "collapsible": 1,
@@ -314,22 +351,29 @@
    "label": "Display Discount Amount"
   },
   {
-   "fieldname": "column_break_prod_2",
-   "fieldtype": "Column Break"
-  },
-  {
-   "default": "0",
-   "description": "Display customer balance on screen",
-   "fieldname": "show_customer_balance",
-   "fieldtype": "Check",
-   "label": "Show Customer Balance"
-  },
-  {
    "default": "0",
    "description": "Hide expected cash amount in closing",
    "fieldname": "hide_expected_amount",
    "fieldtype": "Check",
    "label": "Hide Expected Amount"
+  },
+  {
+   "fieldname": "column_break_prod_2",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "0",
+   "description": "Limit search results for performance",
+   "fieldname": "use_limit_search",
+   "fieldtype": "Check",
+   "label": "Use Limit Search"
+  },
+  {
+   "default": "1000",
+   "description": "Maximum number of search results",
+   "fieldname": "search_limit",
+   "fieldtype": "Int",
+   "label": "Search Limit Number"
   },
   {
    "fieldname": "column_break_prod_3",
@@ -352,130 +396,50 @@
   },
   {
    "collapsible": 1,
-   "fieldname": "section_break_barcode",
+   "fieldname": "section_break_customer",
    "fieldtype": "Section Break",
-   "label": "Barcode"
+   "label": "Customer Settings"
   },
   {
-   "fieldname": "barcode_rules",
-   "fieldtype": "Table",
-   "label": "Barcode Rules",
-   "options": "POS Barcode Rules"
+   "description": "Default customer group preselected when creating a new customer from POS. The cashier can still change it before saving.",
+   "fieldname": "default_customer_group",
+   "fieldtype": "Link",
+   "label": "Default Customer Group",
+   "options": "Customer Group",
+   "hidden": 1
   },
   {
-   "collapsible": 1,
-   "fieldname": "section_break_operations",
-   "fieldtype": "Section Break",
-   "label": "Operations"
-  },
-  {
-   "default": "0",
-   "description": "Enable sales order creation",
-   "fieldname": "allow_sales_order",
-   "fieldtype": "Check",
-   "label": "Allow Create Sales Order"
-  },
-  {
-   "default": "0",
-   "description": "Select from existing sales orders",
-   "fieldname": "allow_select_sales_order",
-   "fieldtype": "Check",
-   "label": "Allow Select Sales Order"
-  },
-  {
-   "default": "0",
-   "description": "Don't create invoices, only orders",
-   "fieldname": "create_only_sales_order",
-   "fieldtype": "Check",
-   "label": "Create Only Sales Order"
-  },
-  {
-   "default": "0",
-   "description": "Submit Sales Orders directly on credit without opening payment dialog",
-   "fieldname": "direct_credit_sales_order",
-   "fieldtype": "Check",
-   "label": "Direct Credit for Sales Orders"
-  },
-  {
-   "default": "0",
-   "description": "Hide Delivery Date field in the checkout dialog",
-   "fieldname": "mu_hide_delivery_date",
-   "fieldtype": "Check",
-   "label": "Hide Delivery Date"
-  },
-  {
-   "default": "0",
-   "description": "Hide Customer Debt / Outstanding Balance in the checkout dialog",
-   "fieldname": "mu_hide_customer_debt",
-   "fieldtype": "Check",
-   "label": "Hide Customer Debt"
-  },
-  {
-   "fieldname": "column_break_operations",
+   "fieldname": "column_break_customer",
    "fieldtype": "Column Break"
   },
   {
    "default": "0",
-   "description": "Process returns without invoice reference",
-   "fieldname": "allow_return_without_invoice",
+   "description": "Permit duplicate customer names",
+   "fieldname": "allow_duplicate_customer_names",
    "fieldtype": "Check",
-   "label": "Allow Return Without Invoice"
+   "label": "Allow Duplicate Customer Names"
   },
   {
-   "default": "0",
-   "fieldname": "allow_free_batch_return",
-   "fieldtype": "Check",
-   "label": "Allow Free Batch Return"
-  },
-  {
-   "fieldname": "column_break_ops_2",
+   "fieldname": "column_break_cust_2",
    "fieldtype": "Column Break"
   },
   {
    "default": "0",
-   "description": "Accept customer purchase orders",
-   "fieldname": "allow_customer_purchase_order",
+   "description": "Automatically apply eligible coupons",
+   "fieldname": "fetch_coupon",
    "fieldtype": "Check",
-   "label": "Allow Customer Purchase Order"
+   "label": "Auto Fetch Coupon Gifts"
   },
   {
-   "default": "0",
-   "description": "Allow deletion of draft (unsubmitted) invoices during shift closing",
-   "fieldname": "allow_delete_draft_invoices",
-   "fieldtype": "Check",
-   "label": "Allow Delete Draft Invoices"
-  },
-  {
-   "fieldname": "column_break_ops_3",
+   "fieldname": "column_break_cust_3",
    "fieldtype": "Column Break"
   },
   {
    "default": "0",
-   "description": "Delete offline saved invoices",
-   "fieldname": "allow_delete_offline_invoice",
+   "description": "Display customer balance on screen",
+   "fieldname": "show_customer_balance",
    "fieldtype": "Check",
-   "label": "Allow Delete Offline Invoice"
-  },
-  {
-   "default": "0",
-   "description": "Modify invoice posting date",
-   "fieldname": "allow_change_posting_date",
-   "fieldtype": "Check",
-   "label": "Allow Change Posting Date"
-  },
-  {
-   "default": "1",
-   "description": "Show the order-status selector on invoice cards",
-   "fieldname": "mu_enable_order_status",
-   "fieldtype": "Check",
-   "label": "Enable Order Status"
-  },
-  {
-   "default": "0",
-   "description": "Enable Gas Distribution Mode (Customer QR scan, vouchers & credit deliveries)",
-   "fieldname": "mu_enable_gas_mode",
-   "fieldtype": "Check",
-   "label": "Enable Gas Mode"
+   "label": "Show Customer Balance"
   },
   {
    "collapsible": 1,
@@ -503,39 +467,12 @@
    "label": "Tax Inclusive"
   },
   {
-   "collapsible": 1,
-   "fieldname": "section_break_customer",
-   "fieldtype": "Section Break",
-   "label": "Customer Settings"
-  },
-  {
-   "description": "Default customer group preselected when creating a new customer from POS. The cashier can still change it before saving.",
-   "fieldname": "default_customer_group",
-   "fieldtype": "Link",
-   "label": "Default Customer Group",
-   "options": "Customer Group"
-  },
-  {
-   "fieldname": "column_break_customer",
+   "fieldname": "column_break_pricing_2",
    "fieldtype": "Column Break"
   },
   {
-   "default": "0",
-   "description": "Permit duplicate customer names",
-   "fieldname": "allow_duplicate_customer_names",
-   "fieldtype": "Check",
-   "label": "Allow Duplicate Customer Names"
-  },
-  {
-   "fieldname": "column_break_cust_2",
+   "fieldname": "column_break_pricing_3",
    "fieldtype": "Column Break"
-  },
-  {
-   "default": "0",
-   "description": "Automatically apply eligible coupons",
-   "fieldname": "fetch_coupon",
-   "fieldtype": "Check",
-   "label": "Auto Fetch Coupon Gifts"
   },
   {
    "collapsible": 1,
@@ -584,6 +521,169 @@
    "label": "Print Receipt on Order Completion"
   },
   {
+   "fieldname": "section_break_special_apps",
+   "fieldtype": "Section Break",
+   "label": "Special Apps"
+  },
+  {
+   "default": "0",
+   "description": "Enable Gas Distribution Mode (Customer QR scan, vouchers & credit deliveries)",
+   "fieldname": "mu_enable_gas_mode",
+   "fieldtype": "Check",
+   "label": "Enable Gas Mode"
+  },
+  {
+   "default": "0",
+   "description": "Allow selling and redeeming prepaid voucher packages for this POS profile.",
+   "fieldname": "mu_voucher_enabled",
+   "fieldtype": "Check",
+   "label": "Enable Voucher System"
+  },
+  {
+   "fieldname": "column_break_special_apps_1",
+   "fieldtype": "Column Break"
+  },
+  {
+   "depends_on": "eval:doc.mu_voucher_enabled",
+   "description": "Item issued from stock on each voucher redemption (or service item).",
+   "fieldname": "mu_voucher_redeem_item",
+   "fieldtype": "Link",
+   "label": "Redemption Item",
+   "options": "Item"
+  },
+  {
+   "depends_on": "eval:doc.mu_voucher_enabled",
+   "description": "Warehouse from which the redemption item is issued.",
+   "fieldname": "mu_voucher_warehouse",
+   "fieldtype": "Link",
+   "label": "Redemption Warehouse",
+   "options": "Warehouse"
+  },
+  {
+   "fieldname": "column_break_special_apps_2",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "5",
+   "depends_on": "eval:doc.mu_voucher_enabled",
+   "description": "Send a WhatsApp low-balance alert when remaining units reach this threshold or less.",
+   "fieldname": "mu_voucher_low_balance_threshold",
+   "fieldtype": "Int",
+   "label": "Low Balance Alert Threshold",
+   "non_negative": 1
+  },
+  {
+   "default": "0",
+   "depends_on": "eval:doc.mu_voucher_enabled",
+   "description": "Maximum voucher units a customer can redeem per day (0 = unlimited).",
+   "fieldname": "mu_voucher_daily_limit",
+   "fieldtype": "Int",
+   "label": "Max Daily Redemptions per Customer",
+   "non_negative": 1
+  },
+  {
+   "default": "3",
+   "depends_on": "eval:doc.mu_voucher_enabled",
+   "description": "Number of days before voucher expiry to send a WhatsApp reminder (default: 3).",
+   "fieldname": "mu_voucher_expiry_reminder_days",
+   "fieldtype": "Int",
+   "label": "Voucher Expiry Reminder Days",
+   "non_negative": 1
+  },
+  {
+   "fieldname": "column_break_special_apps_3",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "1",
+   "depends_on": "eval:doc.mu_voucher_enabled",
+   "description": "Send WhatsApp notifications to customers on voucher purchase, redemption, and low balance.",
+   "fieldname": "mu_voucher_whatsapp_enabled",
+   "fieldtype": "Check",
+   "label": "Send Voucher WhatsApp Notifications"
+  },
+  {
+   "default": "0",
+   "depends_on": "eval:doc.mu_voucher_enabled",
+   "description": "Require a WhatsApp OTP verification code from the customer before redeeming vouchers.",
+   "fieldname": "mu_voucher_otp_enabled",
+   "fieldtype": "Check",
+   "label": "Require Customer OTP for Voucher Redemption"
+  },
+  {
+   "fieldname": "section_break_wallet",
+   "fieldtype": "Section Break",
+   "label": "Wallet & Loyalty",
+   "collapsible": 1
+  },
+  {
+   "default": "0",
+   "description": "Enable loyalty program features for this POS profile",
+   "fieldname": "enable_loyalty_program",
+   "fieldtype": "Check",
+   "label": "Enable Loyalty Program"
+  },
+  {
+   "depends_on": "enable_loyalty_program",
+   "description": "Loyalty program for this POS profile",
+   "fieldname": "default_loyalty_program",
+   "fieldtype": "Link",
+   "label": "Loyalty Program",
+   "mandatory_depends_on": "enable_loyalty_program",
+   "options": "Loyalty Program"
+  },
+  {
+   "fieldname": "column_break_wallet",
+   "fieldtype": "Column Break"
+  },
+  {
+   "depends_on": "enable_loyalty_program",
+   "description": "Receivable account for customer wallets",
+   "fieldname": "wallet_account",
+   "fieldtype": "Link",
+   "label": "Wallet Account",
+   "mandatory_depends_on": "enable_loyalty_program",
+   "options": "Account"
+  },
+  {
+   "fieldname": "column_break_wallet_2",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "1",
+   "depends_on": "enable_loyalty_program",
+   "description": "Automatically create wallet for new customers (always enabled when loyalty program is active)",
+   "fieldname": "auto_create_wallet",
+   "fieldtype": "Check",
+   "label": "Auto Create Wallet",
+   "read_only_depends_on": "enable_loyalty_program"
+  },
+  {
+   "fieldname": "column_break_wallet_3",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "1",
+   "depends_on": "enable_loyalty_program",
+   "description": "Automatically convert earned loyalty points to wallet balance. Uses Conversion Factor from Loyalty Program (always enabled when loyalty program is active)",
+   "fieldname": "loyalty_to_wallet",
+   "fieldtype": "Check",
+   "label": "Convert Loyalty Points to Wallet",
+   "read_only_depends_on": "enable_loyalty_program"
+  },
+  {
+   "collapsible": 1,
+   "fieldname": "section_break_barcode",
+   "fieldtype": "Section Break",
+   "label": "Barcode"
+  },
+  {
+   "fieldname": "barcode_rules",
+   "fieldtype": "Table",
+   "label": "Barcode Rules",
+   "options": "POS Barcode Rules"
+  },
+  {
    "collapsible": 1,
    "fieldname": "section_break_delivery",
    "fieldtype": "Section Break",
@@ -608,6 +708,14 @@
    "label": "Auto Set Delivery Charges"
   },
   {
+   "fieldname": "column_break_delivery_2",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "column_break_delivery_3",
+   "fieldtype": "Column Break"
+  },
+  {
    "collapsible": 1,
    "fieldname": "section_break_security",
    "fieldtype": "Section Break",
@@ -619,13 +727,6 @@
    "fieldname": "enable_session_lock",
    "fieldtype": "Check",
    "label": "Enable Session Lock"
-  },
-  {
-   "default": "0",
-   "description": "Submit invoices in background",
-   "fieldname": "allow_submissions_in_background_job",
-   "fieldtype": "Check",
-   "label": "Allow Submissions in Background Job"
   },
   {
    "fieldname": "column_break_security",
@@ -640,391 +741,59 @@
    "label": "Session Lock Timeout (minutes)"
   },
   {
-   "fieldname": "section_break_customer_display",
-   "fieldtype": "Section Break",
-   "label": "Customer Display"
-  },
-  {
-   "default": "0",
-   "fieldname": "customer_display_enabled",
-   "fieldtype": "Check",
-   "label": "Enable Customer Display"
-  },
-  {
-   "default": "Brand & More",
-   "depends_on": "eval:doc.customer_display_enabled",
-   "fieldname": "customer_display_company_name",
-   "fieldtype": "Data",
-   "label": "Company / Display Name"
-  },
-  {
-   "default": "Welcome",
-   "depends_on": "eval:doc.customer_display_enabled",
-   "fieldname": "customer_display_welcome_text",
-   "fieldtype": "Data",
-   "label": "Welcome Text"
-  },
-  {
-   "depends_on": "eval:doc.customer_display_enabled",
-   "fieldname": "customer_display_pos_location",
-   "fieldtype": "Data",
-   "label": "POS Location"
-  },
-  {
-   "fieldname": "column_break_customer_display_general",
+   "fieldname": "column_break_security_2",
    "fieldtype": "Column Break"
   },
   {
-   "default": "Dark",
-   "depends_on": "eval:doc.customer_display_enabled",
-   "fieldname": "customer_display_theme",
-   "fieldtype": "Select",
-   "label": "Customer Display Theme",
-   "options": "Dark\nLight"
-  },
-  {
-   "default": "Auto",
-   "depends_on": "eval:doc.customer_display_enabled",
-   "description": "Auto adapts to 7-inch landscape displays (1024x600 / 800x480) using browser viewport dimensions.",
-   "fieldname": "customer_display_size_mode",
-   "fieldtype": "Select",
-   "label": "Customer Display Layout",
-   "options": "Auto\nStandard\nCompact"
-  },
-  {
-   "default": "KD",
-   "depends_on": "eval:doc.customer_display_enabled",
-   "fieldname": "customer_display_currency_label",
-   "fieldtype": "Data",
-   "label": "Currency Label"
-  },
-  {
-   "default": "Welcome",
-   "depends_on": "eval:doc.customer_display_enabled",
-   "fieldname": "customer_display_idle_mode",
-   "fieldtype": "Select",
-   "label": "Idle Display Mode",
-   "options": "Welcome\nImage\nVideo"
-  },
-  {
-   "depends_on": "eval:doc.customer_display_enabled && doc.customer_display_idle_mode == 'Image'",
-   "fieldname": "customer_display_idle_image",
-   "fieldtype": "Attach Image",
-   "label": "Idle Promotional Image"
-  },
-  {
-   "depends_on": "eval:doc.customer_display_enabled && doc.customer_display_idle_mode == 'Video'",
-   "fieldname": "customer_display_idle_video",
-   "fieldtype": "Attach",
-   "label": "Idle Promotional Video"
-  },
-  {
-   "default": "5",
-   "depends_on": "eval:doc.customer_display_enabled",
-   "fieldname": "customer_display_thank_you_duration",
-   "fieldtype": "Int",
-   "label": "Thank You Duration (Seconds)"
-  },
-  {
-   "fieldname": "section_break_customer_display_visibility",
-   "fieldtype": "Section Break",
-   "label": "Customer Display - Field Visibility"
-  },
-  {
-   "default": "1",
-   "depends_on": "eval:doc.customer_display_enabled",
-   "fieldname": "cd_show_company_name",
+   "default": "0",
+   "description": "Submit invoices in background",
+   "fieldname": "allow_submissions_in_background_job",
    "fieldtype": "Check",
-   "label": "Show Company Name"
+   "label": "Allow Submissions in Background Job"
   },
   {
-   "default": "1",
-   "depends_on": "eval:doc.customer_display_enabled",
-   "fieldname": "cd_show_welcome_text",
-   "fieldtype": "Check",
-   "label": "Show Welcome Text"
-  },
-  {
-   "default": "1",
-   "depends_on": "eval:doc.customer_display_enabled",
-   "fieldname": "cd_show_pos_location",
-   "fieldtype": "Check",
-   "label": "Show POS Location"
-  },
-  {
-   "default": "1",
-   "depends_on": "eval:doc.customer_display_enabled",
-   "fieldname": "cd_show_pos_number",
-   "fieldtype": "Check",
-   "label": "Show POS Number"
-  },
-  {
-   "default": "1",
-   "depends_on": "eval:doc.customer_display_enabled",
-   "fieldname": "cd_show_product_image",
-   "fieldtype": "Check",
-   "label": "Show Product Image"
-  },
-  {
-   "default": "1",
-   "depends_on": "eval:doc.customer_display_enabled",
-   "fieldname": "cd_show_item_name",
-   "fieldtype": "Check",
-   "label": "Show Item Name"
-  },
-  {
-   "default": "1",
-   "depends_on": "eval:doc.customer_display_enabled",
-   "fieldname": "cd_show_barcode",
-   "fieldtype": "Check",
-   "label": "Show Barcode"
-  },
-  {
-   "default": "1",
-   "depends_on": "eval:doc.customer_display_enabled",
-   "fieldname": "cd_show_quantity",
-   "fieldtype": "Check",
-   "label": "Show Quantity"
-  },
-  {
-   "fieldname": "column_break_customer_display_visibility",
+   "fieldname": "column_break_security_3",
    "fieldtype": "Column Break"
   },
   {
-   "default": "1",
-   "depends_on": "eval:doc.customer_display_enabled",
-   "fieldname": "cd_show_original_price",
-   "fieldtype": "Check",
-   "label": "Show Original Price"
-  },
-  {
-   "default": "1",
-   "depends_on": "eval:doc.customer_display_enabled",
-   "fieldname": "cd_show_discount_amount",
-   "fieldtype": "Check",
-   "label": "Show Discount Amount"
+   "fieldname": "section_break_stock",
+   "fieldtype": "Section Break",
+   "label": "Stock Settings"
   },
   {
    "default": "0",
-   "depends_on": "eval:doc.customer_display_enabled",
-   "fieldname": "cd_show_discount_percentage",
+   "description": "Read-only mirror of ERPNext Stock Settings > Allow Negative Stock. Item-level exceptions are controlled on the Item record.",
+   "fieldname": "allow_negative_stock",
    "fieldtype": "Check",
-   "label": "Show Discount Percentage"
+   "label": "Allow Negative Stock",
+   "read_only": 1
   },
   {
-   "default": "1",
-   "depends_on": "eval:doc.customer_display_enabled",
-   "fieldname": "cd_show_final_price",
-   "fieldtype": "Check",
-   "label": "Show Final Price"
-  },
-  {
-   "default": "1",
-   "depends_on": "eval:doc.customer_display_enabled",
-   "fieldname": "cd_show_running_qty",
-   "fieldtype": "Check",
-   "label": "Show Running Quantity"
-  },
-  {
-   "default": "1",
-   "depends_on": "eval:doc.customer_display_enabled",
-   "fieldname": "cd_show_subtotal",
-   "fieldtype": "Check",
-   "label": "Show Subtotal"
-  },
-  {
-   "default": "1",
-   "depends_on": "eval:doc.customer_display_enabled",
-   "fieldname": "cd_show_total_discount",
-   "fieldtype": "Check",
-   "label": "Show Total Discount"
-  },
-  {
-   "default": "1",
-   "depends_on": "eval:doc.customer_display_enabled",
-   "fieldname": "cd_show_grand_total",
-   "fieldtype": "Check",
-   "label": "Show Grand Total"
-  },
-  {
-   "fieldname": "section_break_customer_display_customer_payment",
-   "fieldtype": "Section Break",
-   "label": "Customer Display - Customer & Payment"
-  },
-  {
-   "default": "1",
-   "depends_on": "eval:doc.customer_display_enabled",
-   "fieldname": "cd_show_customer_name",
-   "fieldtype": "Check",
-   "label": "Show Customer Name"
-  },
-  {
-   "default": "First Name",
-   "depends_on": "eval:doc.customer_display_enabled && doc.cd_show_customer_name",
-   "fieldname": "cd_customer_name_mode",
-   "fieldtype": "Select",
-   "label": "Customer Name Display",
-   "options": "First Name\nFull Name\nMasked"
-  },
-  {
-   "default": "1",
-   "depends_on": "eval:doc.customer_display_enabled",
-   "fieldname": "cd_show_loyalty_points",
-   "fieldtype": "Check",
-   "label": "Show Loyalty Points"
-  },
-  {
-   "default": "1",
-   "depends_on": "eval:doc.customer_display_enabled",
-   "fieldname": "cd_show_loyalty_earned",
-   "fieldtype": "Check",
-   "label": "Show Loyalty Points Earned"
-  },
-  {
-   "default": "1",
-   "depends_on": "eval:doc.customer_display_enabled",
-   "fieldname": "cd_show_customer_credit",
-   "fieldtype": "Check",
-   "label": "Show Customer Credit"
-  },
-  {
-   "fieldname": "column_break_customer_display_customer_payment",
+   "fieldname": "column_break_stock_1",
    "fieldtype": "Column Break"
   },
   {
-   "default": "1",
-   "depends_on": "eval:doc.customer_display_enabled",
-   "fieldname": "cd_show_payment_method",
-   "fieldtype": "Check",
-   "label": "Show Payment Method"
-  },
-  {
-   "default": "1",
-   "depends_on": "eval:doc.customer_display_enabled",
-   "fieldname": "cd_show_amount_paid",
-   "fieldtype": "Check",
-   "label": "Show Amount Paid"
-  },
-  {
-   "default": "1",
-   "depends_on": "eval:doc.customer_display_enabled",
-   "fieldname": "cd_show_remaining_balance",
-   "fieldtype": "Check",
-   "label": "Show Remaining Balance"
-  },
-  {
-   "default": "1",
-   "depends_on": "eval:doc.customer_display_enabled",
-   "fieldname": "cd_show_change",
-   "fieldtype": "Check",
-   "label": "Show Change"
-  },
-  {
-   "default": "1",
-   "depends_on": "eval:doc.customer_display_enabled",
-   "fieldname": "cd_show_invoice_number",
-   "fieldtype": "Check",
-   "label": "Show Invoice Number"
-  },
-  {
-   "default": "1",
-   "depends_on": "eval:doc.customer_display_enabled",
-   "fieldname": "cd_enable_thank_you",
-   "fieldtype": "Check",
-   "label": "Enable Thank You Screen"
-  },
-  {
-   "default": "Thank You",
-   "depends_on": "eval:doc.customer_display_enabled && doc.cd_enable_thank_you",
-   "fieldname": "customer_display_thank_you_title",
-   "fieldtype": "Data",
-   "label": "Thank You Title"
-  },
-  {
-   "default": "Thank you for shopping with us",
-   "depends_on": "eval:doc.customer_display_enabled && doc.cd_enable_thank_you",
-   "fieldname": "customer_display_thank_you_message",
-   "fieldtype": "Data",
-   "label": "Thank You Message"
-  },
-  {
-   "fieldname": "section_break_customer_display_overlay",
-   "fieldtype": "Section Break",
-   "label": "Customer Display - Idle Text Overlay",
-   "depends_on": "eval:doc.customer_display_enabled"
-  },
-  {
-   "fieldname": "customer_display_overlay_enabled",
-   "fieldtype": "Check",
-   "label": "Enable Idle Text Overlay",
    "default": "0",
-   "description": "Only on idle Welcome, Image or Video screens; never displayed during a transaction."
+   "description": "Periodically sync stock quantities from the server in the background on cashier devices",
+   "fieldname": "enable_auto_stock_sync",
+   "fieldtype": "Check",
+   "label": "Enable Automatic Stock Sync"
   },
   {
-   "fieldname": "customer_display_overlay_text",
-   "fieldtype": "Small Text",
-   "label": "Overlay Message",
-   "depends_on": "eval:doc.customer_display_overlay_enabled"
+   "fieldname": "column_break_stock_2",
+   "fieldtype": "Column Break"
   },
   {
-   "fieldname": "customer_display_overlay_type",
-   "fieldtype": "Select",
-   "label": "Overlay Style",
-   "options": "Static\nScrolling",
-   "default": "Scrolling",
-   "depends_on": "eval:doc.customer_display_overlay_enabled"
-  },
-  {
-   "fieldname": "customer_display_overlay_on",
-   "fieldtype": "Select",
-   "label": "Show Overlay On",
-   "options": "All\nWelcome\nImage\nVideo",
-   "default": "All",
-   "depends_on": "eval:doc.customer_display_overlay_enabled"
-  },
-  {
-   "fieldname": "customer_display_overlay_position",
-   "fieldtype": "Select",
-   "label": "Overlay Position",
-   "options": "Top\nBottom\nCenter",
-   "default": "Bottom",
-   "depends_on": "eval:doc.customer_display_overlay_enabled"
-  },
-  {
-   "fieldname": "customer_display_overlay_text_color",
-   "fieldtype": "Color",
-   "label": "Text Color",
-   "default": "#FFFFFF",
-   "depends_on": "eval:doc.customer_display_overlay_enabled"
-  },
-  {
-   "fieldname": "customer_display_overlay_background_color",
-   "fieldtype": "Color",
-   "label": "Background Color",
-   "default": "#000000",
-   "depends_on": "eval:doc.customer_display_overlay_enabled"
-  },
-  {
-   "fieldname": "customer_display_overlay_opacity",
+   "default": "60",
+   "depends_on": "enable_auto_stock_sync",
+   "description": "How often cashier devices check the server for stock updates (minimum 10 seconds)",
+   "fieldname": "stock_sync_interval",
    "fieldtype": "Int",
-   "label": "Background Opacity (0-100)",
-   "default": "65",
-   "depends_on": "eval:doc.customer_display_overlay_enabled"
+   "label": "Stock Sync Interval (seconds)"
   },
   {
-   "fieldname": "customer_display_overlay_font_size",
-   "fieldtype": "Int",
-   "label": "Text Font Size (px)",
-   "default": "28",
-   "depends_on": "eval:doc.customer_display_overlay_enabled"
-  },
-  {
-   "fieldname": "customer_display_overlay_scroll_speed",
-   "fieldtype": "Select",
-   "label": "Scroll Speed",
-   "options": "Slow\nNormal\nFast",
-   "default": "Normal",
-   "depends_on": "eval:doc.customer_display_overlay_enabled && doc.customer_display_overlay_type == 'Scrolling'"
+   "fieldname": "column_break_stock_3",
+   "fieldtype": "Column Break"
   }
  ],
  "index_web_pages_for_search": 1,

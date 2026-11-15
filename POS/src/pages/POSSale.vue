@@ -1418,7 +1418,7 @@ watch(() => shiftStore.profileName, async (profileName) => {
 			allowWhatsApp: Boolean(Number(profile?.mu_allow_whatsapp_invoice)),
             allowCashExpense: Boolean(Number(profile?.mu_allow_cash_expense)) && Boolean(profile?.mu_cash_expense_account),
             cashExpenseLimit: Number(profile?.mu_cash_expense_limit) || 0,
-            voucherEnabled: Boolean(Number(profile?.mu_voucher_enabled)),
+            voucherEnabled: Boolean(Number(settingsStore.settings?.mu_voucher_enabled ?? profile?.mu_voucher_enabled)),
 		};
 	} catch (error) {
 		log.warn("Cannot load branch print options", error);

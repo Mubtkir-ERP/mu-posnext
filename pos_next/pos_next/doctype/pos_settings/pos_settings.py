@@ -136,6 +136,20 @@ def get_pos_settings(pos_profile):
 	profile = frappe.get_cached_doc("POS Profile", pos_profile)
 	apply_profile_discount_policy(settings, profile)
 
+	# Partial payment, default customer group & Customer Display settings are per-profile (POS Profile)
+	settings["allow_partial_payment"] = cint(profile.get("allow_partial_payment") or 0)
+	if profile.get("customer_groups"):
+		settings["default_customer_group"] = profile.customer_groups[0].customer_group
+	if frappe.db.has_column("POS Profile", "customer_display_enabled"):
+		for key in list(settings.keys()) + [
+			f for f in profile.as_dict().keys()
+			if f.startswith("customer_display_") or f.startswith("cd_")
+		]:
+			if (key.startswith("customer_display_") or key.startswith("cd_")) and frappe.db.has_column("POS Profile", key):
+				val = profile.get(key)
+				if val is not None:
+					settings[key] = val
+
 	return settings
 
 
@@ -173,6 +187,7 @@ def update_pos_settings(pos_profile, settings):
 		"stock_sync_interval",
 		"mu_enable_order_status",
 		"mu_enable_gas_mode",
+		"mu_voucher_enabled",
 		"direct_credit_sales_order",
 		"mu_hide_delivery_date",
 		"mu_hide_customer_debt",

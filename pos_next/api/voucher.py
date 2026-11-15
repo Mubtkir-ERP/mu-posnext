@@ -99,7 +99,12 @@ def get_voucher_balance(customer, pos_profile=None, branch=None):
 	enabled = 0
 	if pos_profile:
 		require_pos_profile_access(pos_profile)
-		enabled = cint(frappe.db.get_value("POS Profile", pos_profile, "mu_voucher_enabled"))
+		if frappe.db.has_column("POS Settings", "mu_voucher_enabled"):
+			ps_val = frappe.db.get_value("POS Settings", {"pos_profile": pos_profile}, "mu_voucher_enabled")
+			if ps_val is not None:
+				enabled = cint(ps_val)
+		if not enabled and frappe.db.has_column("POS Profile", "mu_voucher_enabled"):
+			enabled = cint(frappe.db.get_value("POS Profile", pos_profile, "mu_voucher_enabled"))
 
 	general_bal = 0
 	branch_bal = 0
@@ -390,42 +395,40 @@ def on_sales_invoice_cancel(doc, method=None):
 # ---------------------------------------------------------------------------
 
 def _voucher_settings(pos_profile):
-	row = frappe.db.get_value(
-		"POS Profile", pos_profile,
-		["mu_voucher_enabled", "mu_voucher_redeem_item", "mu_voucher_warehouse",
-		 "mu_voucher_low_balance_threshold", "company"],
-		as_dict=True,
-	) or frappe._dict()
-	# Daily limit is a newer custom field. Fetch it defensively so redemption
-	# still works even if `bench migrate` has not yet added the DB column
-	# (otherwise reading a missing column raises OperationalError).
-	try:
-		row["mu_voucher_daily_limit"] = frappe.db.get_value(
-			"POS Profile", pos_profile, "mu_voucher_daily_limit"
-		)
-	except Exception:
-		row["mu_voucher_daily_limit"] = 0
-	# WhatsApp toggle is also a newer custom field; read it defensively and
-	# default to ENABLED when the column is not there yet (migrate not run),
-	# preserving the previous always-send behaviour.
-	try:
-		val = frappe.db.get_value("POS Profile", pos_profile, "mu_voucher_whatsapp_enabled")
-		row["mu_voucher_whatsapp_enabled"] = 1 if val is None else cint(val)
-	except Exception:
-		row["mu_voucher_whatsapp_enabled"] = 1
-	# OTP gate for redemption (sent to the CUSTOMER). Newer field; read safely.
-	try:
-		row["mu_voucher_otp_enabled"] = cint(
-			frappe.db.get_value("POS Profile", pos_profile, "mu_voucher_otp_enabled")
-		)
-	except Exception:
-		row["mu_voucher_otp_enabled"] = 0
-	# Customizable OTP message templates (one per line, rotated at random).
-	try:
-		row["mu_otp_message_templates"] = frappe.db.get_value(
-			"POS Profile", pos_profile, "mu_otp_message_templates"
-		)
-	except Exception:
+	row = frappe._dict()
+	row["company"] = frappe.db.get_value("POS Profile", pos_profile, "company")
+
+	# Primary source: POS Settings (Special Apps section)
+	ps_name = frappe.db.get_value("POS Settings", {"pos_profile": pos_profile}, "name")
+	voucher_fields = [
+		"mu_voucher_enabled",
+		"mu_voucher_redeem_item",
+		"mu_voucher_warehouse",
+		"mu_voucher_low_balance_threshold",
+		"mu_voucher_daily_limit",
+		"mu_voucher_whatsapp_enabled",
+		"mu_voucher_otp_enabled",
+	]
+	ps_has_voucher = ps_name and frappe.db.has_column("POS Settings", "mu_voucher_enabled")
+	if ps_has_voucher:
+		for f in voucher_fields:
+			if frappe.db.has_column("POS Settings", f):
+				row[f] = frappe.db.get_value("POS Settings", ps_name, f)
+
+	# Backward-compatible fallback to POS Profile for any field not yet migrated/set
+	for f in voucher_fields:
+		if row.get(f) is None and frappe.db.has_column("POS Profile", f):
+			row[f] = frappe.db.get_value("POS Profile", pos_profile, f)
+
+	row["mu_voucher_enabled"] = cint(row.get("mu_voucher_enabled"))
+	row["mu_voucher_low_balance_threshold"] = cint(row.get("mu_voucher_low_balance_threshold"))
+	row["mu_voucher_daily_limit"] = cint(row.get("mu_voucher_daily_limit"))
+	row["mu_voucher_whatsapp_enabled"] = 1 if row.get("mu_voucher_whatsapp_enabled") is None else cint(row.get("mu_voucher_whatsapp_enabled"))
+	row["mu_voucher_otp_enabled"] = cint(row.get("mu_voucher_otp_enabled"))
+
+	if frappe.db.has_column("POS Profile", "mu_otp_message_templates"):
+		row["mu_otp_message_templates"] = frappe.db.get_value("POS Profile", pos_profile, "mu_otp_message_templates")
+	else:
 		row["mu_otp_message_templates"] = None
 	return row
 
@@ -682,8 +685,17 @@ def redeem_voucher(pos_profile, customer, pos_opening_shift, qty=1, otp_code=Non
 # ---------------------------------------------------------------------------
 
 def _get_expiry_reminder_days():
-	"""Return configured reminder days across enabled POS Profiles (default 3)."""
-	if frappe.db.has_column("POS Profile", "mu_voucher_expiry_reminder_days"):
+	"""Return configured reminder days across enabled POS Settings/Profiles (default 3)."""
+	if frappe.db.has_column("POS Settings", "mu_voucher_expiry_reminder_days") and frappe.db.has_column("POS Settings", "mu_voucher_enabled"):
+		rows = frappe.get_all(
+			"POS Settings",
+			filters={"mu_voucher_enabled": 1},
+			fields=["mu_voucher_expiry_reminder_days"],
+		)
+		vals = [cint(r.mu_voucher_expiry_reminder_days) for r in rows if cint(r.mu_voucher_expiry_reminder_days) > 0]
+		if vals:
+			return max(vals)
+	if frappe.db.has_column("POS Profile", "mu_voucher_expiry_reminder_days") and frappe.db.has_column("POS Profile", "mu_voucher_enabled"):
 		rows = frappe.get_all(
 			"POS Profile",
 			filters={"mu_voucher_enabled": 1},

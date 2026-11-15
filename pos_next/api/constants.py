@@ -100,6 +100,7 @@ POS_SETTINGS_FIELDS = [
 	"customer_display_thank_you_message",
 	"mu_enable_order_status",
 	"mu_enable_gas_mode",
+	"mu_voucher_enabled",
 ]
 
 # Default POS Settings values
@@ -193,6 +194,7 @@ DEFAULT_POS_SETTINGS = {
 	"customer_display_thank_you_message": "Thank you for shopping with us",
 	"mu_enable_order_status": 1,
 	"mu_enable_gas_mode": 0,
+	"mu_voucher_enabled": 0,
 }
 
 
