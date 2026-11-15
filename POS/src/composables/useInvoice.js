@@ -1002,8 +1002,8 @@ export function useInvoice() {
 					invoiceData.shipping_address_name = customerAddress.value
 				}
 
-				if (targetDoctype === "Sales Order" && deliveryDate) {
-					invoiceData.delivery_date = deliveryDate
+				if (targetDoctype === "Sales Order") {
+					invoiceData.delivery_date = deliveryDate || new Date().toISOString().split("T")[0]
 				}
 
 				// Add sales_team if provided

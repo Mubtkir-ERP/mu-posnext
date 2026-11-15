@@ -49,6 +49,8 @@
   "allow_select_sales_order",
   "create_only_sales_order",
   "direct_credit_sales_order",
+  "mu_hide_delivery_date",
+  "mu_hide_customer_debt",
   "column_break_operations",
   "allow_return_without_invoice",
   "allow_free_batch_return",
@@ -393,6 +395,20 @@
    "fieldname": "direct_credit_sales_order",
    "fieldtype": "Check",
    "label": "Direct Credit for Sales Orders"
+  },
+  {
+   "default": "0",
+   "description": "Hide Delivery Date field in the checkout dialog",
+   "fieldname": "mu_hide_delivery_date",
+   "fieldtype": "Check",
+   "label": "Hide Delivery Date"
+  },
+  {
+   "default": "0",
+   "description": "Hide Customer Debt / Outstanding Balance in the checkout dialog",
+   "fieldname": "mu_hide_customer_debt",
+   "fieldtype": "Check",
+   "label": "Hide Customer Debt"
   },
   {
    "fieldname": "column_break_operations",

@@ -2381,6 +2381,7 @@ function handleProceedToPayment() {
 			is_credit_sale: true,
 			paid_amount: 0,
 			outstanding_amount: cartStore.grandTotal,
+			delivery_date: new Date().toISOString().split("T")[0],
 		});
 		return;
 	}

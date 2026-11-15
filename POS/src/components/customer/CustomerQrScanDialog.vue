@@ -168,7 +168,6 @@ watch(show, async (newVal) => {
 		manualCode.value = ""
 		await nextTick()
 		startCamera()
-		inputRef.value?.focus()
 	} else {
 		stopCamera()
 	}

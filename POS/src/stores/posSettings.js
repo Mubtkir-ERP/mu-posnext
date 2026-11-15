@@ -240,6 +240,12 @@ export const usePOSSettingsStore = defineStore("posSettings", () => {
 	const directCreditSalesOrder = computed(() =>
 		Boolean(settings.value.direct_credit_sales_order),
 	)
+	const hideDeliveryDate = computed(() =>
+		Boolean(settings.value.mu_hide_delivery_date),
+	)
+	const hideCustomerDebt = computed(() =>
+		Boolean(settings.value.mu_hide_customer_debt),
+	)
 	const allowReturnWithoutInvoice = computed(() =>
 		Boolean(settings.value.allow_return_without_invoice),
 	)
@@ -587,6 +593,8 @@ export const usePOSSettingsStore = defineStore("posSettings", () => {
 		allowSelectSalesOrder,
 		createOnlySalesOrder,
 		directCreditSalesOrder,
+		hideDeliveryDate,
+		hideCustomerDebt,
 		allowReturnWithoutInvoice,
 		enableOrderStatus,
 		enableGasMode,

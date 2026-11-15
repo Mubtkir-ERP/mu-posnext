@@ -174,6 +174,8 @@ def update_pos_settings(pos_profile, settings):
 		"mu_enable_order_status",
 		"mu_enable_gas_mode",
 		"direct_credit_sales_order",
+		"mu_hide_delivery_date",
+		"mu_hide_customer_debt",
 		"customer_display_enabled",
 		"customer_display_company_name",
 		"customer_display_welcome_text",

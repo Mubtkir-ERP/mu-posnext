@@ -276,6 +276,16 @@
 												:label="__('Direct Credit for Sales Orders')"
 												:description="__('Submit Sales Orders directly on credit without opening payment dialog')"
 											/>
+											<CheckboxField
+												v-model="settings.mu_hide_delivery_date"
+												:label="__('Hide Delivery Date')"
+												:description="__('Hide Delivery Date field in the checkout dialog')"
+											/>
+											<CheckboxField
+												v-model="settings.mu_hide_customer_debt"
+												:label="__('Hide Customer Debt')"
+												:description="__('Hide Customer Debt / Outstanding Balance in the checkout dialog')"
+											/>
 										</div>
 									</div>
 
@@ -640,6 +650,8 @@ const settings = ref({
 	mu_enable_order_status: 1,
 	mu_enable_gas_mode: 0,
 	direct_credit_sales_order: 0,
+	mu_hide_delivery_date: 0,
+	mu_hide_customer_debt: 0,
 	customer_display_enabled: 0,
 	customer_display_company_name: "MUBTKIR",
 	customer_display_welcome_text: "Welcome",
@@ -833,6 +845,8 @@ async function saveSettings() {
 			mu_enable_order_status: settings.value.mu_enable_order_status ? 1 : 0,
 			mu_enable_gas_mode: settings.value.mu_enable_gas_mode ? 1 : 0,
 			direct_credit_sales_order: settings.value.direct_credit_sales_order ? 1 : 0,
+			mu_hide_delivery_date: settings.value.mu_hide_delivery_date ? 1 : 0,
+			mu_hide_customer_debt: settings.value.mu_hide_customer_debt ? 1 : 0,
 			customer_display_enabled: settings.value.customer_display_enabled ? 1 : 0,
 			customer_display_company_name: settings.value.customer_display_company_name || "",
 			customer_display_welcome_text: settings.value.customer_display_welcome_text || "",

@@ -2381,3 +2381,10 @@ Credit Deliveries,استلامات الآجل,
 Sales Orders / Credit,أوامر بيع / آجل,
 "Sales Order {0} and Delivery Note {1} completed successfully","تم إكمال طلب المبيعات {0} وأمر التسليم {1} بنجاح",
 "Sales Order {0} and Delivery Note {1} confirmed successfully","تم تأكيد طلب المبيعات {0} وأمر التسليم {1} بنجاح",
+Hide Delivery Date,إخفاء تاريخ التسليم
+Hide Delivery Date field in the checkout dialog,إخفاء حقل تاريخ التسليم في شاشة إتمام الطلب
+Hide Customer Debt,إخفاء مديونية العميل
+Hide Customer Debt / Outstanding Balance in the checkout dialog,إخفاء مديونية العميل / الرصيد المستحق في شاشة إتمام الطلب
+Sales Order Mode,وضع أمر التسليم
+"Payment methods are not required for Sales Orders. Payment is collected when creating a Sales Invoice.","لا يتطلب أمر التسليم اختيار طريقة دفع. يتم التحصيل والدفع عند إصدار فاتورة المبيعات."
+Create Sales Order,إنشاء أمر التسليم

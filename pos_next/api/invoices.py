@@ -995,6 +995,13 @@ def update_invoice(data):
         if pos_profile_doc.currency and not invoice_doc.get("currency"):
             invoice_doc.currency = pos_profile_doc.currency
 
+        if doctype == "Sales Order":
+            if not invoice_doc.get("delivery_date"):
+                invoice_doc.delivery_date = frappe.utils.nowdate()
+            for item in invoice_doc.get("items", []):
+                if not item.get("delivery_date"):
+                    item.delivery_date = invoice_doc.delivery_date
+
         # Copy accounting dimensions from POS Profile
         if hasattr(pos_profile_doc, "branch") and pos_profile_doc.branch:
             invoice_doc.branch = pos_profile_doc.branch
@@ -1393,6 +1400,12 @@ def submit_invoice(invoice=None, data=None):
             invoice_doc.update_stock = 1
             invoice_doc.is_pos = 1
             invoice_doc.is_created_using_pos = 1
+        elif doctype == "Sales Order":
+            if not invoice_doc.get("delivery_date"):
+                invoice_doc.delivery_date = frappe.utils.nowdate()
+            for item in invoice_doc.get("items", []):
+                if not item.get("delivery_date"):
+                    item.delivery_date = invoice_doc.delivery_date
 
         # Copy accounting dimensions from POS Profile if not already set
         if pos_profile and not invoice_doc.get("branch"):

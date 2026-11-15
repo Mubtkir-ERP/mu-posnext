@@ -20,7 +20,7 @@
 					:style="{ maxHeight: isMobileView ? 'none' : dynamicLeftColumnHeight }"
 				>
 					<!-- Delivery Date for Sales Orders -->
-					<div v-if="isSalesOrder" class="bg-orange-50 border border-orange-200 rounded-lg p-2">
+					<div v-if="isSalesOrder && !settingsStore.hideDeliveryDate" class="bg-orange-50 border border-orange-200 rounded-lg p-2">
 						<div class="flex items-center gap-2">
 							<svg class="w-4 h-4 text-orange-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
@@ -261,7 +261,7 @@
 					</div>
 
 					<!-- Outstanding Balance Row (full width, two columns) -->
-					<div v-if="customerCreditEnabled && totalAvailableCredit !== 0" :class="[
+					<div v-if="customerCreditEnabled && totalAvailableCredit !== 0 && !settingsStore.hideCustomerDebt" :class="[
 						'rounded-lg border p-2 flex items-center justify-between',
 						totalAvailableCredit < 0
 							? 'bg-red-50 border-red-200'
@@ -526,6 +526,42 @@
 					]"
 					:style="isMobileView ? {} : { minHeight: rightColumnMinHeight }"
 				>
+					<!-- Sales Order: No Payment Methods Required -->
+					<div v-if="isSalesOrder" class="flex-1 flex flex-col justify-between gap-3 py-2">
+						<div class="bg-blue-50 border border-blue-200 rounded-lg p-3 lg:p-4 text-start">
+							<div class="flex items-start gap-2.5">
+								<svg class="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+								</svg>
+								<div class="flex flex-col gap-1">
+									<span class="text-sm font-semibold text-blue-900">{{ __('Sales Order Mode') }}</span>
+									<span class="text-xs text-blue-700 leading-relaxed">{{ __('Payment methods are not required for Sales Orders. Payment is collected when creating a Sales Invoice.') }}</span>
+								</div>
+							</div>
+						</div>
+						<button
+							@click="addCreditAccountPayment"
+							:disabled="isSubmitting || !isSalesPersonValid"
+							:class="[
+								'w-full font-bold rounded-lg flex items-center justify-center gap-2 transition-colors',
+								dynamicButtonHeight, 'text-sm px-5',
+								isSubmitting || !isSalesPersonValid
+									? 'bg-blue-300 text-white cursor-not-allowed'
+									: 'bg-blue-600 text-white hover:bg-blue-700 active:bg-blue-800'
+							]"
+						>
+							<svg v-if="isSubmitting" class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+								<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+								<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+							</svg>
+							<svg v-else class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+								<path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/>
+							</svg>
+							<span>{{ isSubmitting ? __('Processing...') : __('Create Sales Order') }}</span>
+						</button>
+					</div>
+
+					<template v-else>
 					<!-- Payment Methods -->
 					<div :class="isSmallMobile ? 'mb-1' : 'mb-1.5 lg:mb-3'">
 						<div :class="['flex items-center justify-between', isSmallMobile ? 'mb-0.5' : 'mb-1 lg:mb-2']">
@@ -952,6 +988,7 @@
 							<span>{{ isSubmitting ? __('Processing...') : paymentButtonText }}</span>
 						</button>
 					</div>
+					</template>
 				</div>
 				<!-- End Right Column -->
 			</div>
@@ -2435,6 +2472,9 @@ function addCreditAccountPayment() {
 		is_credit_sale: true, // Mark as credit sale
 		paid_amount: 0,
 		outstanding_amount: props.grandTotal,
+		sales_team:
+			selectedSalesPersons.value.length > 0 ? selectedSalesPersons.value : null,
+		delivery_date: isSalesOrder.value ? (deliveryDate.value || today) : null,
 	}
 
 	log.debug(
