@@ -672,6 +672,14 @@
 				@customer-updated="handleCustomerUpdated"
 			/>
 
+			<!-- Restaurant Modifiers Dialog -->
+			<ModifierSelectionDialog
+				v-model="showModifierDialog"
+				:item="modifierDialogItem"
+				:price-list="shiftStore.currentProfile?.selling_price_list || ''"
+				@confirm="handleModifierConfirm"
+			/>
+
 			<!-- Promotion Management -->
 			<PromotionManagement
 				v-model="showPromotionManagement"
@@ -1090,6 +1098,7 @@ import DraftInvoicesDialog from "@/components/sale/DraftInvoicesDialog.vue";
 import InvoiceCart from "@/components/sale/InvoiceCart.vue";
 import InvoiceHistoryDialog from "@/components/sale/InvoiceHistoryDialog.vue";
 import ItemSelectionDialog from "@/components/sale/ItemSelectionDialog.vue";
+import ModifierSelectionDialog from "@/components/sale/ModifierSelectionDialog.vue";
 import ItemsSelector from "@/components/sale/ItemsSelector.vue";
 import OffersDialog from "@/components/sale/OffersDialog.vue";
 import OfflineInvoicesDialog from "@/components/sale/OfflineInvoicesDialog.vue";
@@ -1430,6 +1439,59 @@ const showCashDisbursement = ref(false);
 const showVoucherRedeem = ref(false);
 const showCustomerOrders = ref(false);
 const showCustomerQrScanner = ref(false);
+const showModifierDialog = ref(false);
+const modifierDialogItem = ref(null);
+const itemsWithModifiers = ref(new Set());
+
+watch(
+	() => Boolean(Number(settingsStore.settings?.mu_enable_restaurant_mode)),
+	async (enabled) => {
+		if (!enabled) {
+			itemsWithModifiers.value = new Set();
+			return;
+		}
+		try {
+			const res = await api.call("pos_next.api.modifiers.get_items_with_modifiers");
+			itemsWithModifiers.value = new Set(Array.isArray(res) ? res : []);
+		} catch (e) {
+			log.debug("Failed to load items with modifiers", e);
+		}
+	},
+	{ immediate: true }
+);
+
+function handleModifierConfirm({ item, modifierSummary, itemNote, paidModifiers }) {
+	try {
+		cartStore.addItem(
+			{
+				...item,
+				modifier_summary: modifierSummary || "",
+				item_note: itemNote || "",
+			},
+			1,
+			false,
+			shiftStore.currentProfile
+		);
+		for (const mod of paidModifiers || []) {
+			cartStore.addItem(
+				{
+					item_code: mod.item_code,
+					item_name: `+ ${mod.label}`,
+					rate: mod.price,
+					price_list_rate: mod.price,
+					uom: "Nos",
+					stock_uom: "Nos",
+					modifier_parent: item.item_code,
+				},
+				1,
+				false,
+				shiftStore.currentProfile
+			);
+		}
+	} catch (error) {
+		uiStore.showError(__("Insufficient Stock"), error.message, __("Item: {0}", [item.item_code]));
+	}
+}
 
 async function handleCustomerQrSuccess(data) {
 	if (!data || !data.customer) return;
@@ -2303,6 +2365,16 @@ function handleItemSelected(item, autoAdd = false) {
 		return;
 	}
 
+	// Check for restaurant modifiers
+	if (
+		Boolean(Number(settingsStore.settings?.mu_enable_restaurant_mode)) &&
+		itemsWithModifiers.value.has(item.item_code)
+	) {
+		modifierDialogItem.value = item;
+		showModifierDialog.value = true;
+		return;
+	}
+
 	// Add to cart
 	try {
 		cartStore.addItem(item, 1, false, shiftStore.currentProfile);
@@ -2566,7 +2638,13 @@ async function handlePaymentCompleted(paymentData) {
 
 				// Fire kitchen tickets (grouped by station → printer). No-op if no
 				// kitchen printers are configured. Non-blocking; never fails the sale.
-				printKitchenTickets(shiftStore.profileName, kitchenLines, invoiceName).catch(
+				printKitchenTickets(
+					shiftStore.profileName,
+					kitchenLines,
+					invoiceName,
+					null,
+					cartStore.selectedCustomer?.customer_name || null
+				).catch(
 					(err) => log.debug("Kitchen print failed:", err)
 				);
 

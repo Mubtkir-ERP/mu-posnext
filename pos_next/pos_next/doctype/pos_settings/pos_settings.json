@@ -66,6 +66,7 @@
   "print_receipt_on_order_complete",
   "section_break_special_apps",
   "mu_enable_gas_mode",
+  "mu_enable_restaurant_mode",
   "mu_voucher_enabled",
   "mu_voucher_redeem_item",
   "section_break_special_apps_col_2",
@@ -502,6 +503,13 @@
    "fieldname": "mu_enable_gas_mode",
    "fieldtype": "Check",
    "label": "Enable Gas Mode"
+  },
+  {
+   "default": "0",
+   "description": "Enable restaurant features (paid & free item modifiers, kitchen stations, and multi-printer routing).",
+   "fieldname": "mu_enable_restaurant_mode",
+   "fieldtype": "Check",
+   "label": "Enable Restaurant Settings"
   },
   {
    "default": "0",

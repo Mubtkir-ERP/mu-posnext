@@ -101,6 +101,7 @@ POS_SETTINGS_FIELDS = [
 	"mu_enable_order_status",
 	"mu_enable_gas_mode",
 	"mu_voucher_enabled",
+	"mu_enable_restaurant_mode",
 ]
 
 # Default POS Settings values
@@ -195,6 +196,7 @@ DEFAULT_POS_SETTINGS = {
 	"mu_enable_order_status": 1,
 	"mu_enable_gas_mode": 0,
 	"mu_voucher_enabled": 0,
+	"mu_enable_restaurant_mode": 0,
 }
 
 

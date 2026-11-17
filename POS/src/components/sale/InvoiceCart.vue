@@ -827,6 +827,18 @@
 									>
 										{{ item.item_name }}
 									</h4>
+									<p
+										v-if="item.modifier_summary"
+										class="text-[10px] sm:text-xs text-blue-700 font-medium truncate mt-0.5"
+									>
+										↳ {{ item.modifier_summary }}
+									</p>
+									<p
+										v-if="item.item_note"
+										class="text-[10px] text-amber-700 italic truncate"
+									>
+										📝 {{ item.item_note }}
+									</p>
 									<!-- Free Item Badge -->
 									<span
 										v-if="item.free_qty && item.free_qty > 0"

@@ -1,14 +1,15 @@
 # Copyright (c) 2026, Solvfast and contributors
 # For license information, please see license.txt
-"""Kitchen ticket routing for POS Next.
+"""Kitchen ticket routing and multi-method printing for POS Next.
 
-Groups the ordered items by their kitchen station (set on the Item Group as
-`custom_kitchen_station`) and renders one compact ticket per station. Each
-station is mapped to a printer in POS Settings (`kitchen_printers` table). The
-frontend then sends each ticket's HTML to its printer via QZ Tray.
+Supports:
+- Station resolution from Item.mu_kitchen_station (override) -> Item Group.custom_kitchen_station
+- Multiple printing methods per station: QZ Tray, Network IP (ESC/POS), Browser Print
+- RTL Arabic/English kitchen ticket formatting with modifiers & notes
 """
 
 import json
+import socket
 
 import frappe
 from frappe import _
@@ -17,28 +18,16 @@ from pos_next.api.security import require_pos_profile_access
 
 
 @frappe.whitelist()
-def get_kitchen_tickets(pos_profile, items, invoice_name=None, order_note=None):
+def get_kitchen_tickets(pos_profile, items, invoice_name=None, order_note=None, customer_name=None):
 	require_pos_profile_access(pos_profile)
-	"""Return a list of {station, printer_name, html} tickets to print.
-
-	Args:
-		pos_profile: POS Profile name (to resolve station→printer map).
-		items: JSON list of ordered lines, each:
-			{item_code, item_name, qty, modifier_summary, item_note}
-		invoice_name: optional invoice id to show on the ticket.
-		order_note: optional whole-order note.
-	"""
 	items = json.loads(items) if isinstance(items, str) else (items or [])
 	if not items:
 		return []
 
 	printer_map = _get_station_printer_map(pos_profile)
-
-	# Resolve each item's station from its Item Group in one bulk query.
 	item_codes = list({(it.get("item_code")) for it in items if it.get("item_code")})
 	station_by_item = _get_item_station_map(item_codes)
 
-	# Group lines by station
 	groups = {}
 	for it in items:
 		station = station_by_item.get(it.get("item_code")) or ""
@@ -47,40 +36,77 @@ def get_kitchen_tickets(pos_profile, items, invoice_name=None, order_note=None):
 	when = format_datetime(now_datetime(), "yyyy-MM-dd HH:mm")
 	tickets = []
 	for station, lines in groups.items():
-		printer_name = printer_map.get(station)
-		# Skip stations with no configured printer (nothing to send).
-		if not printer_name:
+		cfg = printer_map.get(station)
+		if not cfg:
 			continue
-		html = _render_ticket(station, printer_name, lines, when, invoice_name, order_note)
-		tickets.append({"station": station, "printer_name": printer_name, "html": html})
+		station_title = _resolve_station_title(station)
+		html = _render_ticket(station_title, lines, when, invoice_name, order_note, customer_name)
+		tickets.append({
+			"station": station,
+			"station_title": station_title,
+			"print_method": cfg.get("print_method") or "QZ Tray",
+			"printer_name": cfg.get("printer_name") or "",
+			"printer_ip": cfg.get("printer_ip") or "",
+			"printer_port": cint(cfg.get("printer_port")) or 9100,
+			"html": html,
+			"lines": lines,
+			"when": when,
+		})
 
 	return tickets
 
 
-def _get_station_printer_map(pos_profile):
-	"""station name -> printer name, from POS Profile.mu_kitchen_printers.
+def _resolve_station_title(station_id):
+	if not station_id:
+		return _("Kitchen")
+	if frappe.db.exists("DocType", "POS Kitchen Station"):
+		title = frappe.db.get_value("POS Kitchen Station", station_id, "station_name")
+		if title:
+			return title
+	return station_id
 
-	Kitchen printers were moved from POS Settings to the POS Profile so the
-	station/printer map is managed per branch alongside the print config.
-	"""
+
+def _get_station_printer_map(pos_profile):
 	if not pos_profile:
 		return {}
+	fields = ["kitchen_station", "printer_name"]
+	for col in ("print_method", "printer_ip", "printer_port"):
+		if frappe.db.has_column("POS Kitchen Printer", col):
+			fields.append(col)
+
 	rows = frappe.get_all(
 		"POS Kitchen Printer",
-		filters={"parent": pos_profile, "parenttype": "POS Profile",
-			"parentfield": "mu_kitchen_printers"},
-		fields=["kitchen_station", "printer_name"],
+		filters={"parent": pos_profile, "parenttype": "POS Profile", "parentfield": "mu_kitchen_printers"},
+		fields=fields,
 	)
-	return {r.kitchen_station: r.printer_name for r in rows if r.kitchen_station and r.printer_name}
+	result = {}
+	for r in rows:
+		if not r.kitchen_station:
+			continue
+		method = r.get("print_method") or "QZ Tray"
+		if method == "QZ Tray" and not r.get("printer_name"):
+			continue
+		if method == "Network IP (ESC/POS)" and not r.get("printer_ip"):
+			continue
+		result[r.kitchen_station] = {
+			"print_method": method,
+			"printer_name": r.get("printer_name") or "",
+			"printer_ip": r.get("printer_ip") or "",
+			"printer_port": cint(r.get("printer_port")) or 9100,
+		}
+	return result
 
 
 def _get_item_station_map(item_codes):
-	"""item_code -> kitchen station (from its Item Group.custom_kitchen_station)."""
+	"""item_code -> kitchen station (Item.mu_kitchen_station override, then Item Group.custom_kitchen_station)."""
 	if not item_codes:
 		return {}
-	item_rows = frappe.get_all(
-		"Item", filters={"name": ["in", item_codes]}, fields=["name", "item_group"]
-	)
+	fields = ["name", "item_group"]
+	has_override = frappe.db.has_column("Item", "mu_kitchen_station")
+	if has_override:
+		fields.append("mu_kitchen_station")
+
+	item_rows = frappe.get_all("Item", filters={"name": ["in", item_codes]}, fields=fields)
 	groups = list({r.item_group for r in item_rows if r.item_group})
 	station_by_group = {}
 	if groups:
@@ -90,21 +116,19 @@ def _get_item_station_map(item_codes):
 			fields=["name", "custom_kitchen_station"],
 		)
 		station_by_group = {r.name: (r.custom_kitchen_station or "") for r in grp_rows}
-	return {r.name: station_by_group.get(r.item_group, "") for r in item_rows}
+
+	return {
+		r.name: (r.get("mu_kitchen_station") if has_override and r.get("mu_kitchen_station") else station_by_group.get(r.item_group, ""))
+		for r in item_rows
+	}
 
 
-def _render_ticket(station, printer_name, lines, when, invoice_name, order_note):
+def _render_ticket(station_title, lines, when, invoice_name, order_note, customer_name=None):
 	rows_html = []
-	# Order ETA = the slowest line on this ticket (kitchen cooks in parallel).
-	max_prep = max((cint(it.get("prep_time")) for it in lines), default=0)
 	for it in lines:
 		qty = cint(it.get("qty")) or it.get("qty") or 1
 		name = frappe.utils.escape_html(it.get("item_name") or it.get("item_code") or "")
-		prep = cint(it.get("prep_time"))
-		prep_html = f' <span class="pt">⏱{prep}m</span>' if prep else ""
-		rows_html.append(
-			f'<div class="ln"><span class="q">{qty}×</span> <span class="nm">{name}</span>{prep_html}</div>'
-		)
+		rows_html.append(f'<div class="ln"><span class="q">{qty}×</span> <span class="nm">{name}</span></div>')
 		summary = it.get("modifier_summary")
 		if summary:
 			rows_html.append(f'<div class="mod">▪ {frappe.utils.escape_html(summary)}</div>')
@@ -112,32 +136,71 @@ def _render_ticket(station, printer_name, lines, when, invoice_name, order_note)
 		if note:
 			rows_html.append(f'<div class="note">📝 {frappe.utils.escape_html(note)}</div>')
 
-	order_note_html = ""
-	if order_note:
-		order_note_html = f'<div class="onote">📝 {frappe.utils.escape_html(order_note)}</div>'
-
+	order_note_html = f'<div class="onote">📝 {frappe.utils.escape_html(order_note)}</div>' if order_note else ""
+	cust_html = f'<div class="meta">{frappe.utils.escape_html(customer_name)}</div>' if customer_name else ""
 	header_id = frappe.utils.escape_html(invoice_name or "")
-	station_label = frappe.utils.escape_html(station or _("Kitchen"))
-	eta_html = f'<div class="eta">⏱ {_("Ready in")} ~{max_prep} {_("min")}</div>' if max_prep else ""
+	station_esc = frappe.utils.escape_html(station_title or _("Kitchen"))
 
-	return f"""
-<div class="kt">
-	<style>
-		.kt {{ font-family: 'Tajawal','Cairo',sans-serif; width: 100%; color:#000; }}
-		.kt .st {{ font-size: 20px; font-weight: 900; text-align:center; border-bottom:2px dashed #000; padding-bottom:6px; margin-bottom:6px; }}
-		.kt .meta {{ font-size: 11px; text-align:center; margin-bottom:4px; }}
-		.kt .eta {{ font-size: 14px; font-weight: 900; text-align:center; margin-bottom:8px; }}
-		.kt .ln {{ font-size: 16px; font-weight: 800; margin-top:6px; }}
-		.kt .q {{ display:inline-block; min-width: 28px; }}
-		.kt .pt {{ font-size: 12px; font-weight: 700; }}
-		.kt .mod {{ font-size: 13px; font-weight:700; margin-inline-start:28px; }}
-		.kt .note {{ font-size: 12px; font-style: italic; margin-inline-start:28px; }}
-		.kt .onote {{ font-size: 13px; font-weight:700; border-top:1px dashed #000; margin-top:8px; padding-top:6px; }}
-	</style>
-	<div class="st">{station_label}</div>
-	<div class="meta">{header_id} — {when}</div>
-	{eta_html}
-	{''.join(rows_html)}
-	{order_note_html}
+	return f"""<!DOCTYPE html>
+<html dir="rtl" lang="ar">
+<head><meta charset="utf-8"><style>
+body{{font-family:Tahoma,Arial,sans-serif;width:72mm;margin:0;padding:4mm;color:#000;font-size:13px;}}
+.hd{{text-align:center;border-bottom:2px dashed #000;padding-bottom:6px;margin-bottom:8px;}}
+.st{{font-size:18px;font-weight:bold;}}
+.meta{{font-size:12px;margin-top:3px;}}
+.ln{{font-size:15px;font-weight:bold;margin:6px 0 2px;}}
+.q{{display:inline-block;min-width:26px;}}
+.mod{{font-size:12px;padding-right:14px;color:#222;margin-bottom:2px;}}
+.note,.onote{{font-size:12px;padding-right:14px;font-style:italic;margin-bottom:4px;}}
+.onote{{border-top:1px dashed #000;padding-top:6px;margin-top:8px;}}
+</style></head>
+<body>
+<div class="hd">
+  <div class="st">{station_esc}</div>
+  <div class="meta">{header_id} • {when}</div>
+  {cust_html}
 </div>
-"""
+{''.join(rows_html)}
+{order_note_html}
+</body></html>"""
+
+
+@frappe.whitelist()
+def print_network_ticket(printer_ip, printer_port=9100, station_title=None, invoice_name=None, lines=None, customer_name=None, order_note=None):
+	"""Send raw ESC/POS kitchen ticket over TCP to a local network thermal printer."""
+	if not printer_ip:
+		frappe.throw(_("Printer IP Address is required."))
+	port = cint(printer_port) or 9100
+	items = json.loads(lines) if isinstance(lines, str) else (lines or [])
+
+	parts = [
+		b"\x1b@",        # Initialize printer
+		b"\x1b\x61\x01", # Center align
+		(f"{station_title or 'Kitchen'}\n").encode("utf-8", "replace"),
+		(f"{invoice_name or ''}  {format_datetime(now_datetime(), 'yyyy-MM-dd HH:mm')}\n").encode("utf-8", "replace"),
+	]
+	if customer_name:
+		parts.append((f"{customer_name}\n").encode("utf-8", "replace"))
+	parts.append(b"--------------------------------\n")
+	parts.append(b"\x1b\x61\x02")  # Right align for Arabic/RTL
+
+	for it in items:
+		qty = cint(it.get("qty")) or it.get("qty") or 1
+		name = it.get("item_name") or it.get("item_code") or ""
+		parts.append((f"{qty}x {name}\n").encode("utf-8", "replace"))
+		if it.get("modifier_summary"):
+			parts.append((f"  - {it.get('modifier_summary')}\n").encode("utf-8", "replace"))
+		if it.get("item_note"):
+			parts.append((f"  * {it.get('item_note')}\n").encode("utf-8", "replace"))
+
+	if order_note:
+		parts.append(b"--------------------------------\n")
+		parts.append((f"Note: {order_note}\n").encode("utf-8", "replace"))
+
+	parts.append(b"\n\n\n\x1dV\x41\x03")  # Feed & cut
+	payload = b"".join(parts)
+
+	with socket.create_connection((printer_ip.strip(), port), timeout=5) as sock:
+		sock.sendall(payload)
+
+	return {"status": "ok", "printer_ip": printer_ip, "printer_port": port}
