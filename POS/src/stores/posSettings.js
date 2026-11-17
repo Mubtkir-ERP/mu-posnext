@@ -48,6 +48,7 @@ export const usePOSSettingsStore = defineStore("posSettings", () => {
 		allow_print_draft_invoices: 0,
 		mu_enable_order_status: 1,
 		mu_enable_gas_mode: 0,
+		mu_enable_restaurant_mode: 0,
 		// Pricing & Display
 		decimal_precision: "2",
 		// Customer Settings
@@ -265,6 +266,10 @@ export const usePOSSettingsStore = defineStore("posSettings", () => {
 	// Gas distribution mode toggle
 	const enableGasMode = computed(() =>
 		Boolean(settings.value.mu_enable_gas_mode),
+	)
+	// Restaurant mode toggle
+	const enableRestaurantMode = computed(() =>
+		Boolean(Number(settings.value.mu_enable_restaurant_mode)),
 	)
 
 	// Computed - Pricing & Display
@@ -598,6 +603,7 @@ export const usePOSSettingsStore = defineStore("posSettings", () => {
 		allowReturnWithoutInvoice,
 		enableOrderStatus,
 		enableGasMode,
+		enableRestaurantMode,
 		allowFreeBatchReturn,
 		allowPrintDraftInvoices,
 

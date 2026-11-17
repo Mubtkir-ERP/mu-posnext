@@ -14,7 +14,7 @@
    "creation": "2026-07-12 12:00:00.000000",
    "default": null,
    "depends_on": null,
-   "description": "Items in this group print to the printer mapped to this station in POS Settings (e.g. Kitchen, Sweets, Drinks).",
+   "description": "Items in this group print to the printer mapped to this kitchen station in POS Profile.",
    "docstatus": 0,
    "dt": "Item Group",
    "fetch_from": null,

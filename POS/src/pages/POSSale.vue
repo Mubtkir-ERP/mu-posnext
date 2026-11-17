@@ -1451,7 +1451,7 @@ watch(
 			return;
 		}
 		try {
-			const res = await api.call("pos_next.api.modifiers.get_items_with_modifiers");
+			const res = await call("pos_next.api.modifiers.get_items_with_modifiers");
 			itemsWithModifiers.value = new Set(Array.isArray(res) ? res : []);
 		} catch (e) {
 			log.debug("Failed to load items with modifiers", e);
