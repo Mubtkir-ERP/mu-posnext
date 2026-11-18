@@ -1119,13 +1119,13 @@
 									</div>
 
 									<!-- Price -->
-									<span class="text-[10px] sm:text-xs font-bold text-gray-700">
+									<span v-if="!hidePrices" class="text-[10px] sm:text-xs font-bold text-gray-700">
 										{{ formatCurrency(item.rate) }}
 									</span>
 								</div>
 
 								<!-- Item Total -->
-								<div class="text-end flex-shrink-0">
+								<div v-if="!hidePrices" class="text-end flex-shrink-0">
 									<div
 										class="text-xs sm:text-sm font-bold text-blue-600 leading-none"
 									>
@@ -1219,7 +1219,8 @@
 					<span
 						class="text-lg sm:text-xl font-extrabold text-blue-600 text-center min-w-[60px]"
 					>
-						{{ formatCurrency(displayGrandTotal) }}
+						<span v-if="!hidePrices">{{ formatCurrency(displayGrandTotal) }}</span>
+						<span v-else>—</span>
 					</span>
 				</div>
 			</div>
@@ -1350,6 +1351,7 @@ const { showSuccess, showWarning } = useToast();
  * @prop {Array} warehouses - Available warehouses for item selection
  */
 const props = defineProps({
+	hidePrices: { type: Boolean, default: false },
 	items: {
 		type: Array,
 		default: () => [],

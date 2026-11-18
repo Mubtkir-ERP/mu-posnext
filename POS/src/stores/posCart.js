@@ -260,7 +260,7 @@ export const usePOSCartStore = defineStore("posCart", () => {
 		writeOffAmount.value = amount || 0
 	}
 
-	async function submitInvoice() {
+	async function submitInvoice(extraData = {}) {
 		if (invoiceItems.value.length === 0) {
 			showWarning(__("Cart is empty"))
 			return
@@ -304,7 +304,7 @@ export const usePOSCartStore = defineStore("posCart", () => {
 			}
 		}
 
-		const result = await baseSubmitInvoice(targetDoctype.value, deliveryDate.value, writeOffAmount.value)
+		const result = await baseSubmitInvoice(targetDoctype.value, deliveryDate.value, writeOffAmount.value, extraData)
 		// Reset write-off amount after successful submission
 		if (result) {
 			writeOffAmount.value = 0

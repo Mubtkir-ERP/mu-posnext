@@ -189,6 +189,7 @@ def update_pos_settings(pos_profile, settings):
 		"mu_enable_gas_mode",
 		"mu_voucher_enabled",
 		"mu_enable_restaurant_mode",
+		"mu_delivery_otp_enabled",
 		"direct_credit_sales_order",
 		"mu_hide_delivery_date",
 		"mu_hide_customer_debt",

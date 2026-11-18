@@ -1321,6 +1321,38 @@ def submit_invoice(invoice=None, data=None):
         invoice["company"] = profile.company
         invoice["posa_pos_opening_shift"] = shift.name
 
+        # Optional WhatsApp OTP verification for Delivery / Sales Order creation
+        if doctype == "Sales Order" and frappe.db.has_column("POS Settings", "mu_delivery_otp_enabled"):
+            delivery_otp_on = cint(
+                frappe.db.get_value("POS Settings", {"pos_profile": pos_profile}, "mu_delivery_otp_enabled")
+            )
+            if delivery_otp_on:
+                from pos_next.api import otp
+                from pos_next.api.whatsapp_hook import get_branch_mobile, get_customer_mobile
+
+                customer_id = invoice.get("customer")
+                branch_addr = invoice.get("customer_address")
+                otp_code = cstr(invoice.get("otp_code") or data.get("otp_code") or "").strip()
+                otp_ref = f"{shift.name}:{customer_id}:{branch_addr}" if branch_addr else f"{shift.name}:{customer_id}"
+                if not otp_code:
+                    recipient_mobile = get_branch_mobile(branch_addr) if branch_addr else get_customer_mobile(customer_id)
+                    if not recipient_mobile and branch_addr:
+                        recipient_mobile = get_customer_mobile(customer_id)
+                    if not recipient_mobile:
+                        frappe.throw(
+                            _("No WhatsApp mobile number found for customer '{0}' to send the verification code.").format(customer_id),
+                            title=_("Mobile Number Required"),
+                        )
+                    return otp.generate_and_send(
+                        "delivery_order",
+                        otp_ref,
+                        recipient_mobile,
+                        label=_("Delivery Order"),
+                        digits=5,
+                        templates=profile.get("mu_otp_message_templates") if frappe.db.has_column("POS Profile", "mu_otp_message_templates") else None,
+                    )
+                otp.verify("delivery_order", otp_ref, otp_code)
+
         # Re-validate discount policy at submit time. The draft may have been
         # modified after Step 1, and the submit payload itself is untrusted.
         discount_settings = _validate_and_normalize_requested_discounts(invoice, profile)

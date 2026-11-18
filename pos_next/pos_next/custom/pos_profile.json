@@ -2631,6 +2631,28 @@
    "insert_after": "mu_closing_controls_section_col_3"
   },
   {
+   "allow_in_quick_entry": 0,
+   "allow_on_submit": 0,
+   "bold": 0,
+   "collapsible": 0,
+   "columns": 0,
+   "default": "0",
+   "description": "Hide item prices and totals from the employee when creating Delivery / Sales Orders.",
+   "docstatus": 0,
+   "dt": "POS Profile",
+   "fieldname": "mu_hide_delivery_prices",
+   "fieldtype": "Check",
+   "hidden": 0,
+   "idx": 0,
+   "insert_after": "mu_hide_closing_reconciliation",
+   "is_system_generated": 0,
+   "is_virtual": 0,
+   "label": "Hide Prices in Delivery Order",
+   "module": "POS Next",
+   "name": "POS Profile-mu_hide_delivery_prices",
+   "permlevel": 0
+  },
+  {
    "fieldname": "mu_section_break_customer_display",
    "fieldtype": "Section Break",
    "label": "Customer Display",

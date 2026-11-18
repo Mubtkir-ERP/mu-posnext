@@ -942,6 +942,7 @@ export function useInvoice() {
 		targetDoctype = "Sales Invoice",
 		deliveryDate = null,
 		writeOffAmount = 0,
+		extraData = {},
 	) {
 		/**
 		 * Two-step submission process with mutex protection:
@@ -1052,7 +1053,7 @@ export function useInvoice() {
 
 					const result = await submitInvoiceResource.submit({
 						invoice: submitInvoiceDoc,
-						data: submitData,
+						data: { ...(submitData || {}), ...(extraData || {}) },
 					})
 
 					// Check if resource has error (frappe-ui pattern)
@@ -1070,6 +1071,10 @@ export function useInvoice() {
 						detailedError.messages = resourceError.messages
 
 						throw detailedError
+					}
+
+					if (result?.otp_required) {
+						return result
 					}
 
 					resetInvoice()

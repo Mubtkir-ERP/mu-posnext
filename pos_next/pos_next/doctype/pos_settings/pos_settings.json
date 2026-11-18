@@ -66,15 +66,16 @@
   "print_receipt_on_order_complete",
   "section_break_special_apps",
   "mu_enable_gas_mode",
-  "mu_enable_restaurant_mode",
-  "mu_voucher_enabled",
+  "mu_delivery_otp_enabled",
   "mu_voucher_redeem_item",
-  "section_break_special_apps_col_2",
-  "mu_voucher_warehouse",
   "mu_voucher_low_balance_threshold",
+  "section_break_special_apps_col_2",
+  "mu_enable_restaurant_mode",
+  "mu_voucher_warehouse",
   "mu_voucher_daily_limit",
-  "section_break_special_apps_col_3",
   "mu_voucher_expiry_reminder_days",
+  "section_break_special_apps_col_3",
+  "mu_voucher_enabled",
   "mu_voucher_whatsapp_enabled",
   "mu_voucher_otp_enabled",
   "section_break_wallet",
@@ -506,17 +507,10 @@
   },
   {
    "default": "0",
-   "description": "Enable restaurant features (paid & free item modifiers, kitchen stations, and multi-printer routing).",
-   "fieldname": "mu_enable_restaurant_mode",
+   "description": "Send a WhatsApp OTP verification code to the customer before creating a Delivery / Sales Order.",
+   "fieldname": "mu_delivery_otp_enabled",
    "fieldtype": "Check",
-   "label": "Enable Restaurant Settings"
-  },
-  {
-   "default": "0",
-   "description": "Allow selling and redeeming prepaid voucher packages for this POS profile.",
-   "fieldname": "mu_voucher_enabled",
-   "fieldtype": "Check",
-   "label": "Enable Voucher System"
+   "label": "Require Customer OTP for Delivery Order"
   },
   {
    "depends_on": "eval:doc.mu_voucher_enabled",
@@ -525,18 +519,6 @@
    "fieldtype": "Link",
    "label": "Redemption Item",
    "options": "Item"
-  },
-  {
-   "fieldname": "section_break_special_apps_col_2",
-   "fieldtype": "Column Break"
-  },
-  {
-   "depends_on": "eval:doc.mu_voucher_enabled",
-   "description": "Warehouse from which the redemption item is issued.",
-   "fieldname": "mu_voucher_warehouse",
-   "fieldtype": "Link",
-   "label": "Redemption Warehouse",
-   "options": "Warehouse"
   },
   {
    "default": "5",
@@ -548,6 +530,25 @@
    "non_negative": 1
   },
   {
+   "fieldname": "section_break_special_apps_col_2",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "0",
+   "description": "Enable restaurant features (paid & free item modifiers, kitchen stations, and multi-printer routing).",
+   "fieldname": "mu_enable_restaurant_mode",
+   "fieldtype": "Check",
+   "label": "Enable Restaurant Settings"
+  },
+  {
+   "depends_on": "eval:doc.mu_voucher_enabled",
+   "description": "Warehouse from which the redemption item is issued.",
+   "fieldname": "mu_voucher_warehouse",
+   "fieldtype": "Link",
+   "label": "Redemption Warehouse",
+   "options": "Warehouse"
+  },
+  {
    "default": "0",
    "depends_on": "eval:doc.mu_voucher_enabled",
    "description": "Maximum voucher units a customer can redeem per day (0 = unlimited).",
@@ -557,10 +558,6 @@
    "non_negative": 1
   },
   {
-   "fieldname": "section_break_special_apps_col_3",
-   "fieldtype": "Column Break"
-  },
-  {
    "default": "3",
    "depends_on": "eval:doc.mu_voucher_enabled",
    "description": "Number of days before voucher expiry to send a WhatsApp reminder (default: 3).",
@@ -568,6 +565,17 @@
    "fieldtype": "Int",
    "label": "Voucher Expiry Reminder Days",
    "non_negative": 1
+  },
+  {
+   "fieldname": "section_break_special_apps_col_3",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "0",
+   "description": "Allow selling and redeeming prepaid voucher packages for this POS profile.",
+   "fieldname": "mu_voucher_enabled",
+   "fieldtype": "Check",
+   "label": "Enable Voucher System"
   },
   {
    "default": "1",

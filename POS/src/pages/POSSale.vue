@@ -402,6 +402,7 @@
 								:currency="shiftStore.profileCurrency"
 								:applied-offers="cartStore.appliedOffers"
 								:warehouses="profileWarehouses"
+								:hide-prices="hideDeliveryPrices"
 								@update-quantity="cartStore.updateItemQuantity"
 								@remove-item="
 									(itemCode, uom) => cartStore.removeItem(itemCode, uom)
@@ -679,6 +680,44 @@
 				:price-list="shiftStore.currentProfile?.selling_price_list || ''"
 				@confirm="handleModifierConfirm"
 			/>
+
+			<!-- Delivery / Sales Order OTP Dialog -->
+			<div
+				v-if="showDeliveryOtpDialog"
+				class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+			>
+				<div class="w-full max-w-sm rounded-2xl bg-white p-5 shadow-xl space-y-4">
+					<h3 class="text-base font-bold text-slate-900">{{ __("Delivery Order Verification (OTP)") }}</h3>
+					<p class="text-xs text-slate-600">
+						{{ __("Enter the WhatsApp verification code sent to {0}", [deliveryOtpMaskedMobile || __("the customer")]) }}
+					</p>
+					<input
+						v-model="deliveryOtpCode"
+						type="text"
+						inputmode="numeric"
+						maxlength="8"
+						class="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-center text-lg font-bold tracking-widest focus:border-blue-500 focus:outline-none"
+						:placeholder="__('OTP Code')"
+						@keyup.enter="submitDeliveryOtp"
+					/>
+					<div class="flex justify-end gap-2">
+						<button
+							type="button"
+							class="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700"
+							@click="showDeliveryOtpDialog = false"
+						>
+							{{ __("Cancel") }}
+						</button>
+						<button
+							type="button"
+							class="rounded-xl bg-blue-600 px-4 py-2 text-sm font-bold text-white hover:bg-blue-700"
+							@click="submitDeliveryOtp"
+						>
+							{{ __("Verify & Submit") }}
+						</button>
+					</div>
+				</div>
+			</div>
 
 			<!-- Promotion Management -->
 			<PromotionManagement
@@ -1442,6 +1481,22 @@ const showCustomerQrScanner = ref(false);
 const showModifierDialog = ref(false);
 const modifierDialogItem = ref(null);
 const itemsWithModifiers = ref(new Set());
+const showDeliveryOtpDialog = ref(false);
+const deliveryOtpCode = ref("");
+const deliveryOtpMaskedMobile = ref("");
+const pendingOtpPaymentData = ref(null);
+
+const hideDeliveryPrices = computed(
+	() => Boolean(Number(shiftStore.currentProfile?.mu_hide_delivery_prices)) && cartStore.targetDoctype === "Sales Order"
+);
+
+async function submitDeliveryOtp() {
+	if (!deliveryOtpCode.value.trim() || !pendingOtpPaymentData.value) return;
+	const code = deliveryOtpCode.value.trim();
+	const payload = { ...pendingOtpPaymentData.value, otp_code: code };
+	showDeliveryOtpDialog.value = false;
+	await handlePaymentCompleted(payload);
+}
 
 watch(
 	() => Boolean(Number(settingsStore.settings?.mu_enable_restaurant_mode)),
@@ -1991,6 +2046,16 @@ watch(
 
 		// Only reapply if customer actually changed
 		if (newCustomerName !== oldCustomerName) {
+			// Auto-route Credit customers (credit_limit > 0) to Delivery / Sales Order mode
+			if (posSettingsStore.allowSalesOrder && !posSettingsStore.createOnlySalesOrder) {
+				const creditLimit = Number(newCustomer?.credit_limit || 0);
+				if (creditLimit > 0) {
+					cartStore.setTargetDoctype("Sales Order");
+				} else if (!posSettingsStore.enableGasMode) {
+					cartStore.setTargetDoctype("Sales Invoice");
+				}
+			}
+
 			// Clear existing timer
 			if (offerReapplyTimer.value) {
 				clearTimeout(offerReapplyTimer.value);
@@ -2604,7 +2669,17 @@ async function handlePaymentCompleted(paymentData) {
 				item_note: item.item_note || "",
 			}));
 
-			const result = await cartStore.submitInvoice();
+			const result = await cartStore.submitInvoice(
+				paymentData?.otp_code ? { otp_code: paymentData.otp_code } : {}
+			);
+
+			if (result?.otp_required) {
+				pendingOtpPaymentData.value = paymentData;
+				deliveryOtpCode.value = "";
+				deliveryOtpMaskedMobile.value = result.masked_mobile || "";
+				showDeliveryOtpDialog.value = true;
+				return;
+			}
 
 			if (result) {
 				const invoiceName = result.name || result.message?.name || __("Unknown");
