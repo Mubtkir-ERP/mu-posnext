@@ -688,15 +688,18 @@ def make_closing_shift_from_opening(opening_shift):
     closing_shift.set("taxes", taxes)
     closing_shift.set("pos_payments", pos_payments_table)
 
-    # Check POS Profile non-taxable configuration (enabled by default)
-    enable_non_taxable = 1
+    # Check POS Profile non-taxable and closing visibility configuration
+    enable_non_taxable = 0
+    hide_closing_vouchers = 0
     pos_profile_name = opening_shift.get("pos_profile")
     if pos_profile_name:
         val = frappe.db.get_value("POS Profile", pos_profile_name, "mu_enable_non_taxable_charges")
         if val is not None:
             enable_non_taxable = cint(val)
+        if frappe.db.has_column("POS Profile", "mu_hide_closing_vouchers"):
+            hide_closing_vouchers = cint(frappe.db.get_value("POS Profile", pos_profile_name, "mu_hide_closing_vouchers"))
 
-    non_tax_sales = max(0.0, flt(summary.get("non_taxable_sales", 0)))
+    non_tax_sales = max(0.0, flt(summary.get("non_taxable_sales", 0))) if enable_non_taxable else 0.0
 
     # Count vouchers and credit deliveries
     closing_shift.set_vouchers_redeemed()
@@ -712,7 +715,8 @@ def make_closing_shift_from_opening(opening_shift):
         "sales_count": summary["sales_count"],
         "non_taxable_sales": non_tax_sales,
         "mu_enable_non_taxable_charges": enable_non_taxable,
-        "mu_non_taxable_amount": flt(closing_shift.get("mu_non_taxable_amount") or non_tax_sales),
+        "mu_hide_closing_vouchers": hide_closing_vouchers,
+        "mu_non_taxable_amount": flt(closing_shift.get("mu_non_taxable_amount") or 0) if enable_non_taxable else 0.0,
         "mu_non_taxable_remarks": closing_shift.get("mu_non_taxable_remarks") or "",
         "mu_cash_charges": [row.as_dict() for row in closing_shift.get("mu_cash_charges", [])],
         "mu_vouchers_redeemed": vouchers_count,

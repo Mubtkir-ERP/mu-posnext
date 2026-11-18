@@ -2282,8 +2282,13 @@ def prepare_return_invoice(invoice_name, pos_opening_shift=None):
 
                 orig_row_qty = abs(flt(orig_row.qty or 1))
                 tax_per_unit = abs(orig_item_tax / orig_row_qty) if orig_row_qty else 0.0
+                orig_net_amt = flt(orig_row.net_amount if orig_row.net_amount is not None else (flt(orig_row.rate) * orig_row_qty))
 
-                if is_tax_inclusive:
+                # Always derive tax-inclusive unit rate from net_amount + item tax
+                # so returnTotal matches grand_total even when rate vs included_in_print_rate differ.
+                if orig_row_qty and (orig_net_amt or orig_item_tax):
+                    rate_with_tax = (abs(orig_net_amt) + abs(orig_item_tax)) / orig_row_qty
+                elif is_tax_inclusive:
                     rate_with_tax = flt(orig_row.rate)
                 else:
                     rate_with_tax = flt(orig_row.rate) + tax_per_unit

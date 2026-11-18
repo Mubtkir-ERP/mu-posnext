@@ -3432,8 +3432,8 @@ async function handlePrintInvoice(invoiceData, paper = "thermal") {
 			return;
 		}
 
-		// Standard browser print path
-		if (invoiceData.name) {
+		// Standard browser print path (use client-side receipt when offline or offline-id)
+		if (invoiceData.name && navigator.onLine && !String(invoiceData.name).startsWith("offline_")) {
 			// Always use printInvoiceByName to fetch custom print format from POS Profile
 			await printInvoiceByName(invoiceData.name, null, null, paper);
 		} else if (invoiceData.items && Array.isArray(invoiceData.items)) {

@@ -60,6 +60,7 @@
 
               <!-- Cash Amounts (المبالغ النقدية) -->
               <div
+                v-if="closingData.mu_enable_non_taxable_charges"
                 class="text-start bg-indigo-50 border border-indigo-200 rounded-lg p-3 md:p-4"
               >
                 <div class="text-indigo-600 text-xs uppercase font-medium mb-1">{{ __('Cash Amounts') }}</div>
@@ -75,14 +76,20 @@
               </div>
 
               <!-- Redeemed Vouchers (القسائم المستبدلة) -->
-              <div class="text-start bg-emerald-50 border border-emerald-200 rounded-lg p-3 md:p-4">
+              <div
+                v-if="Boolean(Number(posSettingsStore.settings?.mu_voucher_enabled)) && !closingData.mu_hide_closing_vouchers"
+                class="text-start bg-emerald-50 border border-emerald-200 rounded-lg p-3 md:p-4"
+              >
                 <div class="text-emerald-700 text-xs uppercase font-medium mb-1">{{ __('Redeemed Vouchers') }}</div>
                 <div class="text-lg md:text-2xl font-bold text-emerald-800 mb-0.5 md:mb-1 truncate">{{ closingData.mu_vouchers_redeemed || 0 }}</div>
                 <div class="text-emerald-600 text-xs">{{ __('Units redeemed') }}</div>
               </div>
 
               <!-- Credit Deliveries / Sales Orders (استلامات الآجل) -->
-              <div class="text-start bg-orange-50 border border-orange-200 rounded-lg p-3 md:p-4">
+              <div
+                v-if="posSettingsStore.allowSalesOrder || posSettingsStore.enableGasMode"
+                class="text-start bg-orange-50 border border-orange-200 rounded-lg p-3 md:p-4"
+              >
                 <div class="text-orange-700 text-xs uppercase font-medium mb-1">{{ __('Credit Deliveries') }}</div>
                 <div class="text-lg md:text-2xl font-bold text-orange-800 mb-0.5 md:mb-1 truncate">{{ closingData.mu_credit_deliveries || 0 }}</div>
                 <div class="text-orange-600 text-xs">{{ __('Sales Orders / Credit') }}</div>
@@ -225,6 +232,7 @@
 
           <!-- Cash Amounts Section (المبالغ النقدية - أسطر متعددة) -->
           <div
+            v-if="closingData.mu_enable_non_taxable_charges"
             class="bg-white border border-indigo-200 rounded-lg overflow-hidden shadow-sm"
           >
             <div class="px-3 py-3 md:px-6 md:py-4 bg-indigo-50/70 border-b border-indigo-200 flex items-center justify-between">
@@ -269,6 +277,8 @@
                     step="0.01"
                     min="0"
                     placeholder="0.00"
+                    dir="ltr"
+                    lang="en"
                     :disabled="showSuccessReport || submitResource.loading"
                     class="text-sm font-semibold w-full"
                   />
@@ -364,6 +374,8 @@
                         step="10"
                         min="0"
                         placeholder="0.00"
+                        dir="ltr"
+                        lang="en"
                         :disabled="submitResource.loading"
                         :aria-label="__('Enter actual amount for {0}', [payment.mode_of_payment])"
                         class="text-base md:text-lg text-center font-semibold"
