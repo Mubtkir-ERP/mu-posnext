@@ -224,4 +224,7 @@ def apply_profile_discount_policy(settings, profile_doc):
 	# Branch ceiling is the only discount limit (0 = unlimited).
 	settings["max_discount_allowed"] = flt(profile_doc.get("mu_max_discount_percent") or 0)
 	settings["use_percentage_discount"] = cint(profile_doc.get("mu_use_percentage_discount") or 0)
+	# Tax inclusive setting is owned by POS Profile (Accounting section).
+	if profile_doc.get("mu_tax_inclusive") is not None:
+		settings["tax_inclusive"] = cint(profile_doc.get("mu_tax_inclusive") or 0)
 	return settings
