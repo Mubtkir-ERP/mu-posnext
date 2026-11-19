@@ -964,9 +964,9 @@ const canSubmit = computed(() => {
 async function printShiftClosingReport(closingName) {
 	if (!closingName) return
 	const profile = shiftStore.currentProfile
-	if (!Boolean(Number(profile?.mu_allow_closing_print))) return
+	if (!profile?.mu_closing_print_format) return
 
-	const format = profile?.mu_closing_print_format || "Standard"
+	const format = profile.mu_closing_print_format
 	const useQZ = profile?.mu_default_print_method === "QZ Tray" || posSettingsStore.silentPrint
 
 	if (useQZ) {

@@ -1462,7 +1462,7 @@ watch(() => shiftStore.profileName, async (profileName) => {
 		const profile = await call("frappe.client.get", { doctype: "POS Profile", name: profileName });
 		if (shiftStore.profileName !== profileName) return;
 		profilePrintOptions.value = {
-			allowA4: Boolean(Number(profile?.mu_allow_a4_print)) && Boolean(profile?.mu_a4_print_format),
+			allowA4: Boolean(profile?.mu_a4_print_format),
 			allowWhatsApp: Boolean(Number(profile?.mu_allow_whatsapp_invoice)),
             allowCashExpense: Boolean(Number(profile?.mu_allow_cash_expense)) && Boolean(profile?.mu_cash_expense_account),
             cashExpenseLimit: Number(profile?.mu_cash_expense_limit) || 0,

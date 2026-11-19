@@ -2685,3 +2685,5 @@ Print Format used when printing the shift closing report.,قالب الطباع�
 Count your cash and enter actual amounts below,قم بعدّ النقدية وإدخال المبالغ الفعلية أدناه,
 Enter the actual counted amounts for each payment method,أدخل المبالغ الفعلية المعدودة لكل طريقة دفع,
 Shift closed successfully - Review the final reconciliation below,تم إغلاق الوردية بنجاح - راجع التسوية النهائية أدناه,
+A4 print format for this branch (leave blank to disable A4 printing).,قالب فاتورة A4 لهذا الفرع (اتركه فارغاً لتعطيل طباعة A4).,
+Shift Closing print format (leave blank to disable auto-print on shift close).,قالب طباعة إغلاق الجلسة (اتركه فارغاً لتعطيل الطباعة التلقائية عند إغلاق الوردية).,
