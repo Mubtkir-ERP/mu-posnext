@@ -497,6 +497,36 @@
 				</div>
 			</div>
 
+			<!-- Restaurant Order Type Toggle (Dine-In / Takeaway) -->
+			<div v-if="showOrderType" class="grid grid-cols-2 gap-1.5 mb-2 bg-gray-100 p-1 rounded-lg">
+				<button
+					type="button"
+					@click="emit('update:order-type', 'Dine-In')"
+					:class="[
+						'flex items-center justify-center gap-1.5 py-1.5 px-2.5 rounded-md text-xs font-semibold transition-all',
+						orderType === 'Dine-In'
+							? 'bg-white text-blue-700 shadow-sm border border-blue-200'
+							: 'text-gray-600 hover:text-gray-800',
+					]"
+				>
+					<span>🍽️</span>
+					<span>{{ __('Dine-In') }}</span>
+				</button>
+				<button
+					type="button"
+					@click="emit('update:order-type', 'Takeaway')"
+					:class="[
+						'flex items-center justify-center gap-1.5 py-1.5 px-2.5 rounded-md text-xs font-semibold transition-all',
+						orderType === 'Takeaway'
+							? 'bg-white text-emerald-700 shadow-sm border border-emerald-200'
+							: 'text-gray-600 hover:text-gray-800',
+					]"
+				>
+					<span>🛍️</span>
+					<span>{{ __('Takeaway') }}</span>
+				</button>
+			</div>
+
 			<!-- Offers & Coupon Buttons -->
 			<div class="flex gap-2">
 				<!-- View All Offers Button -->
@@ -1352,6 +1382,8 @@ const { showSuccess, showWarning } = useToast();
  */
 const props = defineProps({
 	hidePrices: { type: Boolean, default: false },
+	showOrderType: { type: Boolean, default: false },
+	orderType: { type: String, default: "Takeaway" },
 	items: {
 		type: Array,
 		default: () => [],
@@ -1416,6 +1448,7 @@ const emit = defineEmits([
 	"show-history", // () - Show invoice history
 	"show-return", // () - Open return invoice dialog
 	"close-shift", // () - Close current shift
+	"update:order-type", // (orderType) - Switch between Dine-In and Takeaway
 	// "create-sales-order", // () - Create Sales Order // Removed as per instruction
 ]);
 

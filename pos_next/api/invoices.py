@@ -1230,10 +1230,33 @@ def _submit_invoice_response(invoice_doc, offline_id=None, already_synced=False,
     }
     if delivery_note:
         response["delivery_note"] = delivery_note
+    if getattr(invoice_doc, "mu_order_number", None):
+        response["mu_order_number"] = cint(invoice_doc.mu_order_number)
+    if getattr(invoice_doc, "mu_order_type", None):
+        response["mu_order_type"] = invoice_doc.mu_order_type
     if offline_id:
         response["offline_id"] = offline_id
         response["already_synced"] = bool(already_synced)
     return response
+
+
+def _assign_shift_order_number(shift_name, pos_profile):
+    """Increment and return per-shift sequential order number when Restaurant Mode is enabled."""
+    if not shift_name or not pos_profile:
+        return None
+    if not frappe.db.has_column("POS Settings", "mu_enable_restaurant_mode"):
+        return None
+    if not cint(frappe.db.get_value("POS Settings", {"pos_profile": pos_profile}, "mu_enable_restaurant_mode")):
+        return None
+    if not frappe.db.has_column("POS Opening Shift", "mu_last_order_number"):
+        return None
+
+    table = '"tabPOS Opening Shift"' if getattr(frappe.db, "db_type", None) == "postgres" else "`tabPOS Opening Shift`"
+    row = frappe.db.sql(f"SELECT mu_last_order_number FROM {table} WHERE name = %s FOR UPDATE", (shift_name,))
+    current = cint(row[0][0]) if row and row[0] else 0
+    next_num = current + 1
+    frappe.db.set_value("POS Opening Shift", shift_name, "mu_last_order_number", next_num, update_modified=False)
+    return next_num
 
 
 @frappe.whitelist()
@@ -1503,6 +1526,20 @@ def submit_invoice(invoice=None, data=None):
             frappe.flags.ignore_account_permission = True
             invoice_doc.flags.ignore_permissions = True
             try:
+                # Assign restaurant order type and per-shift order number when enabled
+                order_type_val = cstr(invoice.get("mu_order_type") or data.get("mu_order_type") or "").strip()
+                if order_type_val in ("Dine-In", "Takeaway") and invoice_doc.meta.has_field("mu_order_type"):
+                    invoice_doc.mu_order_type = order_type_val
+                if (
+                    doctype == "Sales Invoice"
+                    and not cint(invoice_doc.get("is_return"))
+                    and invoice_doc.meta.has_field("mu_order_number")
+                    and not cint(invoice_doc.get("mu_order_number"))
+                ):
+                    order_num = _assign_shift_order_number(shift.name, pos_profile)
+                    if order_num:
+                        invoice_doc.mu_order_number = order_num
+
                 invoice_doc.submit()
 
                 # The invoice/order is now submitted while the coupon row lock is

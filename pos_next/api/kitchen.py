@@ -18,7 +18,7 @@ from pos_next.api.security import require_pos_profile_access
 
 
 @frappe.whitelist()
-def get_kitchen_tickets(pos_profile, items, invoice_name=None, order_note=None, customer_name=None):
+def get_kitchen_tickets(pos_profile, items, invoice_name=None, order_note=None, customer_name=None, order_number=None, order_type=None):
 	require_pos_profile_access(pos_profile)
 	items = json.loads(items) if isinstance(items, str) else (items or [])
 	if not items:
@@ -40,7 +40,23 @@ def get_kitchen_tickets(pos_profile, items, invoice_name=None, order_note=None, 
 		if not cfg:
 			continue
 		station_title = _resolve_station_title(station)
-		html = _render_ticket(station_title, lines, when, invoice_name, order_note, customer_name)
+		custom_print_format = cfg.get("print_format") or ""
+		html = None
+		if custom_print_format and invoice_name and frappe.db.exists("Sales Invoice", invoice_name):
+			try:
+				html = frappe.get_print(
+					"Sales Invoice",
+					invoice_name,
+					print_format=custom_print_format,
+					as_pdf=False,
+				)
+			except Exception as exc:
+				frappe.log_error(
+					title="Kitchen Custom Print Format Error",
+					message=f"Failed to render Print Format '{custom_print_format}' for {invoice_name}: {exc}",
+				)
+		if not html:
+			html = _render_ticket(station_title, lines, when, invoice_name, order_note, customer_name, order_number, order_type)
 		tickets.append({
 			"station": station,
 			"station_title": station_title,
@@ -48,6 +64,7 @@ def get_kitchen_tickets(pos_profile, items, invoice_name=None, order_note=None, 
 			"printer_name": cfg.get("printer_name") or "",
 			"printer_ip": cfg.get("printer_ip") or "",
 			"printer_port": cint(cfg.get("printer_port")) or 9100,
+			"print_format": custom_print_format,
 			"html": html,
 			"lines": lines,
 			"when": when,
@@ -70,7 +87,7 @@ def _get_station_printer_map(pos_profile):
 	if not pos_profile:
 		return {}
 	fields = ["kitchen_station", "printer_name"]
-	for col in ("print_method", "printer_ip", "printer_port"):
+	for col in ("print_method", "printer_ip", "printer_port", "print_format"):
 		if frappe.db.has_column("POS Kitchen Printer", col):
 			fields.append(col)
 
@@ -93,6 +110,7 @@ def _get_station_printer_map(pos_profile):
 			"printer_name": r.get("printer_name") or "",
 			"printer_ip": r.get("printer_ip") or "",
 			"printer_port": cint(r.get("printer_port")) or 9100,
+			"print_format": r.get("print_format") or "",
 		}
 	return result
 
@@ -123,7 +141,7 @@ def _get_item_station_map(item_codes):
 	}
 
 
-def _render_ticket(station_title, lines, when, invoice_name, order_note, customer_name=None):
+def _render_ticket(station_title, lines, when, invoice_name, order_note, customer_name=None, order_number=None, order_type=None):
 	rows_html = []
 	for it in lines:
 		qty = cint(it.get("qty")) or it.get("qty") or 1
@@ -138,6 +156,9 @@ def _render_ticket(station_title, lines, when, invoice_name, order_note, custome
 
 	order_note_html = f'<div class="onote">📝 {frappe.utils.escape_html(order_note)}</div>' if order_note else ""
 	cust_html = f'<div class="meta">{frappe.utils.escape_html(customer_name)}</div>' if customer_name else ""
+	order_num_html = f'<div class="ord">طلب #{cint(order_number)}</div>' if cint(order_number) else ""
+	order_type_label = "🍽️ محلي (Dine-In)" if order_type == "Dine-In" else ("🛍️ سفري (Takeaway)" if order_type == "Takeaway" else "")
+	order_type_html = f'<div class="otype">{order_type_label}</div>' if order_type_label else ""
 	header_id = frappe.utils.escape_html(invoice_name or "")
 	station_esc = frappe.utils.escape_html(station_title or _("Kitchen"))
 
@@ -147,6 +168,8 @@ def _render_ticket(station_title, lines, when, invoice_name, order_note, custome
 body{{font-family:Tahoma,Arial,sans-serif;width:72mm;margin:0;padding:4mm;color:#000;font-size:13px;}}
 .hd{{text-align:center;border-bottom:2px dashed #000;padding-bottom:6px;margin-bottom:8px;}}
 .st{{font-size:18px;font-weight:bold;}}
+.ord{{font-size:22px;font-weight:bold;margin:4px 0;border:2px solid #000;display:inline-block;padding:2px 10px;border-radius:6px;}}
+.otype{{font-size:14px;font-weight:bold;margin-top:3px;}}
 .meta{{font-size:12px;margin-top:3px;}}
 .ln{{font-size:15px;font-weight:bold;margin:6px 0 2px;}}
 .q{{display:inline-block;min-width:26px;}}
@@ -157,6 +180,8 @@ body{{font-family:Tahoma,Arial,sans-serif;width:72mm;margin:0;padding:4mm;color:
 <body>
 <div class="hd">
   <div class="st">{station_esc}</div>
+  {order_num_html}
+  {order_type_html}
   <div class="meta">{header_id} • {when}</div>
   {cust_html}
 </div>
@@ -166,7 +191,7 @@ body{{font-family:Tahoma,Arial,sans-serif;width:72mm;margin:0;padding:4mm;color:
 
 
 @frappe.whitelist()
-def print_network_ticket(printer_ip, printer_port=9100, station_title=None, invoice_name=None, lines=None, customer_name=None, order_note=None):
+def print_network_ticket(printer_ip, printer_port=9100, station_title=None, invoice_name=None, lines=None, customer_name=None, order_note=None, order_number=None, order_type=None):
 	"""Send raw ESC/POS kitchen ticket over TCP to a local network thermal printer."""
 	if not printer_ip:
 		frappe.throw(_("Printer IP Address is required."))
@@ -177,8 +202,12 @@ def print_network_ticket(printer_ip, printer_port=9100, station_title=None, invo
 		b"\x1b@",        # Initialize printer
 		b"\x1b\x61\x01", # Center align
 		(f"{station_title or 'Kitchen'}\n").encode("utf-8", "replace"),
-		(f"{invoice_name or ''}  {format_datetime(now_datetime(), 'yyyy-MM-dd HH:mm')}\n").encode("utf-8", "replace"),
 	]
+	if cint(order_number):
+		parts.append((f"ORDER #{cint(order_number)}\n").encode("utf-8", "replace"))
+	if order_type:
+		parts.append((f"[{order_type}]\n").encode("utf-8", "replace"))
+	parts.append((f"{invoice_name or ''}  {format_datetime(now_datetime(), 'yyyy-MM-dd HH:mm')}\n").encode("utf-8", "replace"))
 	if customer_name:
 		parts.append((f"{customer_name}\n").encode("utf-8", "replace"))
 	parts.append(b"--------------------------------\n")

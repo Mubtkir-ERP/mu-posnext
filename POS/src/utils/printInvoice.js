@@ -207,6 +207,9 @@ function buildOfflineReceiptHtml(invoiceData) {
 	const refId = escapeHtml(invoiceData?.offline_id || invoiceData?.name || "OFFLINE")
 	const customer = escapeHtml(invoiceData?.customer_name || invoiceData?.customer || "")
 	const currency = escapeHtml(invoiceData?.currency || "")
+	const orderNumber = invoiceData?.mu_order_number ? escapeHtml(String(invoiceData.mu_order_number)) : ""
+	const orderTypeRaw = invoiceData?.mu_order_type || ""
+	const orderTypeLabel = orderTypeRaw === "Dine-In" ? "🍽️ محلي (Dine-In)" : orderTypeRaw === "Takeaway" ? "🛍️ سفري (Takeaway)" : ""
 	const nowStr = new Date().toLocaleString()
 
 	const rowsHtml = items
@@ -246,6 +249,8 @@ th{border-bottom:1px solid #000;padding:3px 0;}
 <body>
 <div class="center">
   <div style="font-size:16px;font-weight:bold;">${title}</div>
+  ${orderNumber ? `<div style="font-size:20px;font-weight:bold;border:2px solid #000;padding:3px 6px;margin:4px auto;display:inline-block;">طلب #${orderNumber}</div>` : ""}
+  ${orderTypeLabel ? `<div style="font-size:13px;font-weight:bold;margin:2px 0;">${orderTypeLabel}</div>` : ""}
   <div style="font-size:11px;">إيصال مؤقت (وضع عدم الاتصال)</div>
   <div style="font-size:11px;">${refId} • ${escapeHtml(nowStr)}</div>
   ${customer ? `<div style="font-size:12px;margin-top:2px;">العميل: ${customer}</div>` : ""}

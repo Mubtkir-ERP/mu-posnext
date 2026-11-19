@@ -127,6 +127,7 @@ export const usePOSCartStore = defineStore("posCart", () => {
 	const selectionMode = ref("uom") // 'uom' or 'variant'
 	const currentDraftId = ref(null)
 	const targetDoctype = ref("Sales Invoice")
+	const orderType = ref("Takeaway")
 
 	// Offer processing state management
 	const offerProcessingState = ref({
@@ -235,6 +236,7 @@ export const usePOSCartStore = defineStore("posCart", () => {
 		appliedCoupon.value = null
 		currentDraftId.value = null
 		targetDoctype.value = "Sales Invoice"
+		orderType.value = "Takeaway"
 
 		// Reset offer processing state
 		offerProcessingState.value.lastCartHash = ''
@@ -304,7 +306,10 @@ export const usePOSCartStore = defineStore("posCart", () => {
 			}
 		}
 
-		const result = await baseSubmitInvoice(targetDoctype.value, deliveryDate.value, writeOffAmount.value, extraData)
+		const payloadExtra = settingsStore.enableRestaurantMode
+			? { mu_order_type: orderType.value, ...extraData }
+			: extraData
+		const result = await baseSubmitInvoice(targetDoctype.value, deliveryDate.value, writeOffAmount.value, payloadExtra)
 		// Reset write-off amount after successful submission
 		if (result) {
 			writeOffAmount.value = 0
@@ -340,6 +345,10 @@ export const usePOSCartStore = defineStore("posCart", () => {
 
 	function setCustomerAddress(addressName) {
 		customerAddress.value = addressName
+	}
+
+	function setOrderType(type) {
+		orderType.value = type === "Dine-In" ? "Dine-In" : "Takeaway"
 	}
 
 	function setPendingItem(item, qty = 1, mode = "uom") {
@@ -1812,6 +1821,8 @@ export const usePOSCartStore = defineStore("posCart", () => {
 		// Sales Order feature
 		targetDoctype,
 		setTargetDoctype,
+		orderType,
+		setOrderType,
 		createSalesOrder,
 		deliveryDate,
 		setDeliveryDate,

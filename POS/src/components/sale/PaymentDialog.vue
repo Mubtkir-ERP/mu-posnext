@@ -19,6 +19,36 @@
 					]"
 					:style="{ maxHeight: isMobileView ? 'none' : dynamicLeftColumnHeight }"
 				>
+					<!-- Restaurant Order Type Toggle (Dine-In / Takeaway) -->
+					<div v-if="showOrderType" class="grid grid-cols-2 gap-1.5 bg-gray-100 p-1 rounded-lg">
+						<button
+							type="button"
+							@click="emit('update:order-type', 'Dine-In')"
+							:class="[
+								'flex items-center justify-center gap-1.5 py-1.5 px-2.5 rounded-md text-xs font-semibold transition-all',
+								orderType === 'Dine-In'
+									? 'bg-white text-blue-700 shadow-sm border border-blue-200'
+									: 'text-gray-600 hover:text-gray-800',
+							]"
+						>
+							<span>🍽️</span>
+							<span>{{ __('Dine-In') }}</span>
+						</button>
+						<button
+							type="button"
+							@click="emit('update:order-type', 'Takeaway')"
+							:class="[
+								'flex items-center justify-center gap-1.5 py-1.5 px-2.5 rounded-md text-xs font-semibold transition-all',
+								orderType === 'Takeaway'
+									? 'bg-white text-emerald-700 shadow-sm border border-emerald-200'
+									: 'text-gray-600 hover:text-gray-800',
+							]"
+						>
+							<span>🛍️</span>
+							<span>{{ __('Takeaway') }}</span>
+						</button>
+					</div>
+
 					<!-- Delivery Date for Sales Orders -->
 					<div v-if="isSalesOrder && !settingsStore.hideDeliveryDate" class="bg-orange-50 border border-orange-200 rounded-lg p-2">
 						<div class="flex items-center gap-2">
@@ -1127,6 +1157,14 @@ const props = defineProps({
 		type: Boolean,
 		default: false,
 	},
+	showOrderType: {
+		type: Boolean,
+		default: false,
+	},
+	orderType: {
+		type: String,
+		default: "Takeaway",
+	},
 })
 
 const emit = defineEmits([
@@ -1134,6 +1172,7 @@ const emit = defineEmits([
 	"payment-completed",
 	"payment-updated",
 	"update-additional-discount",
+	"update:order-type",
 ])
 
 const show = computed({

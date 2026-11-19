@@ -403,6 +403,9 @@
 								:applied-offers="cartStore.appliedOffers"
 								:warehouses="profileWarehouses"
 								:hide-prices="hideDeliveryPrices"
+								:show-order-type="posSettingsStore.enableRestaurantMode"
+								:order-type="cartStore.orderType"
+								@update:order-type="cartStore.setOrderType"
 								@update-quantity="cartStore.updateItemQuantity"
 								@remove-item="
 									(itemCode, uom) => cartStore.removeItem(itemCode, uom)
@@ -536,6 +539,9 @@
 			:discount-amount="cartStore.totalDiscount"
 			:target-doctype="cartStore.targetDoctype"
 			:is-submitting="cartStore.isSubmitting"
+			:show-order-type="posSettingsStore.enableRestaurantMode"
+			:order-type="cartStore.orderType"
+			@update:order-type="cartStore.setOrderType"
 			@payment-completed="handlePaymentCompleted"
 			@payment-updated="handleCustomerDisplayPaymentUpdated"
 			@update-additional-discount="handleAdditionalDiscountUpdate"
@@ -2706,6 +2712,12 @@ async function handlePaymentCompleted(paymentData) {
 					);
 				}
 
+				const currentCustomerName = cartStore.customer?.customer_name || cartStore.customer?.name || null;
+				const currentOrderNumber = result.mu_order_number || null;
+				const currentOrderType = posSettingsStore.enableRestaurantMode
+					? (result.mu_order_type || cartStore.orderType)
+					: null;
+
 				customerDisplayStore.showCompleted({ invoice: result, payment: paymentData });
 				uiStore.showPaymentDialog = false;
 				discardActiveCartRecovery();
@@ -2728,7 +2740,9 @@ async function handlePaymentCompleted(paymentData) {
 					kitchenLines,
 					invoiceName,
 					null,
-					cartStore.selectedCustomer?.customer_name || null
+					currentCustomerName,
+					currentOrderNumber,
+					currentOrderType
 				).catch(
 					(err) => log.debug("Kitchen print failed:", err)
 				);

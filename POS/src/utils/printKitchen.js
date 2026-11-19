@@ -28,7 +28,15 @@ function printViaBrowser(html) {
  * Print kitchen tickets for an order, one per station/printer.
  * Supports QZ Tray, Network IP (ESC/POS), and Browser Print.
  */
-export async function printKitchenTickets(posProfile, items, invoiceName = null, orderNote = null, customerName = null) {
+export async function printKitchenTickets(
+	posProfile,
+	items,
+	invoiceName = null,
+	orderNote = null,
+	customerName = null,
+	orderNumber = null,
+	orderType = null
+) {
 	try {
 		if (!items || !items.length) return { printed: 0, total: 0 }
 		const tickets = await call("pos_next.api.kitchen.get_kitchen_tickets", {
@@ -37,6 +45,8 @@ export async function printKitchenTickets(posProfile, items, invoiceName = null,
 			invoice_name: invoiceName,
 			order_note: orderNote,
 			customer_name: customerName,
+			order_number: orderNumber,
+			order_type: orderType,
 		})
 		if (!Array.isArray(tickets) || !tickets.length) return { printed: 0, total: 0 }
 
@@ -53,6 +63,8 @@ export async function printKitchenTickets(posProfile, items, invoiceName = null,
 						lines: JSON.stringify(t.lines || []),
 						customer_name: customerName,
 						order_note: orderNote,
+						order_number: orderNumber,
+						order_type: orderType,
 					})
 				} else if (method === "Browser Print") {
 					printViaBrowser(t.html)
