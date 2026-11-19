@@ -31,7 +31,10 @@ from frappe.utils import cint
 from frappe.query_builder import DocType
 from frappe.query_builder.functions import Coalesce
 
-from pos_next.api.constants import POS_SETTINGS_FIELDS, DEFAULT_POS_SETTINGS
+from pos_next.api.constants import (
+	DEFAULT_POS_SETTINGS,
+	get_existing_pos_settings_fields,
+)
 
 
 @frappe.whitelist()
@@ -214,17 +217,18 @@ def _get_pos_settings(pos_profile_doc):
 		dict: POS Settings with derived values
 	"""
 	try:
+		settings_fields = get_existing_pos_settings_fields()
 		settings = (
 			frappe.db.get_value(
 				"POS Settings",
 				{"pos_profile": pos_profile_doc.name, "enabled": 1},
-				POS_SETTINGS_FIELDS,
+				settings_fields,
 				as_dict=True,
 			)
 			or frappe.db.get_value(
 				"POS Settings",
 				{"pos_profile": pos_profile_doc.name},
-				POS_SETTINGS_FIELDS,
+				settings_fields,
 				as_dict=True,
 			)
 			or DEFAULT_POS_SETTINGS.copy()

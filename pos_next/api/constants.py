@@ -48,62 +48,46 @@ POS_SETTINGS_FIELDS = [
 	"allow_delete_draft_invoices",
 	"enable_auto_stock_sync",
 	"stock_sync_interval",
-	"customer_display_enabled",
-	"customer_display_company_name",
-	"customer_display_welcome_text",
-	"customer_display_pos_location",
-	"customer_display_theme",
-	"customer_display_size_mode",
-	"customer_display_currency_label",
-	"customer_display_idle_mode",
-	"customer_display_idle_image",
-	"customer_display_idle_video",
-	"customer_display_overlay_enabled",
-	"customer_display_overlay_text",
-	"customer_display_overlay_type",
-	"customer_display_overlay_on",
-	"customer_display_overlay_position",
-	"customer_display_overlay_text_color",
-	"customer_display_overlay_background_color",
-	"customer_display_overlay_opacity",
-	"customer_display_overlay_font_size",
-	"customer_display_overlay_scroll_speed",
-	"customer_display_thank_you_duration",
-	"cd_show_company_name",
-	"cd_show_welcome_text",
-	"cd_show_pos_location",
-	"cd_show_pos_number",
-	"cd_show_product_image",
-	"cd_show_item_name",
-	"cd_show_barcode",
-	"cd_show_quantity",
-	"cd_show_original_price",
-	"cd_show_discount_amount",
-	"cd_show_discount_percentage",
-	"cd_show_final_price",
-	"cd_show_running_qty",
-	"cd_show_subtotal",
-	"cd_show_total_discount",
-	"cd_show_grand_total",
-	"cd_show_customer_name",
-	"cd_customer_name_mode",
-	"cd_show_loyalty_points",
-	"cd_show_loyalty_earned",
-	"cd_show_customer_credit",
-	"cd_show_payment_method",
-	"cd_show_amount_paid",
-	"cd_show_remaining_balance",
-	"cd_show_change",
-	"cd_show_invoice_number",
-	"cd_enable_thank_you",
-	"customer_display_thank_you_title",
-	"customer_display_thank_you_message",
 	"mu_enable_order_status",
 	"mu_enable_gas_mode",
 	"mu_voucher_enabled",
 	"mu_enable_restaurant_mode",
 	"mu_delivery_otp_enabled",
 ]
+
+
+def get_existing_pos_settings_fields():
+	"""Return POS_SETTINGS_FIELDS filtered to columns that exist in tabPOS Settings.
+
+	Prevents OperationalError (1054 Unknown column) when code is deployed before
+	bench migrate finishes on a site.
+	"""
+	import frappe
+
+	try:
+		existing = set(frappe.db.get_table_columns("POS Settings") or [])
+	except Exception:
+		existing = set()
+
+	if not existing:
+		return list(POS_SETTINGS_FIELDS)
+
+	filtered = [f for f in POS_SETTINGS_FIELDS if f in existing]
+	return filtered or ["name"]
+
+
+def apply_profile_customer_display_settings(settings, profile_doc):
+	"""Populate customer_display_* and cd_* settings from POS Profile."""
+	import frappe
+
+	if not profile_doc or not frappe.db.has_column("POS Profile", "customer_display_enabled"):
+		return settings
+
+	profile_dict = profile_doc.as_dict()
+	for key, val in profile_dict.items():
+		if (key.startswith("customer_display_") or key.startswith("cd_")) and val is not None:
+			settings[key] = val
+	return settings
 
 # Default POS Settings values
 # Used when no POS Settings found or on error
@@ -260,4 +244,5 @@ def apply_profile_discount_policy(settings, profile_doc):
 	settings["tax_inclusive"] = resolve_profile_tax_inclusive(
 		profile_doc.get("name"), profile_doc=profile_doc, settings_dict=settings
 	)
+	apply_profile_customer_display_settings(settings, profile_doc)
 	return settings

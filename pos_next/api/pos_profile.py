@@ -87,25 +87,26 @@ def get_pos_settings(pos_profile):
 	"""Get POS Settings for a given POS Profile"""
 	require_pos_profile_access(pos_profile)
 	from pos_next.api.constants import (
-		POS_SETTINGS_FIELDS,
 		DEFAULT_POS_SETTINGS,
 		apply_profile_discount_policy,
+		get_existing_pos_settings_fields,
 	)
 
 	if not pos_profile:
 		return DEFAULT_POS_SETTINGS.copy()
 
 	try:
+		settings_fields = get_existing_pos_settings_fields()
 		# Get POS Settings linked to this POS Profile (prefer enabled=1, fallback to any record for profile)
 		pos_settings = frappe.db.get_value(
 			"POS Settings",
 			{"pos_profile": pos_profile, "enabled": 1},
-			POS_SETTINGS_FIELDS,
+			settings_fields,
 			as_dict=True,
 		) or frappe.db.get_value(
 			"POS Settings",
 			{"pos_profile": pos_profile},
-			POS_SETTINGS_FIELDS,
+			settings_fields,
 			as_dict=True,
 		)
 

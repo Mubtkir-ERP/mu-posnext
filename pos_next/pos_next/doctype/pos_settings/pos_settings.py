@@ -111,12 +111,14 @@ def get_pos_settings(pos_profile):
 
 	require_pos_profile_access(pos_profile)
 
-	settings = frappe.db.get_value(
+	rows = frappe.get_all(
 		"POS Settings",
-		{"pos_profile": pos_profile},
-		"*",
-		as_dict=True
+		filters={"pos_profile": pos_profile},
+		fields=["*"],
+		order_by="enabled desc, modified desc",
+		limit=1,
 	)
+	settings = rows[0] if rows else None
 
 	# If no settings exist, create default settings
 	if not settings:
