@@ -2263,6 +2263,14 @@ function quickAddPayment(method) {
 		nextTick(() => {
 			switchToNextPaymentMethod(amt)
 		})
+	} else if (remainingAmount.value > 0) {
+		// Auto-reset selection to the default payment method (e.g. Cash) for any remaining balance
+		const defaultMethod =
+			paymentMethods.value.find((m) => m.default === 1 || m.default === true) ||
+			paymentMethods.value[0]
+		if (defaultMethod && defaultMethod.mode_of_payment !== method.mode_of_payment) {
+			lastSelectedMethod.value = defaultMethod
+		}
 	}
 }
 
@@ -2418,6 +2426,14 @@ async function addCustomPayment(method, amount) {
 		nextTick(() => {
 			switchToNextPaymentMethod(amt)
 		})
+	} else if (remainingAmount.value > 0) {
+		// Auto-reset selection to the default payment method (e.g. Cash) for any remaining balance
+		const defaultMethod =
+			paymentMethods.value.find((m) => m.default === 1 || m.default === true) ||
+			paymentMethods.value[0]
+		if (defaultMethod && defaultMethod.mode_of_payment !== method.mode_of_payment) {
+			lastSelectedMethod.value = defaultMethod
+		}
 	}
 }
 

@@ -952,7 +952,8 @@ const fetchInvoiceResource = createResource({
 				customer: data.customer,
 				customer_name: origInvoice.customer_name || data.customer_name,
 				company: data.company,
-				posting_date: origInvoice.posting_date,
+				posting_date: origInvoice.posting_date || data.posting_date,
+				status: origInvoice.status || data.status || "Paid",
 				grand_total: origInvoice.grand_total,
 				paid_amount: origInvoice.paid_amount,
 				outstanding_amount: origInvoice.outstanding_amount,
@@ -1454,31 +1455,25 @@ function initializePaymentsFromInvoice() {
 		return
 	}
 
-	const defaultMode = paymentMethods.value[0]?.mode_of_payment || ""
+	const returnMethod =
+		paymentMethods.value.find((m) => m.allow_in_returns && (m.default === 1 || m.default === true)) ||
+		paymentMethods.value.find((m) => m.allow_in_returns) ||
+		paymentMethods.value.find((m) => m.default === 1 || m.default === true) ||
+		paymentMethods.value[0]
+	const defaultMode = returnMethod?.mode_of_payment || ""
+	const fullRefundAmount = roundCurrency(
+		isPartiallyPaid.value ? maxRefundableAmount.value : returnTotal.value
+	)
 
-	const invoicePayments = originalInvoice.value?.payments
-	if (invoicePayments?.length) {
-		// Only remap when paymentMethods are loaded. When null (not yet loaded),
-		// the backend has already remapped via _remap_foreign_payment_modes,
-		// so the modes are safe to use as-is.
-		const currentModes = paymentMethods.value.length
-			? new Set(paymentMethods.value.map((m) => m.mode_of_payment))
-			: null
-
-		refundPayments.value = invoicePayments.map((payment) => ({
-			mode_of_payment:
-				currentModes && !currentModes.has(payment.mode_of_payment)
-					? defaultMode
-					: payment.mode_of_payment,
-			amount: isPartiallyPaid.value ? 0 : Math.abs(payment.amount),
-		}))
-	} else {
+	if (defaultMode) {
 		refundPayments.value = [
 			{
 				mode_of_payment: defaultMode,
-				amount: 0,
+				amount: fullRefundAmount,
 			},
 		]
+	} else {
+		refundPayments.value = []
 	}
 }
 

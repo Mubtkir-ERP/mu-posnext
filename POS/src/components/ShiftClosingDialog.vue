@@ -645,6 +645,8 @@ import {
 	savePendingClosingShift,
 } from "@/utils/offline"
 import { offlineState } from "@/utils/offline/offlineState"
+import { call } from "@/utils/apiWrapper"
+import { printHTML } from "@/utils/qzTray"
 
 const props = defineProps({
 	modelValue: {
@@ -959,6 +961,35 @@ const canSubmit = computed(() => {
 	)
 })
 
+async function printShiftClosingReport(closingName) {
+	if (!closingName) return
+	const profile = shiftStore.currentProfile
+	if (!Boolean(Number(profile?.mu_allow_closing_print))) return
+
+	const format = profile?.mu_closing_print_format || "Standard"
+	const useQZ = profile?.mu_default_print_method === "QZ Tray" || posSettingsStore.silentPrint
+
+	if (useQZ) {
+		try {
+			const res = await call("frappe.www.printview.get_html_and_style", {
+				doc: "POS Closing Shift",
+				name: closingName,
+				print_format: format,
+			})
+			if (res?.html) {
+				const fullHtml = `<!DOCTYPE html><html><head><meta charset="utf-8"><style>${res.style || ""}</style></head><body>${res.html}</body></html>`
+				await printHTML(fullHtml)
+				return
+			}
+		} catch (e) {
+			console.warn("QZ Tray shift closing print failed, falling back to browser print:", e)
+		}
+	}
+
+	const url = `/printview?doctype=${encodeURIComponent("POS Closing Shift")}&name=${encodeURIComponent(closingName)}&format=${encodeURIComponent(format)}&trigger_print=1`
+	window.open(url, "_blank", "noopener,noreferrer")
+}
+
 async function submitClosing() {
 	if (!closingData.value) return
 
@@ -978,10 +1009,15 @@ async function submitClosing() {
 			return
 		}
 
+		let submitResult = null
 		try {
-			await submitResource.submit({ closing_shift: closingData.value })
+			submitResult = await submitResource.submit({ closing_shift: closingData.value })
 			await clearClosingShiftDraft(props.openingShift)
 			localStorage.removeItem("pos_shift_pending_close")
+			const closingName = submitResult?.name || submitResult?.message?.name
+			if (closingName) {
+				printShiftClosingReport(closingName).catch((err) => console.warn("Closing print error:", err))
+			}
 		} catch (error) {
 			if (isNetworkLikeError(error)) {
 				await queueClosingLocally()
@@ -1042,12 +1078,12 @@ const isInEntryMode = computed(() =>
 
 const reconciliationMessage = computed(() => {
 	if (isInEntryMode.value) {
-		return 'Enter the actual counted amounts for each payment method'
+		return __('Enter the actual counted amounts for each payment method')
 	}
 	if (showSuccessReport.value && hideExpectedAmount.value) {
-		return 'Shift closed successfully - Review the final reconciliation below'
+		return __('Shift closed successfully - Review the final reconciliation below')
 	}
-	return 'Count your cash and enter actual amounts below'
+	return __('Count your cash and enter actual amounts below')
 })
 
 // Computed properties for real-time recalculation

@@ -2123,7 +2123,9 @@ def prepare_return_invoice(invoice_name, pos_opening_shift=None):
             si.is_pos,
             si.grand_total,
             si.paid_amount,
-            si.outstanding_amount
+            si.outstanding_amount,
+            si.posting_date,
+            si.status
         )
         .where(si.name == invoice_name)
     ).run(as_dict=True)
@@ -2218,6 +2220,8 @@ def prepare_return_invoice(invoice_name, pos_opening_shift=None):
     # Include original invoice data for reference (payments, amounts, etc.)
     return_dict["_original_invoice"] = {
         "name": invoice_name,
+        "posting_date": str(invoice_info.posting_date) if invoice_info.posting_date else None,
+        "status": invoice_info.status,
         "grand_total": invoice_info.grand_total,
         "paid_amount": invoice_info.paid_amount,
         "outstanding_amount": invoice_info.outstanding_amount,
