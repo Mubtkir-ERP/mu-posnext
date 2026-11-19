@@ -214,12 +214,21 @@ def _get_pos_settings(pos_profile_doc):
 		dict: POS Settings with derived values
 	"""
 	try:
-		settings = frappe.db.get_value(
-			"POS Settings",
-			{"pos_profile": pos_profile_doc.name, "enabled": 1},
-			POS_SETTINGS_FIELDS,
-			as_dict=True
-		) or DEFAULT_POS_SETTINGS.copy()
+		settings = (
+			frappe.db.get_value(
+				"POS Settings",
+				{"pos_profile": pos_profile_doc.name, "enabled": 1},
+				POS_SETTINGS_FIELDS,
+				as_dict=True,
+			)
+			or frappe.db.get_value(
+				"POS Settings",
+				{"pos_profile": pos_profile_doc.name},
+				POS_SETTINGS_FIELDS,
+				as_dict=True,
+			)
+			or DEFAULT_POS_SETTINGS.copy()
+		)
 
 		# ERPNext Stock Settings is the global source of truth for negative stock.
 		# The POS Settings field is retained only as a frontend compatibility mirror.

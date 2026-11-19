@@ -119,6 +119,18 @@ export const usePOSCartStore = defineStore("posCart", () => {
 	const offersStore = usePOSOffersStore()
 	const settingsStore = usePOSSettingsStore()
 
+	// Keep cart taxInclusive permanently synced in the store singleton
+	// (survives POSSale.vue remounts caused by translationVersion changes)
+	watch(
+		() => settingsStore.settings?.tax_inclusive,
+		(val) => {
+			if (val !== undefined) {
+				setTaxInclusive(Boolean(Number(val)))
+			}
+		},
+		{ immediate: true }
+	)
+
 	// Additional cart state
 	const pendingItem = ref(null)
 	const pendingItemQty = ref(1)

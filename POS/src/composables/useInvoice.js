@@ -1231,6 +1231,10 @@ export function useInvoice() {
 		 * Tax rules are profile-scoped. Fresh server data replaces the cache;
 		 * offline/weak connections may only reuse the cache for the same profile.
 		 */
+		if (posSettings && posSettings.tax_inclusive !== undefined) {
+			taxInclusive.value = Boolean(Number(posSettings.tax_inclusive))
+		}
+
 		const cacheKey = `pos_tax_rules_${profileName}`
 		try {
 			const result = await getTaxesResource.submit({ pos_profile: profileName })
@@ -1243,7 +1247,7 @@ export function useInvoice() {
 		}
 
 		if (posSettings && posSettings.tax_inclusive !== undefined) {
-			taxInclusive.value = posSettings.tax_inclusive || false
+			taxInclusive.value = Boolean(Number(posSettings.tax_inclusive))
 		}
 
 		invoiceItems.value.forEach((item) => recalculateItem(item))

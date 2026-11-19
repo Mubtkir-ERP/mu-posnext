@@ -202,6 +202,39 @@ DEFAULT_POS_SETTINGS = {
 }
 
 
+def resolve_profile_tax_inclusive(pos_profile_name, profile_doc=None, settings_dict=None):
+	"""Return 1 if tax-inclusive pricing is enabled in POS Settings or POS Profile.
+
+	Checks POS Settings first (preferring enabled=1, then falling back to any
+	POS Settings row for the profile), and also honors POS Profile.mu_tax_inclusive
+	if enabled on the profile so neither configuration path is lost.
+	"""
+	import frappe
+	from frappe.utils import cint
+
+	if settings_dict and cint(settings_dict.get("tax_inclusive") or 0):
+		return 1
+
+	if pos_profile_name:
+		rows = frappe.get_all(
+			"POS Settings",
+			filters={"pos_profile": pos_profile_name},
+			fields=["tax_inclusive", "enabled"],
+			order_by="enabled desc, modified desc",
+			limit=1,
+		)
+		if rows and cint(rows[0].get("tax_inclusive") or 0):
+			return 1
+
+	if profile_doc is not None and cint(profile_doc.get("mu_tax_inclusive") or 0):
+		return 1
+	if pos_profile_name and frappe.db.has_column("POS Profile", "mu_tax_inclusive"):
+		if cint(frappe.db.get_value("POS Profile", pos_profile_name, "mu_tax_inclusive") or 0):
+			return 1
+
+	return 0
+
+
 # Single shared helper: effective discount/rate policy comes from POS Profile only.
 # (قرار الجرد: الخصومات وتعديل السعر تُدار من البروفايل فقط)
 def apply_profile_discount_policy(settings, profile_doc):
@@ -224,4 +257,7 @@ def apply_profile_discount_policy(settings, profile_doc):
 	# Branch ceiling is the only discount limit (0 = unlimited).
 	settings["max_discount_allowed"] = flt(profile_doc.get("mu_max_discount_percent") or 0)
 	settings["use_percentage_discount"] = cint(profile_doc.get("mu_use_percentage_discount") or 0)
+	settings["tax_inclusive"] = resolve_profile_tax_inclusive(
+		profile_doc.get("name"), profile_doc=profile_doc, settings_dict=settings
+	)
 	return settings

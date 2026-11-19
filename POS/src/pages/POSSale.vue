@@ -1268,6 +1268,7 @@ async function restoreActiveCartRecovery(profile, { verify = false } = {}) {
 
 		cartStore.invoiceItems = JSON.parse(JSON.stringify(snapshot.items));
 		cartStore.additionalDiscount = Number(snapshot.additional_discount || 0);
+		cartStore.invoiceItems.forEach((item) => cartStore.recalculateItem(item));
 		cartStore.rebuildIncrementalCache();
 		restored = cartStore.invoiceItems.length > 0;
 		if (!restored) return false;
@@ -1964,19 +1965,24 @@ onMounted(async () => {
 		}
 
 		// Fire independent operations in parallel while settings load.
-		// Settings must complete before tax rules, but the rest are independent.
+		// CRITICAL: Load tax rules IMMEDIATELY after settingsPromise resolves —
+		// never block tax rules behind preloadDataForOffline (which can take 5-30s).
 		const settingsPromise = posSettingsStore.loadSettings(shiftStore.profileName);
 
-		const backgroundOps = Promise.allSettled([
+		const fastOps = Promise.allSettled([
 			cartStore.setDefaultCustomer(),
-			offlineStore.isOffline
-				? offlineStore.checkOfflineCacheAvailability(shiftStore.profileName)
-				: offlineStore.preloadDataForOffline(shiftStore.currentProfile),
 			draftsStore.updateDraftsCount(),
 		]);
 
-		// Wait for settings (required for tax rules) + all background ops
-		const [settingsResult] = await Promise.allSettled([settingsPromise, backgroundOps]);
+		// Start offline preload in the background without blocking tax rules or cart init
+		Promise.resolve(
+			offlineStore.isOffline
+				? offlineStore.checkOfflineCacheAvailability(shiftStore.profileName)
+				: offlineStore.preloadDataForOffline(shiftStore.currentProfile)
+		).catch((err) => log.warn("Background offline preload warning:", err));
+
+		// Wait only for settings + fast startup ops
+		const [settingsResult] = await Promise.allSettled([settingsPromise, fastOps]);
 
 		if (settingsResult.status === "rejected") {
 			log.error("Failed to load POS settings:", settingsResult.reason);
@@ -1985,6 +1991,7 @@ onMounted(async () => {
 
 		log.info("POS Settings loaded:", {
 			allowPartialPayment: posSettingsStore.allowPartialPayment,
+			taxInclusive: posSettingsStore.settings?.tax_inclusive,
 		});
 
 		// Configure session lock from settings
@@ -1993,11 +2000,10 @@ onMounted(async () => {
 			timeoutMinutes: posSettingsStore.sessionLockTimeout,
 		});
 
-		// Load tax rules (depends on settings being loaded)
+		// Load tax rules immediately (depends only on settings being loaded)
 		await cartStore.loadTaxRules(shiftStore.profileName, posSettingsStore.settings);
 
-		// Restore the active POS transaction only after default customer/settings are ready,
-		// otherwise setDefaultCustomer() can overwrite the recovered customer.
+		// Restore the active POS transaction only after default customer/settings/tax rules are ready
 		await restoreActiveCartRecovery(shiftStore.profileName);
 		verifyActiveCartRecoveryAfterInit(shiftStore.profileName);
 
@@ -2321,19 +2327,21 @@ async function handleShiftOpened() {
 		stockStore.setWarehouse(shiftStore.profileWarehouse);
 	}
 
-	// Mirror initPOS: fire independent operations in parallel while settings load
+	// Mirror initPOS: do NOT block loadTaxRules behind preloadDataForOffline
 	const settingsPromise = posSettingsStore.loadSettings(shiftStore.profileName);
 
-	const backgroundOps = Promise.allSettled([
+	const fastOps = Promise.allSettled([
 		cartStore.setDefaultCustomer(),
-		offlineStore.isOffline
-			? offlineStore.checkOfflineCacheAvailability(shiftStore.profileName)
-			: offlineStore.preloadDataForOffline(shiftStore.currentProfile),
 		draftsStore.updateDraftsCount(),
 	]);
 
-	// Wait for settings (required for tax rules) + all background ops
-	const [settingsResult] = await Promise.allSettled([settingsPromise, backgroundOps]);
+	Promise.resolve(
+		offlineStore.isOffline
+			? offlineStore.checkOfflineCacheAvailability(shiftStore.profileName)
+			: offlineStore.preloadDataForOffline(shiftStore.currentProfile)
+	).catch((err) => log.warn("Background offline preload warning:", err));
+
+	const [settingsResult] = await Promise.allSettled([settingsPromise, fastOps]);
 
 	if (settingsResult.status === "rejected") {
 		log.error("Failed to load POS settings:", settingsResult.reason);
@@ -2346,14 +2354,14 @@ async function handleShiftOpened() {
 		timeoutMinutes: posSettingsStore.sessionLockTimeout,
 	});
 
-	// Load tax rules (depends on settings being loaded)
+	// Load tax rules immediately (depends only on settings being loaded)
 	await cartStore.loadTaxRules(shiftStore.profileName, posSettingsStore.settings);
 
 	// Restore an interrupted transaction after the new shift has completed initialization.
 	await restoreActiveCartRecovery(shiftStore.profileName);
 	verifyActiveCartRecoveryAfterInit(shiftStore.profileName);
 
-	_initializedProfile = shiftStore.profileName;
+	_initializedKey = `${shiftStore.profileName}::${shiftStore.currentShift?.name}`;
 
 	// Start session lock tracking now that a shift is open and POS is ready
 	startActivityTracking();

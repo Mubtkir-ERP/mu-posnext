@@ -96,12 +96,17 @@ def get_pos_settings(pos_profile):
 		return DEFAULT_POS_SETTINGS.copy()
 
 	try:
-		# Get POS Settings linked to this POS Profile
+		# Get POS Settings linked to this POS Profile (prefer enabled=1, fallback to any record for profile)
 		pos_settings = frappe.db.get_value(
 			"POS Settings",
 			{"pos_profile": pos_profile, "enabled": 1},
 			POS_SETTINGS_FIELDS,
-			as_dict=True
+			as_dict=True,
+		) or frappe.db.get_value(
+			"POS Settings",
+			{"pos_profile": pos_profile},
+			POS_SETTINGS_FIELDS,
+			as_dict=True,
 		)
 
 		if not pos_settings:

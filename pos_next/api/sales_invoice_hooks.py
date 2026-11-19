@@ -38,13 +38,8 @@ def apply_tax_inclusive(doc):
 	if not doc.pos_profile:
 		return
 
-	# POS Settings.tax_inclusive is the single source of truth
-	tax_inclusive = frappe.db.get_value(
-		"POS Settings",
-		{"pos_profile": doc.pos_profile, "enabled": 1},
-		"tax_inclusive",
-	)
-	tax_inclusive = int(tax_inclusive or 0)
+	from pos_next.api.constants import resolve_profile_tax_inclusive
+	tax_inclusive = resolve_profile_tax_inclusive(doc.pos_profile)
 
 	has_changes = False
 	for tax in doc.get("taxes", []):
