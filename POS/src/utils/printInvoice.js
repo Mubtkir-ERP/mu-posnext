@@ -192,3 +192,113 @@ export async function printWithSilentFallback(invoiceData, printFormat = null) {
 	}
 }
 
+function escapeHtml(text) {
+	return String(text || "")
+		.replace(/&/g, "&amp;")
+		.replace(/</g, "&lt;")
+		.replace(/>/g, "&gt;")
+		.replace(/"/g, "&quot;")
+}
+
+function buildOfflineReceiptHtml(invoiceData) {
+	const items = Array.isArray(invoiceData?.items) ? invoiceData.items : []
+	const payments = Array.isArray(invoiceData?.payments) ? invoiceData.payments : []
+	const title = escapeHtml(invoiceData?.company || invoiceData?.pos_profile || "Mubtkir ERP")
+	const refId = escapeHtml(invoiceData?.offline_id || invoiceData?.name || "OFFLINE")
+	const customer = escapeHtml(invoiceData?.customer_name || invoiceData?.customer || "")
+	const currency = escapeHtml(invoiceData?.currency || "")
+	const nowStr = new Date().toLocaleString()
+
+	const rowsHtml = items
+		.map((it) => {
+			const name = escapeHtml(it.item_name || it.item_code)
+			const qty = Number(it.qty ?? it.quantity ?? 1)
+			const rate = Number(it.rate ?? it.price_list_rate ?? 0)
+			const amt = Number(it.amount ?? qty * rate)
+			return `<tr>
+				<td style="padding:3px 0;text-align:right;">${name}</td>
+				<td style="padding:3px 4px;text-align:center;">${qty}</td>
+				<td style="padding:3px 0;text-align:left;">${formatCurrency(amt)}</td>
+			</tr>`
+		})
+		.join("")
+
+	const paymentsHtml = payments
+		.map(
+			(p) =>
+				`<div style="display:flex;justify-content:space-between;font-size:12px;"><span>${escapeHtml(
+					p.mode_of_payment
+				)}</span><span>${formatCurrency(p.amount)} ${currency}</span></div>`
+		)
+		.join("")
+
+	return `<!DOCTYPE html>
+<html dir="rtl" lang="ar">
+<head><meta charset="utf-8"><title>${refId}</title>
+<style>
+body{font-family:Tahoma,Arial,sans-serif;width:72mm;margin:0 auto;padding:4mm;color:#000;font-size:12px;}
+.center{text-align:center;}
+.sep{border-top:1px dashed #000;margin:6px 0;}
+table{width:100%;border-collapse:collapse;font-size:12px;}
+th{border-bottom:1px solid #000;padding:3px 0;}
+.tot{display:flex;justify-content:space-between;font-weight:bold;font-size:14px;margin-top:4px;}
+</style></head>
+<body>
+<div class="center">
+  <div style="font-size:16px;font-weight:bold;">${title}</div>
+  <div style="font-size:11px;">إيصال مؤقت (وضع عدم الاتصال)</div>
+  <div style="font-size:11px;">${refId} • ${escapeHtml(nowStr)}</div>
+  ${customer ? `<div style="font-size:12px;margin-top:2px;">العميل: ${customer}</div>` : ""}
+</div>
+<div class="sep"></div>
+<table>
+  <thead><tr><th style="text-align:right;">الصنف</th><th style="text-align:center;">الكمية</th><th style="text-align:left;">الإجمالي</th></tr></thead>
+  <tbody>${rowsHtml}</tbody>
+</table>
+<div class="sep"></div>
+${Number(invoiceData?.total_discount || 0) > 0 ? `<div style="display:flex;justify-content:space-between;"><span>الخصم</span><span>-${formatCurrency(invoiceData.total_discount)} ${currency}</span></div>` : ""}
+${Number(invoiceData?.total_tax || 0) > 0 ? `<div style="display:flex;justify-content:space-between;"><span>الضريبة</span><span>${formatCurrency(invoiceData.total_tax)} ${currency}</span></div>` : ""}
+<div class="tot"><span>الإجمالي</span><span>${formatCurrency(invoiceData?.grand_total)} ${currency}</span></div>
+${paymentsHtml ? `<div class="sep"></div>${paymentsHtml}` : ""}
+<div class="sep"></div>
+<div class="center" style="font-size:10px;">Powered By Mubtkir ERP</div>
+</body></html>`
+}
+
+/**
+ * Print an offline invoice locally using QZ Tray (if enabled) or Browser Print.
+ */
+export async function printOfflineReceipt(invoiceData, { useQZ = false } = {}) {
+	const html = buildOfflineReceiptHtml(invoiceData)
+	if (useQZ) {
+		try {
+			await qzPrintHTML(html)
+			return { method: "silent", success: true }
+		} catch (e) {
+			log.warn("Offline QZ Tray print failed, falling back to browser print:", e?.message || e)
+		}
+	}
+
+	const iframe = document.createElement("iframe")
+	iframe.style.position = "fixed"
+	iframe.style.right = "0"
+	iframe.style.bottom = "0"
+	iframe.style.width = "0"
+	iframe.style.height = "0"
+	iframe.style.border = "0"
+	document.body.appendChild(iframe)
+	const doc = iframe.contentWindow.document
+	doc.open()
+	doc.write(html)
+	doc.close()
+	setTimeout(() => {
+		try {
+			iframe.contentWindow.focus()
+			iframe.contentWindow.print()
+		} finally {
+			setTimeout(() => iframe.remove(), 1500)
+		}
+	}, 250)
+	return { method: "browser", success: true }
+}
+

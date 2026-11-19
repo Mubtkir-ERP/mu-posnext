@@ -2687,3 +2687,4 @@ Enter the actual counted amounts for each payment method,أدخل المبالغ
 Shift closed successfully - Review the final reconciliation below,تم إغلاق الوردية بنجاح - راجع التسوية النهائية أدناه,
 A4 print format for this branch (leave blank to disable A4 printing).,قالب فاتورة A4 لهذا الفرع (اتركه فارغاً لتعطيل طباعة A4).,
 Shift Closing print format (leave blank to disable auto-print on shift close).,قالب طباعة إغلاق الجلسة (اتركه فارغاً لتعطيل الطباعة التلقائية عند إغلاق الوردية).,
+Automatically set taxes as included in item prices for this POS Profile.,ضبط الضرائب كشاملة في أسعار الأصناف تلقائياً لملف نقطة البيع هذا.,

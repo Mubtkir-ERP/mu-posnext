@@ -1157,7 +1157,7 @@ import { useUserData } from "@/data/user";
 import { parseError } from "@/utils/errorHandler";
 import { cleanupUserSession } from "@/utils/sessionCleanup";
 import { offlineWorker } from "@/utils/offline/workerClient";
-import { printInvoice, printInvoiceByName, printWithSilentFallback } from "@/utils/printInvoice";
+import { printInvoice, printInvoiceByName, printOfflineReceipt, printWithSilentFallback } from "@/utils/printInvoice";
 import { printKitchenTickets } from "@/utils/printKitchen";
 import { qzConnected, connect as qzConnect, disconnect as qzDisconnect } from "@/utils/qzTray";
 import CashDisbursementDialog from "@/components/cash/CashDisbursementDialog.vue";
@@ -2656,6 +2656,16 @@ async function handlePaymentCompleted(paymentData) {
 			}
 
 			showSuccess(__("Invoice saved offline. Will sync when online"));
+
+			if (shiftStore.autoPrintEnabled || posSettingsStore.printReceiptOnOrderComplete || posSettingsStore.silentPrint) {
+				await handlePrintInvoice({
+					...invoiceData,
+					offline_id: offlineSaveResult?.offline_id || "OFFLINE-PENDING",
+					company: shiftStore.profileCompany,
+					currency: shiftStore.profileCurrency,
+					customer_name: cartStore.customer?.customer_name || customerValue || shiftStore.profileCustomer,
+				});
+			}
 		} else {
 			// Get item codes from cart before clearing
 			const soldItemCodes = cartStore.invoiceItems.map((item) => item.item_code);
@@ -3424,6 +3434,21 @@ function onCashDisbursed(data) {
 // Centralized print handler - uses printInvoice.js utilities
 async function handlePrintInvoice(invoiceData, paper = "thermal") {
 	try {
+		const isOfflineInvoice =
+			!navigator.onLine ||
+			offlineStore.isOffline ||
+			!invoiceData?.name ||
+			String(invoiceData.name).startsWith("offline_") ||
+			Boolean(invoiceData?.offline_id);
+
+		if (isOfflineInvoice && Array.isArray(invoiceData?.items)) {
+			const useQZ =
+				paper === "thermal" &&
+				(posSettingsStore.silentPrint || shiftStore.currentProfile?.mu_default_print_method === "QZ Tray");
+			await printOfflineReceipt(invoiceData, { useQZ });
+			return;
+		}
+
 		// Silent print path — send directly to thermal printer via QZ Tray
 		if (paper === "thermal" && posSettingsStore.silentPrint) {
 			const result = await printWithSilentFallback(invoiceData);
