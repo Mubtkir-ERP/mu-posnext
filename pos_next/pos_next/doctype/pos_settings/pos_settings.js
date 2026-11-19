@@ -3,6 +3,9 @@
 
 frappe.ui.form.on("POS Settings", {
 	refresh(frm) {
+		// Ensure Tax Inclusive remains visible even if an older DB schema had it hidden
+		frm.set_df_property("tax_inclusive", "hidden", 0);
+
 		// Only allow selectable (leaf) customer groups as the default for new customers.
 		frm.set_query("default_customer_group", function () {
 			return { filters: { is_group: 0 } };
