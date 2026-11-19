@@ -170,6 +170,10 @@ export default defineConfig({
 						},
 					},
 					{
+						urlPattern: /\/api\/method\/pos_next\.(api\.(bootstrap\.get_initial_data|pos_profile\.(get_pos_settings|get_taxes))|pos_next\.doctype\.pos_settings\.pos_settings\.get_pos_settings)/i,
+						handler: "NetworkOnly",
+					},
+					{
 						urlPattern: /\/api\/.*/i,
 						handler: "NetworkFirst",
 						options: {

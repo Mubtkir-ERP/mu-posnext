@@ -10,6 +10,7 @@ export const usePOSSettingsStore = defineStore("posSettings", () => {
 	const settings = ref({
 		pos_profile: "",
 		enabled: 0,
+		tax_inclusive: 0,
 		// Wallet & Loyalty Settings
 		enable_loyalty_program: 0,
 		default_loyalty_program: "",

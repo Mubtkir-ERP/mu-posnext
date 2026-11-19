@@ -3428,7 +3428,7 @@
    "dt": "POS Profile",
    "fieldname": "mu_tax_inclusive",
    "fieldtype": "Check",
-   "hidden": 0,
+   "hidden": 1,
    "idx": 0,
    "insert_after": "taxes_and_charges",
    "is_system_generated": 0,

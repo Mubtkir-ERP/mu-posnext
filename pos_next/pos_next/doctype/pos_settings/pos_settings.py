@@ -136,12 +136,8 @@ def get_pos_settings(pos_profile):
 	profile = frappe.get_cached_doc("POS Profile", pos_profile)
 	apply_profile_discount_policy(settings, profile)
 
-	# Partial payment, tax inclusive, default customer group & Customer Display settings are per-profile (POS Profile)
+	# Partial payment, default customer group & Customer Display settings are per-profile (POS Profile)
 	settings["allow_partial_payment"] = cint(profile.get("allow_partial_payment") or 0)
-	if frappe.db.has_column("POS Profile", "mu_tax_inclusive"):
-		prof_ti = profile.get("mu_tax_inclusive")
-		if prof_ti is not None:
-			settings["tax_inclusive"] = cint(prof_ti)
 	if profile.get("customer_groups"):
 		settings["default_customer_group"] = profile.customer_groups[0].customer_group
 	if frappe.db.has_column("POS Profile", "customer_display_enabled"):

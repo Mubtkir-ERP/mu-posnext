@@ -1875,6 +1875,16 @@ onMounted(async () => {
 		{ immediate: true }
 	);
 
+	// Keep cart taxInclusive reactive whenever POS Settings updates (reloadSettings / bootstrap)
+	watch(
+		() => posSettingsStore.settings.tax_inclusive,
+		(val) => {
+			if (val !== undefined) {
+				cartStore.setTaxInclusive(Boolean(val));
+			}
+		}
+	);
+
 	// Store cleanup function for unmount
 	onUnmounted(() => {
 		cleanup();
