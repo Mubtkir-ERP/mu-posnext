@@ -75,6 +75,22 @@ def _drop_obsolete_custom_fields():
 		if frappe.db.has_column("POS Profile", fieldname):
 			frappe.db.sql_ddl(f"ALTER TABLE `tabPOS Profile` DROP COLUMN `{fieldname}`")
 
+	# Also remove any legacy Section Breaks whose fieldname differed on older sites
+	legacy_section_labels = (
+		"Print Formats",
+		"قوالب طباعة الفواتير",
+		"Invoice Communications",
+		"إرسال الفواتير",
+		"Prepaid Voucher System",
+		"نظام القسائم المسبقة",
+	)
+	for cf_name in frappe.get_all(
+		"Custom Field",
+		filters={"dt": "POS Profile", "fieldtype": "Section Break", "label": ["in", legacy_section_labels]},
+		pluck="name",
+	):
+		frappe.delete_doc("Custom Field", cf_name, ignore_permissions=True, force=True)
+
 	for fieldname in SETTINGS_TO_PROFILE_FIELDS:
 		if frappe.db.has_column("POS Settings", fieldname):
 			frappe.db.sql_ddl(f"ALTER TABLE `tabPOS Settings` DROP COLUMN `{fieldname}`")
