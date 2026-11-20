@@ -7,6 +7,7 @@
  "field_order": [
   "kitchen_station",
   "print_method",
+  "printer",
   "printer_name",
   "printer_ip",
   "printer_port",
@@ -32,8 +33,19 @@
    "reqd": 1
   },
   {
+   "depends_on": "eval:doc.print_method!='Browser Print'",
+   "description": "Select a defined POS Printer to auto-fill name, IP, and port.",
+   "fieldname": "printer",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Printer",
+   "options": "POS Printer"
+  },
+  {
    "depends_on": "eval:doc.print_method=='QZ Tray'",
    "description": "Exact printer name as seen by QZ Tray.",
+   "fetch_from": "printer.printer_name",
+   "fetch_if_empty": 1,
    "fieldname": "printer_name",
    "fieldtype": "Data",
    "in_list_view": 1,
@@ -43,6 +55,8 @@
   {
    "depends_on": "eval:doc.print_method=='Network IP (ESC/POS)'",
    "description": "Local network IP of the thermal printer (e.g. 192.168.1.100).",
+   "fetch_from": "printer.ip_address",
+   "fetch_if_empty": 1,
    "fieldname": "printer_ip",
    "fieldtype": "Data",
    "in_list_view": 1,
@@ -52,6 +66,8 @@
   {
    "default": "9100",
    "depends_on": "eval:doc.print_method=='Network IP (ESC/POS)'",
+   "fetch_from": "printer.port",
+   "fetch_if_empty": 1,
    "fieldname": "printer_port",
    "fieldtype": "Int",
    "label": "Printer Port"

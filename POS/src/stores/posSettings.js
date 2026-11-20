@@ -48,8 +48,13 @@ export const usePOSSettingsStore = defineStore("posSettings", () => {
 		allow_free_batch_return: 0,
 		allow_print_draft_invoices: 0,
 		mu_enable_order_status: 1,
+		allow_customer_qr_scan: 1,
 		mu_enable_gas_mode: 0,
 		mu_enable_restaurant_mode: 0,
+		mu_restaurant_allow_order_type: 1,
+		mu_restaurant_allow_modifiers: 1,
+		mu_restaurant_allow_kitchen_printers: 1,
+		mu_restaurant_order_number_start: "",
 		// Pricing & Display
 		decimal_precision: "2",
 		// Customer Settings
@@ -268,9 +273,32 @@ export const usePOSSettingsStore = defineStore("posSettings", () => {
 	const enableGasMode = computed(() =>
 		Boolean(settings.value.mu_enable_gas_mode),
 	)
-	// Restaurant mode toggle
+	const allowCustomerQrScan = computed(() =>
+		settings.value.allow_customer_qr_scan === undefined
+			? true
+			: Boolean(Number(settings.value.allow_customer_qr_scan)),
+	)
+	// Restaurant mode toggles
 	const enableRestaurantMode = computed(() =>
 		Boolean(Number(settings.value.mu_enable_restaurant_mode)),
+	)
+	const restaurantAllowOrderType = computed(() =>
+		enableRestaurantMode.value &&
+		(settings.value.mu_restaurant_allow_order_type === undefined
+			? true
+			: Boolean(Number(settings.value.mu_restaurant_allow_order_type))),
+	)
+	const restaurantAllowModifiers = computed(() =>
+		enableRestaurantMode.value &&
+		(settings.value.mu_restaurant_allow_modifiers === undefined
+			? true
+			: Boolean(Number(settings.value.mu_restaurant_allow_modifiers))),
+	)
+	const restaurantAllowKitchenPrinters = computed(() =>
+		enableRestaurantMode.value &&
+		(settings.value.mu_restaurant_allow_kitchen_printers === undefined
+			? true
+			: Boolean(Number(settings.value.mu_restaurant_allow_kitchen_printers))),
 	)
 
 	// Computed - Pricing & Display
@@ -604,8 +632,12 @@ export const usePOSSettingsStore = defineStore("posSettings", () => {
 		hideCustomerDebt,
 		allowReturnWithoutInvoice,
 		enableOrderStatus,
+		allowCustomerQrScan,
 		enableGasMode,
 		enableRestaurantMode,
+		restaurantAllowOrderType,
+		restaurantAllowModifiers,
+		restaurantAllowKitchenPrinters,
 		allowFreeBatchReturn,
 		allowPrintDraftInvoices,
 

@@ -52,7 +52,7 @@ def get_context(context):
         filters = {"customer": customer}
         if branch and frappe.db.has_column("Prepaid Voucher Transaction", "branch"):
             filters["branch"] = branch
-        raw_txns = frappe.get_all(
+        raw_txns = frappe.db.get_all(
             "Prepaid Voucher Transaction",
             filters=filters,
             fields=["transaction_type", "quantity", "balance_after", "posting_datetime", "reference_name"],

@@ -21,12 +21,12 @@ frappe.ui.form.on("Customer", {
 					}
 
 					let options_html = branches.map(b => `
-						<div class="flex justify-between items-center p-3 border rounded-lg mb-2 bg-gray-50 hover:bg-blue-50">
-							<div>
-								<div class="font-bold text-sm text-gray-800">🏢 ${b.branch_title}</div>
-								<div class="text-xs text-gray-500">${b.address_line1 || ""} ${b.city || ""} ${b.phone ? " | " + b.phone : ""}</div>
+						<div class="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 p-3 border rounded-lg mb-2 bg-gray-50 hover:bg-blue-50">
+							<div class="min-w-0">
+								<div class="font-bold text-sm text-gray-800 break-words">🏢 ${b.branch_title}</div>
+								<div class="text-xs text-gray-500 break-words">${b.address_line1 || ""} ${b.city || ""} ${b.phone ? " | " + b.phone : ""}</div>
 							</div>
-							<div class="flex items-center gap-2">
+							<div class="flex flex-wrap items-center justify-end gap-2 w-full sm:w-auto">
 								<img src="${b.qr_image}" alt="QR" style="width: 48px; height: 48px; min-width: 48px; object-fit: contain; background: white; border: 1px solid #e2e8f0; border-radius: 6px; padding: 2px;" />
 								<button class="btn btn-xs btn-success btn-whatsapp-branch" data-address="${b.address_name}" title="${__("Send via WhatsApp")}">
 									💬 ${__("WhatsApp")}
@@ -47,9 +47,9 @@ frappe.ui.form.on("Customer", {
 								fieldname: "branches_html",
 								options: `
 									<div class="p-2">
-										<div class="flex flex-wrap justify-between items-center gap-2 mb-3">
+										<div class="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2 mb-3">
 											<p class="text-xs text-muted mb-0">${__("Select a branch or print/send the customer QR card:")}</p>
-											<div class="flex items-center gap-2">
+											<div class="flex flex-wrap items-center gap-2">
 												<button class="btn btn-sm btn-success btn-whatsapp-main">
 													💬 ${__("Send Main Card (WhatsApp)")}
 												</button>
@@ -114,6 +114,20 @@ function open_single_customer_qr_modal(customer, address_name) {
 				? `<div style="font-size: 15px; font-weight: 800; color: #0f172a; margin-top: 2px;">🏢 ${data.branch_title}</div>`
 				: `<div style="font-size: 16px; font-weight: 800; color: #0f172a;">${data.customer_name || data.customer}</div>`;
 
+			const showVoucher = Boolean(data.has_voucher_activity || Number(data.voucher_balance || 0) > 0);
+			const voucherBoxHtml = showVoucher ? `
+				<div style="margin: 10px 0; padding: 8px; border-radius: 10px; background: #ecfdf5; border: 1px solid #a7f3d0;">
+					<div style="font-size: 11px; color: #047857; font-weight: 700;">🎟️ ${__("Voucher Balance")}</div>
+					<div style="font-size: 22px; color: #065f46; font-weight: 900;">${data.voucher_balance || 0}</div>
+				</div>
+			` : "";
+			const cardHref = data.card_path || data.card_url;
+			const digitalLinkHtml = showVoucher && cardHref ? `
+				<a href="${cardHref}" target="_blank" class="btn btn-default btn-block" style="font-weight: 600;">
+					🔗 ${__("Open Digital Balance Page")}
+				</a>
+			` : "";
+
 			let d = new frappe.ui.Dialog({
 				title: __("Customer QR Card") + " - " + (data.branch_title || data.customer_name || data.customer),
 				fields: [
@@ -121,27 +135,22 @@ function open_single_customer_qr_modal(customer, address_name) {
 						fieldtype: "HTML",
 						fieldname: "qr_card_html",
 						options: `
-							<div class="text-center p-3 border rounded bg-white shadow-sm" style="max-width: 360px; margin: 0 auto; direction: rtl;">
+							<div class="text-center p-3 border rounded bg-white shadow-sm" style="max-width: 100%; width: 360px; margin: 0 auto; direction: rtl;">
 								${data.company_name ? `<div style="font-size: 15px; font-weight: 800; color: #0f172a; margin-bottom: 4px;">${data.company_name}</div>` : ""}
 								${displayTitle}
 								${(data.address_line1 || data.city) ? `<div style="font-size: 11px; color: #64748b; margin-top: 2px;">📍 ${data.address_line1 || ""} ${data.city || ""}</div>` : ""}
 
-								<div style="margin: 10px 0; padding: 8px; border-radius: 10px; background: #ecfdf5; border: 1px solid #a7f3d0;">
-									<div style="font-size: 11px; color: #047857; font-weight: 700;">🎟️ ${__("Voucher Balance")}</div>
-									<div style="font-size: 22px; color: #065f46; font-weight: 900;">${data.voucher_balance || 0}</div>
-								</div>
+								${voucherBoxHtml}
 
 								<div style="display:flex; justify-content:center; align-items:center; margin: 12px 0; background: #fafafa; padding: 12px; border-radius: 12px; border: 1px solid #e2e8f0;">
-									<img src="${data.qr_image}" alt="QR" style="width: 190px; height: 190px; object-fit: contain;" />
+									<img src="${data.qr_image}" alt="QR" style="width: 190px; height: 190px; max-width: 100%; object-fit: contain;" />
 								</div>
 
 								<div class="flex flex-col gap-2" style="gap: 8px;">
 									<button type="button" class="btn btn-success btn-block btn-send-wa" style="font-weight: 700;">
 										💬 ${__("Send via WhatsApp")} ${data.mobile_no ? `(${data.mobile_no})` : ""}
 									</button>
-									<a href="${data.card_url}" target="_blank" class="btn btn-default btn-block" style="font-weight: 600;">
-										🔗 ${__("Open Digital Balance Page")}
-									</a>
+									${digitalLinkHtml}
 								</div>
 
 								<div style="font-size: 11px; color: #64748b; text-align: center; margin-top: 10px; font-weight: 600;">Powered By Mubtkir ERP</div>

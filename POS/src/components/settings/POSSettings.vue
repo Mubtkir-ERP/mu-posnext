@@ -267,6 +267,11 @@
 												:description="__('Show order status selector on invoice cards')"
 											/>
 											<CheckboxField
+												v-model="settings.allow_customer_qr_scan"
+												:label="__('Allow Customer QR Scan')"
+												:description="__('Show the Customer QR Scan button in the POS cart')"
+											/>
+											<CheckboxField
 												v-model="settings.mu_enable_gas_mode"
 												:label="__('Enable Gas Mode')"
 												:description="__('Activate Gas distribution workflow (Customer QR scanning, vouchers & credit deliveries)')"
@@ -648,6 +653,7 @@ const settings = ref({
 	enable_auto_stock_sync: 0,
 	stock_sync_interval: 60,
 	mu_enable_order_status: 1,
+	allow_customer_qr_scan: 1,
 	mu_enable_gas_mode: 0,
 	direct_credit_sales_order: 0,
 	mu_hide_delivery_date: 0,
@@ -843,6 +849,7 @@ async function saveSettings() {
 			enable_auto_stock_sync: stockSyncEnabled.value ? 1 : 0,
 			stock_sync_interval: Number(stockSyncIntervalSeconds.value) || 60,
 			mu_enable_order_status: settings.value.mu_enable_order_status ? 1 : 0,
+			allow_customer_qr_scan: settings.value.allow_customer_qr_scan ? 1 : 0,
 			mu_enable_gas_mode: settings.value.mu_enable_gas_mode ? 1 : 0,
 			direct_credit_sales_order: settings.value.direct_credit_sales_order ? 1 : 0,
 			mu_hide_delivery_date: settings.value.mu_hide_delivery_date ? 1 : 0,

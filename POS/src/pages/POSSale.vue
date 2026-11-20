@@ -403,7 +403,8 @@
 								:applied-offers="cartStore.appliedOffers"
 								:warehouses="profileWarehouses"
 								:hide-prices="hideDeliveryPrices"
-								:show-order-type="posSettingsStore.enableRestaurantMode"
+								:show-customer-qr-scan="posSettingsStore.allowCustomerQrScan"
+								:show-order-type="posSettingsStore.restaurantAllowOrderType"
 								:order-type="cartStore.orderType"
 								@update:order-type="cartStore.setOrderType"
 								@update-quantity="cartStore.updateItemQuantity"
@@ -539,7 +540,7 @@
 			:discount-amount="cartStore.totalDiscount"
 			:target-doctype="cartStore.targetDoctype"
 			:is-submitting="cartStore.isSubmitting"
-			:show-order-type="posSettingsStore.enableRestaurantMode"
+			:show-order-type="posSettingsStore.restaurantAllowOrderType"
 			:order-type="cartStore.orderType"
 			@update:order-type="cartStore.setOrderType"
 			@payment-completed="handlePaymentCompleted"
@@ -2456,7 +2457,7 @@ function handleItemSelected(item, autoAdd = false) {
 
 	// Check for restaurant modifiers
 	if (
-		Boolean(Number(settingsStore.settings?.mu_enable_restaurant_mode)) &&
+		posSettingsStore.restaurantAllowModifiers &&
 		itemsWithModifiers.value.has(item.item_code)
 	) {
 		modifierDialogItem.value = item;
@@ -2732,7 +2733,7 @@ async function handlePaymentCompleted(paymentData) {
 
 				const currentCustomerName = cartStore.customer?.customer_name || cartStore.customer?.name || null;
 				const currentOrderNumber = result.mu_order_number || null;
-				const currentOrderType = posSettingsStore.enableRestaurantMode
+				const currentOrderType = posSettingsStore.restaurantAllowOrderType
 					? (result.mu_order_type || cartStore.orderType)
 					: null;
 
@@ -2751,19 +2752,21 @@ async function handlePaymentCompleted(paymentData) {
 				// Refresh stock - Direct API (50-200ms), no Socket.IO lag!
 				await stockStore.refresh(soldItemCodes, shiftStore.profileWarehouse);
 
-				// Fire kitchen tickets (grouped by station → printer). No-op if no
+				// Fire kitchen tickets (grouped by station → printer). No-op if disabled or no
 				// kitchen printers are configured. Non-blocking; never fails the sale.
-				printKitchenTickets(
-					shiftStore.profileName,
-					kitchenLines,
-					invoiceName,
-					null,
-					currentCustomerName,
-					currentOrderNumber,
-					currentOrderType
-				).catch(
-					(err) => log.debug("Kitchen print failed:", err)
-				);
+				if (posSettingsStore.restaurantAllowKitchenPrinters) {
+					printKitchenTickets(
+						shiftStore.profileName,
+						kitchenLines,
+						invoiceName,
+						null,
+						currentCustomerName,
+						currentOrderNumber,
+						currentOrderType
+					).catch(
+						(err) => log.debug("Kitchen print failed:", err)
+					);
+				}
 
 
 				if (shiftStore.autoPrintEnabled || posSettingsStore.printReceiptOnOrderComplete || posSettingsStore.silentPrint) {
@@ -3370,7 +3373,7 @@ function handleResize(event) {
 	const adjustedDelta = isRTL.value ? -deltaX : deltaX;
 	const rawWidth = resizeState.startWidth + adjustedDelta;
 
-	uiStore.setLeftPanelWidth(rawWidth, containerWidth);
+	uiStore.setLeftPanelWidth(rawWidth, containerWidth, true);
 }
 
 function stopResize(event) {

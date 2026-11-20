@@ -1251,10 +1251,25 @@ def _assign_shift_order_number(shift_name, pos_profile):
     if not frappe.db.has_column("POS Opening Shift", "mu_last_order_number"):
         return None
 
+    start_val = None
+    if frappe.db.has_column("POS Settings", "mu_restaurant_order_number_start"):
+        start_val = frappe.db.get_value(
+            "POS Settings", {"pos_profile": pos_profile}, "mu_restaurant_order_number_start"
+        )
+        start_str = str(start_val).strip() if start_val is not None else ""
+        if start_str == "":
+            return None
+        try:
+            start_num = int(start_str)
+        except ValueError:
+            return None
+    else:
+        start_num = 1
+
     table = '"tabPOS Opening Shift"' if getattr(frappe.db, "db_type", None) == "postgres" else "`tabPOS Opening Shift`"
     row = frappe.db.sql(f"SELECT mu_last_order_number FROM {table} WHERE name = %s FOR UPDATE", (shift_name,))
-    current = cint(row[0][0]) if row and row[0] else 0
-    next_num = current + 1
+    last_val = row[0][0] if row and row[0] else None
+    next_num = start_num if last_val is None else cint(last_val) + 1
     frappe.db.set_value("POS Opening Shift", shift_name, "mu_last_order_number", next_num, update_modified=False)
     return next_num
 

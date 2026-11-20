@@ -398,27 +398,38 @@ def _voucher_settings(pos_profile):
 	row = frappe._dict()
 	row["company"] = frappe.db.get_value("POS Profile", pos_profile, "company")
 
-	# Primary source: POS Settings (Special Apps section)
+	# POS Settings owns enablement + OTP/alerts; POS Profile owns branch item/warehouse/daily limit.
 	ps_name = frappe.db.get_value("POS Settings", {"pos_profile": pos_profile}, "name")
-	voucher_fields = [
+	settings_fields = [
 		"mu_voucher_enabled",
-		"mu_voucher_redeem_item",
-		"mu_voucher_warehouse",
 		"mu_voucher_low_balance_threshold",
-		"mu_voucher_daily_limit",
 		"mu_voucher_whatsapp_enabled",
 		"mu_voucher_otp_enabled",
+		"mu_voucher_expiry_reminder_days",
 	]
-	ps_has_voucher = ps_name and frappe.db.has_column("POS Settings", "mu_voucher_enabled")
-	if ps_has_voucher:
-		for f in voucher_fields:
+	profile_fields = [
+		"mu_voucher_redeem_item",
+		"mu_voucher_warehouse",
+		"mu_voucher_daily_limit",
+	]
+
+	if ps_name:
+		for f in settings_fields:
 			if frappe.db.has_column("POS Settings", f):
 				row[f] = frappe.db.get_value("POS Settings", ps_name, f)
 
-	# Backward-compatible fallback to POS Profile for any field not yet migrated/set
-	for f in voucher_fields:
+	for f in profile_fields:
+		if frappe.db.has_column("POS Profile", f):
+			row[f] = frappe.db.get_value("POS Profile", pos_profile, f)
+
+	# Backward-compatible fallbacks for any field not yet migrated
+	for f in settings_fields:
 		if row.get(f) is None and frappe.db.has_column("POS Profile", f):
 			row[f] = frappe.db.get_value("POS Profile", pos_profile, f)
+	if ps_name:
+		for f in profile_fields:
+			if row.get(f) is None and frappe.db.has_column("POS Settings", f):
+				row[f] = frappe.db.get_value("POS Settings", ps_name, f)
 
 	row["mu_voucher_enabled"] = cint(row.get("mu_voucher_enabled"))
 	row["mu_voucher_low_balance_threshold"] = cint(row.get("mu_voucher_low_balance_threshold"))

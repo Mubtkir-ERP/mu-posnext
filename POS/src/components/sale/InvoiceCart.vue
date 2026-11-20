@@ -112,6 +112,7 @@
 									</svg>
 								</button>
 								<button
+									v-if="showCustomerQrScan"
 									type="button"
 									@click.stop="$emit('scan-customer-qr')"
 									class="w-7 h-7 flex items-center justify-center text-emerald-600 hover:bg-emerald-50 active:bg-emerald-100 rounded-lg transition-colors touch-manipulation"
@@ -244,6 +245,7 @@
 
 						<!-- Quick Scan Customer QR Button -->
 						<button
+							v-if="showCustomerQrScan"
 							type="button"
 							@click="$emit('scan-customer-qr')"
 							class="flex items-center justify-center w-10 h-10 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 rounded-xl text-white transition-colors shadow-sm hover:shadow touch-manipulation flex-shrink-0"
@@ -1382,6 +1384,7 @@ const { showSuccess, showWarning } = useToast();
  */
 const props = defineProps({
 	hidePrices: { type: Boolean, default: false },
+	showCustomerQrScan: { type: Boolean, default: true },
 	showOrderType: { type: Boolean, default: false },
 	orderType: { type: String, default: "Takeaway" },
 	items: {

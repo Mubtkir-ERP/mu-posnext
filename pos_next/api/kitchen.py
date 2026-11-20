@@ -87,7 +87,7 @@ def _get_station_printer_map(pos_profile):
 	if not pos_profile:
 		return {}
 	fields = ["kitchen_station", "printer_name"]
-	for col in ("print_method", "printer_ip", "printer_port", "print_format"):
+	for col in ("printer", "print_method", "printer_ip", "printer_port", "print_format"):
 		if frappe.db.has_column("POS Kitchen Printer", col):
 			fields.append(col)
 
@@ -96,20 +96,34 @@ def _get_station_printer_map(pos_profile):
 		filters={"parent": pos_profile, "parenttype": "POS Profile", "parentfield": "mu_kitchen_printers"},
 		fields=fields,
 	)
+	printer_ids = list({r.get("printer") for r in rows if r.get("printer")})
+	printer_docs = {}
+	if printer_ids and frappe.db.exists("DocType", "POS Printer"):
+		for p in frappe.get_all(
+			"POS Printer",
+			filters={"name": ["in", printer_ids]},
+			fields=["name", "printer_name", "ip_address", "port"],
+		):
+			printer_docs[p.name] = p
+
 	result = {}
 	for r in rows:
 		if not r.kitchen_station:
 			continue
+		p_doc = printer_docs.get(r.get("printer")) or {}
+		p_name = p_doc.get("printer_name") or r.get("printer_name") or ""
+		p_ip = p_doc.get("ip_address") or r.get("printer_ip") or ""
+		p_port = cint(p_doc.get("port") or r.get("printer_port")) or 9100
 		method = r.get("print_method") or "QZ Tray"
-		if method == "QZ Tray" and not r.get("printer_name"):
+		if method == "QZ Tray" and not p_name:
 			continue
-		if method == "Network IP (ESC/POS)" and not r.get("printer_ip"):
+		if method == "Network IP (ESC/POS)" and not p_ip:
 			continue
 		result[r.kitchen_station] = {
 			"print_method": method,
-			"printer_name": r.get("printer_name") or "",
-			"printer_ip": r.get("printer_ip") or "",
-			"printer_port": cint(r.get("printer_port")) or 9100,
+			"printer_name": p_name,
+			"printer_ip": p_ip,
+			"printer_port": p_port,
 			"print_format": r.get("print_format") or "",
 		}
 	return result

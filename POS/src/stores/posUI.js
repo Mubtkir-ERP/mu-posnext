@@ -54,7 +54,8 @@ export const usePOSUIStore = defineStore("posUI", () => {
 	)
 
 	// Layout state
-	const leftPanelWidth = ref(800)
+	const leftPanelWidth = ref(600)
+	const hasUserResized = ref(false)
 	const isResizing = ref(false)
 
 	// Computed
@@ -122,7 +123,10 @@ export const usePOSUIStore = defineStore("posUI", () => {
 		return Number.isFinite(clampedWidth) ? clampedWidth : LEFT_PANEL_MIN
 	}
 
-	function setLeftPanelWidth(width, containerWidth = null) {
+	function setLeftPanelWidth(width, containerWidth = null, isUserAction = false) {
+		if (isUserAction) {
+			hasUserResized.value = true
+		}
 		if (containerWidth !== null) {
 			const clamped = clampLeftPanelWidth(width, containerWidth)
 			leftPanelWidth.value = clamped
@@ -137,8 +141,11 @@ export const usePOSUIStore = defineStore("posUI", () => {
 
 	function updateLayoutBounds(containerWidth) {
 		if (containerWidth) {
+			const targetWidth = hasUserResized.value
+				? leftPanelWidth.value
+				: Math.round(containerWidth / 2)
 			leftPanelWidth.value = clampLeftPanelWidth(
-				leftPanelWidth.value,
+				targetWidth,
 				containerWidth,
 			)
 		}

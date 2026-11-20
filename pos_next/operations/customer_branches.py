@@ -263,33 +263,39 @@ def get_branch_qr_card_html(customer, address_name):
 @frappe.whitelist()
 def get_all_branches_qr_cards_html(customer):
     """
-    Returns a styled, printable HTML containing QR cards for all branches of a customer.
+    Returns a styled, printable HTML containing unified A6 QR stickers for all branches of a customer.
     """
     branches = get_customer_branches(customer)
     if not branches:
         frappe.throw(_("No linked addresses/branches found for this customer. Please add an address first."))
 
+    company_name = (
+        frappe.defaults.get_user_default("Company")
+        or frappe.db.get_single_value("Global Defaults", "default_company")
+        or ""
+    )
     cust_name = frappe.db.get_value("Customer", customer, "customer_name") or customer
     cards_html = []
     for b in branches:
         qr_img = b.get("qr_image") or ""
         branch_title = b.get("branch_title") or b.get("address_name")
         city = b.get("city") or ""
-        phone = b.get("phone") or ""
         addr_line = b.get("address_line1") or ""
-        addr_info = f"📍 {addr_line} {city}" if (addr_line or city) else ""
-        phone_info = f"📞 {phone}" if phone else ""
+        addr_html = f'<p class="address-line">📍 {addr_line} {city}</p>' if (addr_line or city) else ""
+        company_html = f'<div class="company-name">{company_name}</div>' if company_name else ""
 
         cards_html.append(f"""
-        <div class="card">
-            <div class="customer-name">{cust_name}</div>
-            <div class="branch-badge">🏢 {branch_title}</div>
-            <div class="qr-wrapper">
-                <img src="{qr_img}" alt="Branch QR Code" class="qr-img" />
+        <div class="a6-sticker">
+            <div class="a6-card">
+                <div>
+                    {company_html}
+                    <div class="subtitle">{_("Customer QR Card")}</div>
+                    <h2 class="branch-title">🏢 {branch_title}</h2>
+                    {addr_html}
+                </div>
+                <div class="qr-box"><img src="{qr_img}" alt="QR" /></div>
+                <div class="a6-footer">Powered By Mubtkir ERP</div>
             </div>
-            <div class="info-row">{addr_info}</div>
-            <div class="info-row">{phone_info}</div>
-            <div class="scan-hint">امسح الكود لتحديد العميل وفرعه تلقائياً في نقاط البيع</div>
         </div>
         """)
 
@@ -298,99 +304,34 @@ def get_all_branches_qr_cards_html(customer):
 <html dir="rtl" lang="ar">
 <head>
     <meta charset="utf-8">
-    <title>بطاقات فروع العميل - {cust_name}</title>
+    <title>{_("Customer QR Card")} - {cust_name}</title>
     <style>
+        @page {{ size: A6 portrait; margin: 0; }}
+        * {{ box-sizing: border-box; }}
+        body {{ margin: 0; padding: 0; font-family: sans-serif; direction: rtl; background: #fff; }}
+        .no-print {{ text-align: center; padding: 12px; background: #f8fafc; border-bottom: 1px solid #e2e8f0; }}
+        .no-print button {{ padding: 8px 20px; font-size: 14px; font-weight: 700; cursor: pointer; background: #0f172a; color: #fff; border: none; border-radius: 6px; }}
+        .a6-sticker {{ width: 105mm; height: 148mm; padding: 6mm; display: flex; align-items: stretch; justify-content: center; margin: 0 auto; page-break-after: always; }}
+        .a6-sticker:last-child {{ page-break-after: auto; }}
+        .a6-card {{ width: 100%; border: 2px solid #0f172a; border-radius: 10px; padding: 6mm; display: flex; flex-direction: column; justify-content: space-between; align-items: center; text-align: center; }}
+        .company-name {{ font-size: 16px; font-weight: 800; color: #0f172a; margin-bottom: 4px; }}
+        .subtitle {{ font-size: 13px; font-weight: 700; color: #0284c7; margin: 0 0 4px 0; }}
+        .branch-title {{ margin: 6px 0; font-size: 20px; color: #0f172a; }}
+        .address-line {{ margin: 4px 0 0 0; font-size: 12px; color: #64748b; }}
+        .qr-box {{ width: 62mm; height: 62mm; display: flex; align-items: center; justify-content: center; margin: 4mm auto; }}
+        .qr-box img {{ width: 100%; height: 100%; object-fit: contain; }}
+        .a6-footer {{ width: 100%; text-align: center; font-size: 11px; font-weight: 600; color: #475569; padding-top: 4px; border-top: 1px dashed #cbd5e1; }}
         @media print {{
-            body {{ margin: 0; padding: 10px; background: white; }}
             .no-print {{ display: none !important; }}
-            .card {{ box-shadow: none !important; border: 1px solid #ccc !important; page-break-inside: avoid; }}
-        }}
-        body {{
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-            background-color: #f3f4f6;
-            margin: 0;
-            padding: 24px 12px;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-        }}
-        .grid-container {{
-            display: flex;
-            flex-wrap: wrap;
-            gap: 20px;
-            justify-content: center;
-            max-width: 1000px;
-        }}
-        .card {{
-            background: white;
-            border: 2px solid #e5e7eb;
-            border-radius: 16px;
-            padding: 20px;
-            width: 280px;
-            text-align: center;
-            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
-        }}
-        .customer-name {{
-            font-size: 16px;
-            font-weight: 700;
-            color: #111827;
-            margin-bottom: 6px;
-        }}
-        .branch-badge {{
-            display: inline-block;
-            background: #eff6ff;
-            color: #1d4ed8;
-            padding: 3px 12px;
-            border-radius: 9999px;
-            font-size: 12px;
-            font-weight: 600;
-            margin-bottom: 12px;
-            border: 1px solid #bfdbfe;
-        }}
-        .qr-wrapper {{
-            background: #fafafa;
-            border: 1px dashed #d1d5db;
-            border-radius: 12px;
-            padding: 10px;
-            display: inline-block;
-            margin-bottom: 12px;
-        }}
-        .qr-img {{
-            width: 170px;
-            height: 170px;
-            display: block;
-        }}
-        .info-row {{
-            font-size: 11px;
-            color: #4b5563;
-            margin-top: 3px;
-        }}
-        .scan-hint {{
-            font-size: 10px;
-            color: #9ca3af;
-            margin-top: 10px;
-            border-top: 1px solid #f3f4f6;
-            padding-top: 8px;
-        }}
-        .print-btn {{
-            background: #2563eb;
-            color: white;
-            border: none;
-            padding: 10px 24px;
-            border-radius: 8px;
-            font-size: 14px;
-            font-weight: 600;
-            cursor: pointer;
-            margin-bottom: 24px;
-            box-shadow: 0 2px 4px rgba(37, 99, 235, 0.2);
+            body {{ width: 105mm; }}
         }}
     </style>
 </head>
 <body>
-    <button class="print-btn no-print" onclick="window.print()">طباعة جميع البطاقات 🖨️</button>
-    <div class="grid-container">
-        {all_cards_str}
+    <div class="no-print">
+        <button onclick="window.print()">🖨️ {_("Print All Branch Cards")}</button>
     </div>
+    {all_cards_str}
 </body>
 </html>"""
 
@@ -786,6 +727,20 @@ def get_customer_qr_card_data(customer, address_name=None):
     expiry_info = get_balance_expiry_info(customer, branch=address_name)
     mobile_no = get_recipient_mobile(customer, branch_address=address_name)
 
+    has_voucher_activity = voucher_balance > 0
+    if not has_voucher_activity and frappe.db.exists("DocType", "Prepaid Voucher Transaction"):
+        txn_filters = {"customer": customer}
+        if address_name and frappe.db.has_column("Prepaid Voucher Transaction", "branch"):
+            txn_filters["branch"] = address_name
+        has_voucher_activity = bool(frappe.db.exists("Prepaid Voucher Transaction", txn_filters))
+
+    import urllib.parse
+    token = generate_customer_card_token(customer, address_name)
+    path_params = {"customer": customer or "", "token": token}
+    if address_name:
+        path_params["branch"] = address_name
+    card_path = f"/customer-card?{urllib.parse.urlencode(path_params)}"
+
     return {
         "company_name": company_name,
         "customer": customer,
@@ -797,11 +752,13 @@ def get_customer_qr_card_data(customer, address_name=None):
         "phone": phone,
         "mobile_no": mobile_no or "",
         "voucher_balance": voucher_balance,
+        "has_voucher_activity": has_voucher_activity,
         "expiry_date": expiry_info.get("expiry_date"),
         "days_remaining": expiry_info.get("days_remaining"),
         "qr_data": qr_text,
         "qr_image": qr_image,
         "card_url": card_url,
+        "card_path": card_path,
     }
 
 

@@ -49,9 +49,14 @@ POS_SETTINGS_FIELDS = [
 	"enable_auto_stock_sync",
 	"stock_sync_interval",
 	"mu_enable_order_status",
+	"allow_customer_qr_scan",
 	"mu_enable_gas_mode",
 	"mu_voucher_enabled",
 	"mu_enable_restaurant_mode",
+	"mu_restaurant_allow_order_type",
+	"mu_restaurant_allow_modifiers",
+	"mu_restaurant_allow_kitchen_printers",
+	"mu_restaurant_order_number_start",
 	"mu_delivery_otp_enabled",
 ]
 
@@ -179,9 +184,14 @@ DEFAULT_POS_SETTINGS = {
 	"customer_display_thank_you_title": "Thank You",
 	"customer_display_thank_you_message": "Thank you for shopping with us",
 	"mu_enable_order_status": 1,
+	"allow_customer_qr_scan": 1,
 	"mu_enable_gas_mode": 0,
 	"mu_voucher_enabled": 0,
 	"mu_enable_restaurant_mode": 0,
+	"mu_restaurant_allow_order_type": 1,
+	"mu_restaurant_allow_modifiers": 1,
+	"mu_restaurant_allow_kitchen_printers": 1,
+	"mu_restaurant_order_number_start": "",
 	"mu_delivery_otp_enabled": 0,
 }
 
