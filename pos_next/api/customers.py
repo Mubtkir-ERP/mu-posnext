@@ -99,6 +99,14 @@ def get_default_customer_group(pos_profile=None):
     return "Individual"
 
 
+def _normalize_mobile_digits(mobile_no):
+    """Return digits-only mobile number (e.g. 9665XXXXXXXX) without + or -."""
+    import re
+    if not mobile_no:
+        return ""
+    return re.sub(r"\D", "", str(mobile_no))
+
+
 @frappe.whitelist()
 def create_customer(
     customer_name,
@@ -150,7 +158,7 @@ def create_customer(
             "customer_type": "Individual",
             "customer_group": resolved_customer_group,
             "territory": territory or "All Territories",
-            "mobile_no": mobile_no or "",
+            "mobile_no": _normalize_mobile_digits(mobile_no),
             "email_id": email_id or "",
             "tax_id": tax_id or "",
             "loyalty_program": loyalty_program,
@@ -380,6 +388,8 @@ def update_customer(
     if not frappe.has_permission("Customer", "write", customer):
         frappe.throw(_("You don't have permission to update customers"), frappe.PermissionError)
 
+    if mobile_no is not None:
+        mobile_no = _normalize_mobile_digits(mobile_no)
     doc = frappe.get_doc("Customer", customer)
 
     if customer_name:

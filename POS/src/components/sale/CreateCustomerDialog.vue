@@ -330,8 +330,52 @@ const selectCountry = (country) => {
 	updateMobileNumber()
 }
 
+const stripNonDigits = (val) => String(val || "").replace(/\D/g, "")
+
 const updateMobileNumber = () => {
-	customerData.value.mobile_no = phoneNumber.value ? `${selectedCountryCode.value}-${phoneNumber.value}` : ""
+	const countryDigits = stripNonDigits(selectedCountryCode.value)
+	let localDigits = stripNonDigits(phoneNumber.value)
+	if (!localDigits) {
+		customerData.value.mobile_no = ""
+		return
+	}
+	if (localDigits.startsWith("00")) {
+		localDigits = localDigits.slice(2)
+	}
+	if (countryDigits && localDigits.startsWith(countryDigits) && localDigits.length > countryDigits.length + 5) {
+		customerData.value.mobile_no = localDigits
+		return
+	}
+	localDigits = localDigits.replace(/^0+/, "")
+	customerData.value.mobile_no = `${countryDigits}${localDigits}`
+}
+
+const applyMobileToInputs = (rawMobile) => {
+	const raw = String(rawMobile || "").trim()
+	if (!raw) {
+		phoneNumber.value = ""
+		return
+	}
+	if (raw.includes("-")) {
+		const [code, ...rest] = raw.split("-")
+		selectedCountryCode.value = code.startsWith("+") ? code : `+${stripNonDigits(code)}`
+		phoneNumber.value = stripNonDigits(rest.join(""))
+		return
+	}
+	const digits = stripNonDigits(raw)
+	const sortedCountries = [...countriesStore.countries].sort(
+		(a, b) => stripNonDigits(b.isd).length - stripNonDigits(a.isd).length
+	)
+	const matched = sortedCountries.find((c) => {
+		const isdDigits = stripNonDigits(c.isd)
+		return isdDigits && digits.startsWith(isdDigits) && digits.length > isdDigits.length
+	})
+	if (matched) {
+		selectedCountryCode.value = matched.isd
+		phoneNumber.value = digits.slice(stripNonDigits(matched.isd).length)
+	} else {
+		phoneNumber.value = digits
+	}
 }
 
 const handleClickOutside = (event) => {
@@ -590,13 +634,7 @@ const applyCustomerToForm = async (customer) => {
 	// Handle mobile_no with country code immediately
 	if (customer.mobile_no) {
 		customerData.value.mobile_no = customer.mobile_no
-		if (customer.mobile_no.includes("-")) {
-			const [code, ...rest] = customer.mobile_no.split("-")
-			selectedCountryCode.value = code
-			phoneNumber.value = rest.join("-")
-		} else {
-			phoneNumber.value = customer.mobile_no
-		}
+		applyMobileToInputs(customer.mobile_no)
 	}
 
 	// Fetch the full customer document (reliable, standard permissions). NEVER
@@ -617,13 +655,7 @@ const applyCustomerToForm = async (customer) => {
 			// Update mobile if better data found
 			if (details.mobile_no && !customer.mobile_no) {
 				customerData.value.mobile_no = details.mobile_no;
-				if (details.mobile_no.includes("-")) {
-					const [code, ...rest] = details.mobile_no.split("-");
-					selectedCountryCode.value = code;
-					phoneNumber.value = rest.join("-");
-				} else {
-					phoneNumber.value = details.mobile_no;
-				}
+				applyMobileToInputs(details.mobile_no);
 			}
 		}
 	} catch (e) {
