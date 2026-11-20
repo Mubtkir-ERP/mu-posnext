@@ -49,6 +49,7 @@ export const usePOSSettingsStore = defineStore("posSettings", () => {
 		allow_print_draft_invoices: 0,
 		mu_enable_order_status: 1,
 		allow_customer_qr_scan: 1,
+		mu_hide_delivery_prices: 0,
 		mu_enable_gas_mode: 0,
 		mu_enable_restaurant_mode: 0,
 		mu_restaurant_allow_order_type: 1,

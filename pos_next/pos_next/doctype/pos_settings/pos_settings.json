@@ -78,6 +78,7 @@
   "section_break_voucher_system_col_2",
   "mu_voucher_low_balance_threshold",
   "mu_voucher_expiry_reminder_days",
+  "mu_hide_delivery_prices",
   "section_break_restaurant_settings",
   "mu_restaurant_allow_order_type",
   "mu_restaurant_allow_modifiers",
@@ -589,6 +590,13 @@
    "non_negative": 1
   },
   {
+   "default": "0",
+   "description": "Hide item prices and totals from the employee when creating Delivery / Sales Orders.",
+   "fieldname": "mu_hide_delivery_prices",
+   "fieldtype": "Check",
+   "label": "Hide Prices in Delivery Order"
+  },
+  {
    "collapsible": 1,
    "depends_on": "eval:doc.mu_enable_restaurant_mode",
    "fieldname": "section_break_restaurant_settings",
@@ -799,7 +807,7 @@
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-11-20 12:00:00.000000",
+ "modified": "2026-11-20 14:30:00.000000",
  "modified_by": "Administrator",
  "module": "POS Next",
  "name": "POS Settings",

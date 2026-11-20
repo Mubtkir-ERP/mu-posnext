@@ -14,6 +14,7 @@ PROFILE_TO_SETTINGS_FIELDS = (
 	"mu_voucher_low_balance_threshold",
 	"mu_voucher_expiry_reminder_days",
 	"mu_delivery_otp_enabled",
+	"mu_hide_delivery_prices",
 )
 
 SETTINGS_TO_PROFILE_FIELDS = (
@@ -27,6 +28,9 @@ OBSOLETE_PROFILE_CUSTOM_FIELDS = PROFILE_TO_SETTINGS_FIELDS + (
 	"mu_posnext_communications_section",
 	"mu_print_formats_section",
 	"mu_allow_shift_closing_print",
+	"mu_allow_a4_print",
+	"mu_network_printer_ip",
+	"mu_network_printer_port",
 )
 
 
@@ -76,8 +80,61 @@ def _drop_obsolete_custom_fields():
 			frappe.db.sql_ddl(f"ALTER TABLE `tabPOS Settings` DROP COLUMN `{fieldname}`")
 
 
+def _migrate_kitchen_printers():
+	"""Create POS Printer records for legacy kitchen printer rows and drop redundant columns."""
+	if not frappe.db.exists("DocType", "POS Printer"):
+		return
+	legacy_cols = ("printer_name", "printer_ip", "printer_port")
+	has_legacy = any(frappe.db.has_column("POS Kitchen Printer", c) for c in legacy_cols)
+	if not has_legacy:
+		return
+
+	select_cols = ["name"] + [c for c in ("printer",) + legacy_cols if frappe.db.has_column("POS Kitchen Printer", c)]
+	rows = frappe.get_all("POS Kitchen Printer", fields=select_cols)
+	for r in rows:
+		if r.get("printer"):
+			continue
+		p_name = (r.get("printer_name") or "").strip()
+		p_ip = (r.get("printer_ip") or "").strip()
+		if not p_name and not p_ip:
+			continue
+		label = p_name or p_ip
+		existing = frappe.db.get_value("POS Printer", {"printer_name": label}, "name")
+		if not existing:
+			doc = frappe.new_doc("POS Printer")
+			doc.printer_name = label
+			doc.ip_address = p_ip
+			doc.port = cint(r.get("printer_port")) or 9100
+			doc.insert(ignore_permissions=True)
+			existing = doc.name
+		frappe.db.set_value("POS Kitchen Printer", r.name, "printer", existing, update_modified=False)
+
+	for col in legacy_cols:
+		if frappe.db.has_column("POS Kitchen Printer", col):
+			frappe.db.sql_ddl(f"ALTER TABLE `tabPOS Kitchen Printer` DROP COLUMN `{col}`")
+
+	if frappe.db.has_column("POS Profile", "mu_network_printer_ip") and frappe.db.has_column("POS Profile", "mu_cashier_printer"):
+		profiles = frappe.get_all("POS Profile", fields=["name", "mu_network_printer_ip", "mu_network_printer_port", "mu_cashier_printer"])
+		for prof in profiles:
+			ip = (prof.get("mu_network_printer_ip") or "").strip()
+			if ip and not prof.get("mu_cashier_printer"):
+				existing = frappe.db.get_value("POS Printer", {"ip_address": ip}, "name")
+				if not existing:
+					doc = frappe.new_doc("POS Printer")
+					doc.printer_name = f"Cashier - {prof.name}"
+					doc.ip_address = ip
+					doc.port = cint(prof.get("mu_network_printer_port")) or 9100
+					doc.insert(ignore_permissions=True)
+					existing = doc.name
+				frappe.db.set_value("POS Profile", prof.name, "mu_cashier_printer", existing, update_modified=False)
+
+
 def execute():
 	_migrate_voucher_values()
+	_migrate_kitchen_printers()
 	_drop_obsolete_custom_fields()
+	if frappe.db.exists("Property Setter", "POS Profile-section_break_23-label"):
+		frappe.delete_doc("Property Setter", "POS Profile-section_break_23-label", ignore_permissions=True, force=True)
 	frappe.clear_cache(doctype="POS Profile")
 	frappe.clear_cache(doctype="POS Settings")
+	frappe.clear_cache(doctype="POS Kitchen Printer")

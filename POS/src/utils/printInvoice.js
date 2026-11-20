@@ -29,11 +29,12 @@ async function resolvePrintSettings(posProfile, printFormat, letterhead, paper =
 				name: posProfile,
 			})
 			if (doc) {
-				if (paper === "a4" && !Number(doc.mu_allow_a4_print)) {
-					throw new Error("A4 printing is disabled for this POS Profile")
-				}
 				const selected = paper === "a4" ? doc.mu_a4_print_format : (doc.mu_thermal_print_format || doc.print_format)
-				if (!selected) throw missingFormat()
+				if (!selected) {
+					throw paper === "a4"
+						? new Error("A4 printing is disabled for this POS Profile")
+						: missingFormat()
+				}
 				return { printFormat: selected, letterhead: letterhead || doc.letter_head || null }
 			}
 		} catch (err) {
@@ -142,8 +143,15 @@ export async function printInvoiceByName(invoiceName, printFormat = null, letter
  * formats that rely on Bootstrap layout classes may render differently.
  * Paper size and margins are controlled by the QZ Tray config in qzTray.js.
  */
-export async function silentPrintInvoice(invoiceName, printFormat = null) {
-	const format = (await resolvePrintSettings((await call("pos_next.api.invoices.get_invoice", { invoice_name: invoiceName }))?.pos_profile, printFormat, null)).printFormat
+export async function silentPrintInvoice(invoiceName, printFormat = null, posProfile = null, letterhead = null) {
+	let format = printFormat
+	if (!format) {
+		let resolvedProfile = posProfile
+		if (!resolvedProfile) {
+			resolvedProfile = (await call("pos_next.api.invoices.get_invoice", { invoice_name: invoiceName }))?.pos_profile
+		}
+		format = (await resolvePrintSettings(resolvedProfile, null, letterhead)).printFormat
+	}
 
 	const result = await call("frappe.www.printview.get_html_and_style", {
 		doc: "Sales Invoice",
@@ -175,9 +183,11 @@ export async function silentPrintInvoice(invoiceName, printFormat = null) {
 export async function printWithSilentFallback(invoiceData, printFormat = null) {
 	const invoiceName = invoiceData?.name
 	if (!invoiceName) throw new Error("Invalid invoice data — missing name")
+	const posProfile = invoiceData?.pos_profile || invoiceData?.posProfile || null
+	const letterhead = invoiceData?.letter_head || null
 
 	try {
-		await silentPrintInvoice(invoiceName, printFormat)
+		await silentPrintInvoice(invoiceName, printFormat, posProfile, letterhead)
 		return { method: "silent", success: true }
 	} catch (err) {
 		log.warn("Silent print failed, falling back to browser:", err?.message || err)

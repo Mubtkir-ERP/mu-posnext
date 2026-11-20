@@ -33,7 +33,7 @@ def get_pos_profiles():
 PROFILE_FEATURE_FIELDS = (
     "mu_allow_item_discount", "mu_allow_additional_discount", "mu_max_discount_percent",
     "mu_use_percentage_discount",
-    "mu_thermal_print_format", "mu_allow_a4_print", "mu_a4_print_format",
+    "mu_thermal_print_format", "mu_a4_print_format",
     "mu_allow_whatsapp_invoice", "mu_allow_cash_expense", "mu_cash_expense_limit",
     "mu_cash_expense_account",
 )
@@ -75,7 +75,7 @@ def get_pos_profile_data(pos_profile):
 				else profile_doc.get("print_receipt_on_order_complete", 0),
 			"print_format": profile_doc.get("mu_thermal_print_format") or profile_doc.get("print_format"),
 			"a4_print_format": profile_doc.get("mu_a4_print_format"),
-			"allow_a4_print": cint(profile_doc.get("mu_allow_a4_print") or 0),
+			"allow_a4_print": 1 if profile_doc.get("mu_a4_print_format") else 0,
 			"allow_whatsapp_invoice": cint(profile_doc.get("mu_allow_whatsapp_invoice") or 0),
 			"letter_head": profile_doc.get("letter_head"),
 		}

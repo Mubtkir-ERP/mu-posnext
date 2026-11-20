@@ -1495,7 +1495,7 @@ const deliveryOtpMaskedMobile = ref("");
 const pendingOtpPaymentData = ref(null);
 
 const hideDeliveryPrices = computed(
-	() => Boolean(Number(shiftStore.currentProfile?.mu_hide_delivery_prices)) && cartStore.targetDoctype === "Sales Order"
+	() => Boolean(Number(posSettingsStore.settings?.mu_hide_delivery_prices)) && cartStore.targetDoctype === "Sales Order"
 );
 
 async function submitDeliveryOtp() {
@@ -2749,8 +2749,10 @@ async function handlePaymentCompleted(paymentData) {
 					draftsStore.deleteDraft(draftIdToDelete);
 				}
 
-				// Refresh stock - Direct API (50-200ms), no Socket.IO lag!
-				await stockStore.refresh(soldItemCodes, shiftStore.profileWarehouse);
+				// Refresh stock in parallel so printing starts immediately without waiting
+				const stockRefreshPromise = stockStore
+					.refresh(soldItemCodes, shiftStore.profileWarehouse)
+					.catch((err) => log.debug("Background stock refresh warning:", err));
 
 				// Fire kitchen tickets (grouped by station → printer). No-op if disabled or no
 				// kitchen printers are configured. Non-blocking; never fails the sale.
@@ -2771,7 +2773,7 @@ async function handlePaymentCompleted(paymentData) {
 
 				if (shiftStore.autoPrintEnabled || posSettingsStore.printReceiptOnOrderComplete || posSettingsStore.silentPrint) {
 					try {
-						await handlePrintInvoice({ name: invoiceName });
+						await handlePrintInvoice({ name: invoiceName, pos_profile: shiftStore.profileName });
 						showSuccess(__("Invoice {0} created and sent to printer", [invoiceName]));
 					} catch (error) {
 						log.error("Auto-print error:", error);
@@ -2781,6 +2783,8 @@ async function handlePaymentCompleted(paymentData) {
 					uiStore.showSuccess(invoiceName, invoiceTotal, paidAmount);
 					showSuccess(__("Invoice {0} created successfully", [invoiceName]));
 				}
+
+				await stockRefreshPromise;
 			}
 		}
 	} catch (error) {
@@ -3486,7 +3490,15 @@ async function handlePrintInvoice(invoiceData, paper = "thermal") {
 
 		// Silent print path — send directly to thermal printer via QZ Tray
 		if (paper === "thermal" && posSettingsStore.silentPrint) {
-			const result = await printWithSilentFallback(invoiceData);
+			const cachedFormat =
+				profilePrintOptions.value?.print_format ||
+				shiftStore.currentProfile?.mu_thermal_print_format ||
+				shiftStore.currentProfile?.print_format ||
+				null;
+			const result = await printWithSilentFallback(
+				{ ...invoiceData, pos_profile: invoiceData?.pos_profile || shiftStore.profileName },
+				cachedFormat
+			);
 			if (!result.success) throw new Error("Both QZ Tray and browser printing failed");
 			if (result.method === "browser") log.info("Used browser print fallback");
 			return;

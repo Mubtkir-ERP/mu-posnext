@@ -200,6 +200,7 @@ def update_pos_settings(pos_profile, settings):
 		"direct_credit_sales_order",
 		"mu_hide_delivery_date",
 		"mu_hide_customer_debt",
+		"mu_hide_delivery_prices",
 		"customer_display_enabled",
 		"customer_display_company_name",
 		"customer_display_welcome_text",

@@ -86,8 +86,8 @@ def _resolve_station_title(station_id):
 def _get_station_printer_map(pos_profile):
 	if not pos_profile:
 		return {}
-	fields = ["kitchen_station", "printer_name"]
-	for col in ("printer", "print_method", "printer_ip", "printer_port", "print_format"):
+	fields = ["kitchen_station"]
+	for col in ("printer", "print_method", "print_format"):
 		if frappe.db.has_column("POS Kitchen Printer", col):
 			fields.append(col)
 
@@ -111,9 +111,9 @@ def _get_station_printer_map(pos_profile):
 		if not r.kitchen_station:
 			continue
 		p_doc = printer_docs.get(r.get("printer")) or {}
-		p_name = p_doc.get("printer_name") or r.get("printer_name") or ""
-		p_ip = p_doc.get("ip_address") or r.get("printer_ip") or ""
-		p_port = cint(p_doc.get("port") or r.get("printer_port")) or 9100
+		p_name = p_doc.get("printer_name") or ""
+		p_ip = p_doc.get("ip_address") or ""
+		p_port = cint(p_doc.get("port")) or 9100
 		method = r.get("print_method") or "QZ Tray"
 		if method == "QZ Tray" and not p_name:
 			continue
