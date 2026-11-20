@@ -3550,8 +3550,8 @@
   {
    "doctype_or_field": "DocField",
    "doc_type": "POS Profile",
-   "field_name": "section_break_19",
-   "name": "POS Profile-section_break_19-label",
+   "field_name": "section_break_16",
+   "name": "POS Profile-section_break_16-label",
    "property": "label",
    "property_type": "Data",
    "value": "Print & Invoice Settings"
@@ -3559,7 +3559,8 @@
   {
    "doctype_or_field": "DocField",
    "doc_type": "POS Profile",
-   "field_name": "section_break_19",
+   "field_name": "section_break_16",
+   "name": "POS Profile-section_break_16-collapsible",
    "property": "collapsible",
    "property_type": "Check",
    "value": "1"
@@ -3568,6 +3569,14 @@
    "doctype_or_field": "DocField",
    "doc_type": "POS Profile",
    "field_name": "section_break_23",
+   "property": "collapsible",
+   "property_type": "Check",
+   "value": "1"
+  },
+  {
+   "doctype_or_field": "DocField",
+   "doc_type": "POS Profile",
+   "field_name": "section_break_19",
    "property": "collapsible",
    "property_type": "Check",
    "value": "1"

@@ -9,3 +9,4 @@ pos_next.patches.v1_8_0.move_settings_fields
 pos_next.patches.v1_9_0.move_cash_and_kitchen
 pos_next.patches.v1_9_0.fix_profile_print_cycle
 pos_next.patches.v1_25_17.cleanup_duplicate_settings_and_merge_print
+pos_next.patches.v1_26_3.cleanup_print_and_profile_fields
