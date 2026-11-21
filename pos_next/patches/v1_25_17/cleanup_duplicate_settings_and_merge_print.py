@@ -34,8 +34,18 @@ OBSOLETE_PROFILE_CUSTOM_FIELDS = PROFILE_TO_SETTINGS_FIELDS + (
 )
 
 
+def _table_columns(doctype):
+	"""Query live database columns directly (bypassing Frappe's cached has_column)."""
+	table = f"tab{doctype}"
+	rows = frappe.db.sql(f"SHOW COLUMNS FROM `{table}`")
+	return {r[0] for r in rows}
+
+
 def _migrate_voucher_values():
 	"""Preserve existing configuration values before removing duplicate columns."""
+	ps_cols = _table_columns("POS Settings")
+	prof_cols = _table_columns("POS Profile")
+
 	settings_rows = frappe.get_all(
 		"POS Settings",
 		fields=["name", "pos_profile"],
@@ -48,14 +58,14 @@ def _migrate_voucher_values():
 
 	for profile_name, ps_name in ps_by_profile.items():
 		for field in SETTINGS_TO_PROFILE_FIELDS:
-			if frappe.db.has_column("POS Settings", field) and frappe.db.has_column("POS Profile", field):
+			if field in ps_cols and field in prof_cols:
 				ps_val = frappe.db.get_value("POS Settings", ps_name, field)
 				prof_val = frappe.db.get_value("POS Profile", profile_name, field)
 				if ps_val and not prof_val:
 					frappe.db.set_value("POS Profile", profile_name, field, ps_val, update_modified=False)
 
 		for field in PROFILE_TO_SETTINGS_FIELDS:
-			if frappe.db.has_column("POS Profile", field) and frappe.db.has_column("POS Settings", field):
+			if field in prof_cols and field in ps_cols:
 				prof_val = frappe.db.get_value("POS Profile", profile_name, field)
 				ps_val = frappe.db.get_value("POS Settings", ps_name, field)
 				if prof_val and not cint(ps_val):
@@ -64,6 +74,7 @@ def _migrate_voucher_values():
 
 def _drop_obsolete_custom_fields():
 	"""Remove duplicate Custom Fields from POS Profile and moved columns from POS Settings."""
+	prof_cols = _table_columns("POS Profile")
 	for fieldname in OBSOLETE_PROFILE_CUSTOM_FIELDS:
 		cf_name = frappe.db.get_value(
 			"Custom Field",
@@ -72,8 +83,9 @@ def _drop_obsolete_custom_fields():
 		)
 		if cf_name:
 			frappe.delete_doc("Custom Field", cf_name, ignore_permissions=True, force=True)
-		if frappe.db.has_column("POS Profile", fieldname):
+		if fieldname in prof_cols:
 			frappe.db.sql_ddl(f"ALTER TABLE `tabPOS Profile` DROP COLUMN `{fieldname}`")
+			prof_cols.discard(fieldname)
 
 	# Also remove any legacy Section Breaks whose fieldname differed on older sites
 	legacy_section_labels = (
@@ -91,9 +103,11 @@ def _drop_obsolete_custom_fields():
 	):
 		frappe.delete_doc("Custom Field", cf_name, ignore_permissions=True, force=True)
 
+	ps_cols = _table_columns("POS Settings")
 	for fieldname in SETTINGS_TO_PROFILE_FIELDS:
-		if frappe.db.has_column("POS Settings", fieldname):
+		if fieldname in ps_cols:
 			frappe.db.sql_ddl(f"ALTER TABLE `tabPOS Settings` DROP COLUMN `{fieldname}`")
+			ps_cols.discard(fieldname)
 
 
 def _migrate_kitchen_printers():
@@ -101,11 +115,11 @@ def _migrate_kitchen_printers():
 	if not frappe.db.exists("DocType", "POS Printer"):
 		return
 	legacy_cols = ("printer_name", "printer_ip", "printer_port")
-	has_legacy = any(frappe.db.has_column("POS Kitchen Printer", c) for c in legacy_cols)
-	if not has_legacy:
+	kp_cols = _table_columns("POS Kitchen Printer")
+	if not any(c in kp_cols for c in legacy_cols):
 		return
 
-	select_cols = ["name"] + [c for c in ("printer",) + legacy_cols if frappe.db.has_column("POS Kitchen Printer", c)]
+	select_cols = ["name"] + [c for c in ("printer",) + legacy_cols if c in kp_cols]
 	rows = frappe.get_all("POS Kitchen Printer", fields=select_cols)
 	for r in rows:
 		if r.get("printer"):
@@ -126,11 +140,14 @@ def _migrate_kitchen_printers():
 		frappe.db.set_value("POS Kitchen Printer", r.name, "printer", existing, update_modified=False)
 
 	for col in legacy_cols:
-		if frappe.db.has_column("POS Kitchen Printer", col):
+		if col in kp_cols:
 			frappe.db.sql_ddl(f"ALTER TABLE `tabPOS Kitchen Printer` DROP COLUMN `{col}`")
+			kp_cols.discard(col)
 
-	if frappe.db.has_column("POS Profile", "mu_network_printer_ip") and frappe.db.has_column("POS Profile", "mu_cashier_printer"):
-		profiles = frappe.get_all("POS Profile", fields=["name", "mu_network_printer_ip", "mu_network_printer_port", "mu_cashier_printer"])
+	prof_cols = _table_columns("POS Profile")
+	if "mu_network_printer_ip" in prof_cols and "mu_cashier_printer" in prof_cols:
+		port_col = ", mu_network_printer_port" if "mu_network_printer_port" in prof_cols else ""
+		profiles = frappe.get_all("POS Profile", fields=["name", "mu_network_printer_ip", "mu_cashier_printer"] + (["mu_network_printer_port"] if port_col else []))
 		for prof in profiles:
 			ip = (prof.get("mu_network_printer_ip") or "").strip()
 			if ip and not prof.get("mu_cashier_printer"):
