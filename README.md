@@ -1,3 +1,21 @@
+<!-- MUBTKIR-UNIFIED-README-START -->
+## نقاط البيع المتطورة (POS Next) | POS Next
+
+نظام نقاط بيع سريع ومتكامل مع ERPNext يدعم الفواتير الفورية، المخزون، الورديات، والعمل بدون إنترنت.
+* **الفئة المستهدفة:** متاجر التجزئة، المطاعم، المقاهي، ونقاط البيع الميدانية.
+
+Fast, real-time Point of Sale built on ERPNext with inventory sync, shift management, and offline support.
+* **Target Audience:** Retail stores, restaurants, cafes, and field sales counters.
+
+### تواصل معنا | Contact & Sales — [مبتكر للأنظمة السحابية | Mubtkir ERP](https://mubtkir.com)
+
+* 🌐 **الموقع الرسمي | Website:** [Mubtkir ERP — حلول ERPNext السحابية](https://mubtkir.com)
+* 📧 **البريد الإلكتروني | Email:** [sales@mubtkir.com](mailto:sales@mubtkir.com)
+* 📱 **الجوال | Mobile:** [+966547706865](tel:+966547706865)
+* 💬 **واتساب | WhatsApp:** [+966126810486](https://wa.me/966126810486)
+
+<!-- MUBTKIR-UNIFIED-README-END -->
+
 # POS Next
 
 <div align="center">
