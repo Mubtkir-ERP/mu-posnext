@@ -179,6 +179,7 @@ def _render_ticket(station_title, lines, when, invoice_name, order_note, custome
 	return f"""<!DOCTYPE html>
 <html dir="rtl" lang="ar">
 <head><meta charset="utf-8"><style>
+@page{{margin:0;size:80mm auto;}}
 body{{font-family:Tahoma,Arial,sans-serif;width:72mm;margin:0;padding:4mm;color:#000;font-size:13px;}}
 .hd{{text-align:center;border-bottom:2px dashed #000;padding-bottom:6px;margin-bottom:8px;}}
 .st{{font-size:18px;font-weight:bold;}}

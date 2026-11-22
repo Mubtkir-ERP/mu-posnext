@@ -1,4 +1,5 @@
 import qz from "qz-tray"
+import { toPng } from "html-to-image"
 import { ref } from "vue"
 import { call } from "@/utils/apiWrapper"
 import { logger } from "@/utils/logger"
@@ -222,6 +223,69 @@ export async function findPrinters() {
 // ============================================================================
 
 /**
+ * Render an HTML receipt inside an isolated off-screen iframe in Chrome and
+ * rasterize it to a base64 PNG. Chrome handles Arabic shaping and RTL layout
+ * reliably, avoiding JavaFX WebView font-shaping issues in QZ Tray.
+ */
+async function renderHtmlToPngBase64(html, widthMm = 80) {
+	const iframe = document.createElement("iframe")
+	iframe.style.position = "fixed"
+	iframe.style.left = "-9999px"
+	iframe.style.top = "0"
+	iframe.style.width = `${widthMm}mm`
+	iframe.style.height = "10px"
+	iframe.style.border = "0"
+	iframe.style.pointerEvents = "none"
+	iframe.style.background = "#ffffff"
+	document.body.appendChild(iframe)
+
+	try {
+		const doc = iframe.contentDocument || iframe.contentWindow?.document
+		if (!doc) throw new Error("Failed to access off-screen print iframe")
+
+		doc.open()
+		doc.write(html)
+		doc.close()
+
+		// Wait briefly for embedded images/QR and fonts without stalling print
+		const images = Array.from(doc.images || [])
+		await Promise.race([
+			Promise.all([
+				...images.map((img) =>
+					img.complete
+						? Promise.resolve()
+						: new Promise((resolve) => {
+								img.onload = resolve
+								img.onerror = resolve
+						  })
+				),
+				doc.fonts?.ready || Promise.resolve(),
+			]),
+			new Promise((resolve) => setTimeout(resolve, 500)),
+		])
+
+		const width = Math.ceil(doc.body.scrollWidth || iframe.clientWidth || 302)
+		const height = Math.ceil(doc.body.scrollHeight || doc.documentElement?.scrollHeight || 400)
+		iframe.style.height = `${height}px`
+
+		const dataUrl = await toPng(doc.body, {
+			backgroundColor: "#ffffff",
+			pixelRatio: 2,
+			width,
+			height,
+			cacheBust: false,
+			skipAutoScale: true,
+		})
+
+		const commaIdx = dataUrl.indexOf(",")
+		if (commaIdx === -1) throw new Error("Invalid PNG data URL")
+		return dataUrl.slice(commaIdx + 1)
+	} finally {
+		iframe.remove()
+	}
+}
+
+/**
  * Send rendered HTML to a printer via QZ Tray pixel printing.
  *
  * @param {string} html - Full HTML document string to print
@@ -244,9 +308,10 @@ export async function printHTML(html, printerName, options = {}) {
 		throw new Error("No printer selected. Please select a printer in POS Settings.")
 	}
 
+	const widthMm = options.width || 80
 	const config = qz.configs.create(printer, {
 		size: {
-			width: options.width || 80,
+			width: widthMm,
 			height: null, // auto height for receipts
 		},
 		units: "mm",
@@ -256,14 +321,28 @@ export async function printHTML(html, printerName, options = {}) {
 		interpolation: "nearest-neighbor",
 	})
 
-	const data = [
-		{
-			type: "pixel",
-			format: "html",
-			flavor: "plain",
-			data: html,
-		},
-	]
+	let data
+	try {
+		const pngBase64 = await renderHtmlToPngBase64(html, widthMm)
+		data = [
+			{
+				type: "pixel",
+				format: "image",
+				flavor: "base64",
+				data: pngBase64,
+			},
+		]
+	} catch (renderErr) {
+		log.warn("HTML-to-PNG rasterization failed, falling back to raw HTML:", renderErr?.message || renderErr)
+		data = [
+			{
+				type: "pixel",
+				format: "html",
+				flavor: "plain",
+				data: html,
+			},
+		]
+	}
 
 	try {
 		await qz.print(config, data)
