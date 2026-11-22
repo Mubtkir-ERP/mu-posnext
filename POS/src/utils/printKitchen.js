@@ -2,6 +2,25 @@ import { call } from "@/utils/apiWrapper"
 import { printHTML } from "@/utils/qzTray"
 
 function printViaBrowser(html) {
+	const printWindow = window.open("", "_blank", "width=800,height=600")
+	if (printWindow) {
+		const doc = printWindow.document
+		doc.open()
+		doc.write(html)
+		doc.close()
+		setTimeout(() => {
+			try {
+				printWindow.focus()
+				printWindow.print()
+			} finally {
+				setTimeout(() => {
+					try { printWindow.close() } catch {}
+				}, 1500)
+			}
+		}, 250)
+		return
+	}
+
 	const iframe = document.createElement("iframe")
 	iframe.style.position = "fixed"
 	iframe.style.left = "-9999px"

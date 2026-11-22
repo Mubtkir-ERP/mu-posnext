@@ -87,6 +87,14 @@ function printUrlInHiddenIframe(url) {
 	})
 }
 
+function printUrlInWindow(url) {
+	const printWindow = window.open(url, "_blank", "width=800,height=600")
+	if (printWindow) {
+		return Promise.resolve(true)
+	}
+	return printUrlInHiddenIframe(url)
+}
+
 export async function printInvoice(invoiceData, printFormat = null, letterhead = null) {
 	try {
 		if (!invoiceData?.name) throw new Error("Invalid invoice data")
@@ -105,7 +113,7 @@ export async function printInvoice(invoiceData, printFormat = null, letterhead =
 		})
 		if (letterhead) params.append("letterhead", letterhead)
 
-		return await printUrlInHiddenIframe(`/printview?${params}`)
+		return await printUrlInWindow(`/printview?${params}`)
 	} catch (error) {
 		log.error("Browser print failed:", error)
 		throw error
@@ -114,9 +122,11 @@ export async function printInvoice(invoiceData, printFormat = null, letterhead =
 
 /**
  * Fetch an invoice by name, resolve its POS Profile print settings,
- * then print via a hidden iframe (no popup blocker issues).
+ * then open the browser print window (with hidden iframe fallback if popups are blocked).
  */
 export async function printInvoiceByName(invoiceName, printFormat = null, letterhead = null, paper = "thermal", posProfile = null) {
+	const printWindow = window.open("about:blank", "_blank", "width=800,height=600")
+
 	try {
 		let format = printFormat
 		let resolvedLetterhead = letterhead
@@ -128,7 +138,10 @@ export async function printInvoiceByName(invoiceName, printFormat = null, letter
 				const invoiceDoc = await call("pos_next.api.invoices.get_invoice", {
 					invoice_name: invoiceName,
 				})
-				if (!invoiceDoc) throw new Error("Invoice not found")
+				if (!invoiceDoc) {
+					if (printWindow) printWindow.close()
+					throw new Error("Invoice not found")
+				}
 				resolvedProfile = invoiceDoc.pos_profile
 				doctype = invoiceDoc.doctype || "Sales Invoice"
 			}
@@ -148,9 +161,15 @@ export async function printInvoiceByName(invoiceName, printFormat = null, letter
 		})
 		if (resolvedLetterhead) params.append("letterhead", resolvedLetterhead)
 
-		return await printUrlInHiddenIframe(`/printview?${params}`)
+		const url = `/printview?${params}`
+		if (printWindow) {
+			printWindow.location.href = url
+			return true
+		}
+		return await printUrlInHiddenIframe(url)
 	} catch (error) {
 		log.error("printInvoiceByName failed:", error)
+		if (printWindow) printWindow.close()
 		throw error
 	}
 }
