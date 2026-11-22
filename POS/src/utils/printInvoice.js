@@ -59,12 +59,13 @@ function printUrlInHiddenIframe(url) {
 	return new Promise((resolve, reject) => {
 		const iframe = document.createElement("iframe")
 		iframe.style.position = "fixed"
-		iframe.style.right = "0"
-		iframe.style.bottom = "0"
-		iframe.style.width = "0"
-		iframe.style.height = "0"
+		iframe.style.left = "-9999px"
+		iframe.style.top = "0"
+		iframe.style.width = "800px"
+		iframe.style.height = "600px"
 		iframe.style.border = "0"
-		iframe.style.visibility = "hidden"
+		iframe.style.opacity = "0"
+		iframe.style.pointerEvents = "none"
 
 		const cleanup = () => {
 			setTimeout(() => {
