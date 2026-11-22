@@ -55,6 +55,37 @@ async function resolvePrintSettings(posProfile, printFormat, letterhead, paper =
  * The page includes trigger_print=1 so the OS print dialog appears automatically.
  * Never renders an internal receipt template as fallback.
  */
+function printUrlInHiddenIframe(url) {
+	return new Promise((resolve, reject) => {
+		const iframe = document.createElement("iframe")
+		iframe.style.position = "fixed"
+		iframe.style.right = "0"
+		iframe.style.bottom = "0"
+		iframe.style.width = "0"
+		iframe.style.height = "0"
+		iframe.style.border = "0"
+		iframe.style.visibility = "hidden"
+
+		const cleanup = () => {
+			setTimeout(() => {
+				if (iframe.parentNode) iframe.remove()
+			}, 60000)
+		}
+
+		iframe.onload = () => {
+			cleanup()
+			resolve(true)
+		}
+		iframe.onerror = (err) => {
+			if (iframe.parentNode) iframe.remove()
+			reject(err || new Error("Failed to load print view"))
+		}
+
+		iframe.src = url
+		document.body.appendChild(iframe)
+	})
+}
+
 export async function printInvoice(invoiceData, printFormat = null, letterhead = null) {
 	try {
 		if (!invoiceData?.name) throw new Error("Invalid invoice data")
@@ -73,11 +104,7 @@ export async function printInvoice(invoiceData, printFormat = null, letterhead =
 		})
 		if (letterhead) params.append("letterhead", letterhead)
 
-		const printWindow = window.open(`/printview?${params}`, "_blank", "width=800,height=600")
-		if (!printWindow) {
-			throw new Error("Popup blocked — check your browser settings.")
-		}
-		return true
+		return await printUrlInHiddenIframe(`/printview?${params}`)
 	} catch (error) {
 		log.error("Browser print failed:", error)
 		throw error
@@ -86,47 +113,43 @@ export async function printInvoice(invoiceData, printFormat = null, letterhead =
 
 /**
  * Fetch an invoice by name, resolve its POS Profile print settings,
- * then open the browser print window.
+ * then print via a hidden iframe (no popup blocker issues).
  */
-export async function printInvoiceByName(invoiceName, printFormat = null, letterhead = null, paper = "thermal") {
-	// Open window synchronously to bypass popup blockers
-	const printWindow = window.open("about:blank", "_blank", "width=800,height=600")
-
+export async function printInvoiceByName(invoiceName, printFormat = null, letterhead = null, paper = "thermal", posProfile = null) {
 	try {
-		const invoiceDoc = await call("pos_next.api.invoices.get_invoice", {
-			invoice_name: invoiceName,
-		})
-		if (!invoiceDoc) {
-			if (printWindow) printWindow.close()
-			throw new Error("Invoice not found")
-		}
+		let format = printFormat
+		let resolvedLetterhead = letterhead
+		let resolvedProfile = posProfile
+		let doctype = "Sales Invoice"
 
-		const settings = await resolvePrintSettings(invoiceDoc.pos_profile, printFormat, letterhead, paper)
-		
-		const doctype = invoiceDoc.doctype || "Sales Invoice"
-		const format = settings.printFormat
+		if (!format) {
+			if (!resolvedProfile) {
+				const invoiceDoc = await call("pos_next.api.invoices.get_invoice", {
+					invoice_name: invoiceName,
+				})
+				if (!invoiceDoc) throw new Error("Invoice not found")
+				resolvedProfile = invoiceDoc.pos_profile
+				doctype = invoiceDoc.doctype || "Sales Invoice"
+			}
+			const settings = await resolvePrintSettings(resolvedProfile, null, letterhead, paper)
+			format = settings.printFormat
+			resolvedLetterhead = settings.letterhead
+		}
 
 		const params = new URLSearchParams({
 			doctype,
-			name: invoiceDoc.name,
+			name: invoiceName,
 			format,
-			no_letterhead: settings.letterhead ? 0 : 1,
+			no_letterhead: resolvedLetterhead ? 0 : 1,
 			_lang: "en",
 			trigger_print: 1,
 			_t: Date.now(),
 		})
-		if (settings.letterhead) params.append("letterhead", settings.letterhead)
+		if (resolvedLetterhead) params.append("letterhead", resolvedLetterhead)
 
-		if (printWindow) {
-			printWindow.location.href = `/printview?${params}`
-			return true
-		} else {
-			throw new Error("Popup blocked")
-		}
+		return await printUrlInHiddenIframe(`/printview?${params}`)
 	} catch (error) {
 		log.error("printInvoiceByName failed:", error)
-		if (printWindow) printWindow.close()
-
 		throw error
 	}
 }

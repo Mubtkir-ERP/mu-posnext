@@ -3506,8 +3506,17 @@ async function handlePrintInvoice(invoiceData, paper = "thermal") {
 
 		// Standard browser print path (use client-side receipt when offline or offline-id)
 		if (invoiceData.name && navigator.onLine && !String(invoiceData.name).startsWith("offline_")) {
-			// Always use printInvoiceByName to fetch custom print format from POS Profile
-			await printInvoiceByName(invoiceData.name, null, null, paper);
+			const cachedFormat = paper === "a4"
+				? (profilePrintOptions.value?.a4_print_format || shiftStore.currentProfile?.mu_a4_print_format || null)
+				: (profilePrintOptions.value?.print_format || shiftStore.currentProfile?.mu_thermal_print_format || shiftStore.currentProfile?.print_format || null);
+			const cachedLetterhead = profilePrintOptions.value?.letter_head || shiftStore.currentProfile?.letter_head || null;
+			await printInvoiceByName(
+				invoiceData.name,
+				cachedFormat,
+				cachedLetterhead,
+				paper,
+				invoiceData?.pos_profile || shiftStore.profileName
+			);
 		} else if (invoiceData.items && Array.isArray(invoiceData.items)) {
 			await printInvoice({ ...invoiceData, pos_profile: shiftStore.profileName });
 		}
