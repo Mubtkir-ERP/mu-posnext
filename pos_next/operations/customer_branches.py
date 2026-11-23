@@ -312,8 +312,8 @@ def get_all_branches_qr_cards_html(customer):
     <title>{_("Customer QR Card")} - {cust_name_esc}</title>
     <style>
         @page {{
-            size: A6 portrait;
-            margin: 0;
+            size: A4 portrait;
+            margin: 6mm;
         }}
         * {{
             box-sizing: border-box;
@@ -341,23 +341,26 @@ def get_all_branches_qr_cards_html(customer):
             border: none;
             border-radius: 6px;
         }}
-        .a6-sticker {{
-            width: 105mm;
-            height: 148mm;
-            padding: 5mm;
-            margin: 0 auto;
-            page-break-after: always;
-            display: flex;
+        .stickers-grid {{
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 6mm;
+            width: 198mm;
+            margin: 6mm auto;
         }}
-        .a6-sticker:last-child {{
-            page-break-after: auto;
+        .a6-sticker {{
+            width: 100%;
+            height: 138mm;
+            display: flex;
+            break-inside: avoid;
+            page-break-inside: avoid;
         }}
         .a6-card {{
             width: 100%;
             height: 100%;
-            border: 4px solid #F28C28;
-            border-radius: 14px;
-            padding: 7mm 5mm;
+            border: 3px solid #F28C28;
+            border-radius: 12px;
+            padding: 5mm 4mm;
             display: flex;
             flex-direction: column;
             align-items: center;
@@ -366,33 +369,26 @@ def get_all_branches_qr_cards_html(customer):
             overflow: hidden;
         }}
         .company-name {{
-            font-size: 20px;
+            font-size: 18px;
             font-weight: 900;
             color: #111827;
-            margin-bottom: 12px;
+            margin-bottom: 6px;
         }}
         .customer-name {{
-            font-size: 23px;
+            font-size: 20px;
             font-weight: 800;
             color: #111827;
-            margin: 6px 0;
-        }}
-        .branch-name {{
-            font-size: 16px;
-            font-weight: 700;
-            color: #334155;
             margin: 4px 0;
         }}
-        .address-line {{
-            font-size: 15px;
-            font-weight: 600;
-            color: #475569;
-            margin-top: 12px;
-            line-height: 1.7;
+        .branch-name {{
+            font-size: 14px;
+            font-weight: 700;
+            color: #334155;
+            margin: 2px 0;
         }}
         .qr-box {{
-            width: 82mm;
-            height: 82mm;
+            width: 72mm;
+            height: 72mm;
             display: flex;
             align-items: center;
             justify-content: center;
@@ -409,13 +405,12 @@ def get_all_branches_qr_cards_html(customer):
             font-size: 9px;
             font-weight: 600;
             color: #999999;
-            padding-top: 5px;
+            padding-top: 4px;
         }}
         @media print {{
             .no-print {{ display: none !important; }}
-            html, body {{
-                width: 105mm;
-                height: 148mm;
+            .stickers-grid {{
+                margin: 0 auto;
             }}
         }}
     </style>
@@ -424,7 +419,9 @@ def get_all_branches_qr_cards_html(customer):
     <div class="no-print">
         <button onclick="window.print()">🖨️ {_("Print All Branch Cards")}</button>
     </div>
-    {all_cards_str}
+    <div class="stickers-grid">
+        {all_cards_str}
+    </div>
 </body>
 </html>"""
 
