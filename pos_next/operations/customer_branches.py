@@ -23,7 +23,7 @@ def generate_branch_qr_data_url(qr_text):
     # Priority 1: Vendored pyqrcode (100% pure Python, zero dependencies, crisp vector SVG)
     try:
         from pos_next.operations import pyqrcode
-        qr = pyqrcode.create(qr_text, error='M')
+        qr = pyqrcode.create(qr_text, error='M', encoding='utf-8')
         buf = io.BytesIO()
         qr.svg(buf, scale=5)
         svg_b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
@@ -34,7 +34,7 @@ def generate_branch_qr_data_url(qr_text):
     # Priority 2: System pyqrcode if available
     try:
         import pyqrcode
-        qr = pyqrcode.create(qr_text, error='M')
+        qr = pyqrcode.create(qr_text, error='M', encoding='utf-8')
         buf = io.BytesIO()
         qr.svg(buf, scale=5)
         svg_b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
@@ -278,52 +278,138 @@ def get_all_branches_qr_cards_html(customer):
     cards_html = []
     for b in branches:
         qr_img = b.get("qr_image") or ""
-        branch_title = b.get("branch_title") or b.get("address_name")
-        city = b.get("city") or ""
-        addr_line = b.get("address_line1") or ""
-        addr_html = f'<p class="address-line">📍 {addr_line} {city}</p>' if (addr_line or city) else ""
-        company_html = f'<div class="company-name">{company_name}</div>' if company_name else ""
+        branch_title = frappe.utils.escape_html(b.get("branch_title") or b.get("address_name") or "")
+        city = frappe.utils.escape_html(b.get("city") or "")
+        addr_line = frappe.utils.escape_html(b.get("address_line1") or "")
+        addr_text = " ".join(part for part in (addr_line, city) if part)
+        addr_html = f'<div class="address-line">📍 {addr_text}</div>' if addr_text else ""
+        company_esc = frappe.utils.escape_html(company_name or "")
+        company_html = f'<div class="company-name">{company_esc}</div>' if company_esc else ""
 
         cards_html.append(f"""
         <div class="a6-sticker">
             <div class="a6-card">
-                <div>
+                <div style="width:100%;">
                     {company_html}
-                    <div class="subtitle">{_("Customer QR Card")}</div>
-                    <h2 class="branch-title">🏢 {branch_title}</h2>
+                    <div class="customer-name">{branch_title}</div>
                     {addr_html}
                 </div>
-                <div class="qr-box"><img src="{qr_img}" alt="QR" /></div>
-                <div class="a6-footer">Powered By Mubtkir ERP</div>
+                <div class="qr-box">
+                    <img src="{qr_img}" alt="Customer QR Code" />
+                </div>
+                <div class="a6-footer">Powered By MUBTKIR ERP</div>
             </div>
         </div>
         """)
 
     all_cards_str = "\n".join(cards_html)
+    cust_name_esc = frappe.utils.escape_html(cust_name or "")
     return f"""<!DOCTYPE html>
 <html dir="rtl" lang="ar">
 <head>
     <meta charset="utf-8">
-    <title>{_("Customer QR Card")} - {cust_name}</title>
+    <title>{_("Customer QR Card")} - {cust_name_esc}</title>
     <style>
-        @page {{ size: A6 portrait; margin: 0; }}
-        * {{ box-sizing: border-box; }}
-        body {{ margin: 0; padding: 0; font-family: sans-serif; direction: rtl; background: #fff; }}
-        .no-print {{ text-align: center; padding: 12px; background: #f8fafc; border-bottom: 1px solid #e2e8f0; }}
-        .no-print button {{ padding: 8px 20px; font-size: 14px; font-weight: 700; cursor: pointer; background: #0f172a; color: #fff; border: none; border-radius: 6px; }}
-        .a6-sticker {{ width: 105mm; height: 148mm; padding: 6mm; display: flex; align-items: stretch; justify-content: center; margin: 0 auto; page-break-after: always; }}
-        .a6-sticker:last-child {{ page-break-after: auto; }}
-        .a6-card {{ width: 100%; border: 2px solid #0f172a; border-radius: 10px; padding: 6mm; display: flex; flex-direction: column; justify-content: space-between; align-items: center; text-align: center; }}
-        .company-name {{ font-size: 16px; font-weight: 800; color: #0f172a; margin-bottom: 4px; }}
-        .subtitle {{ font-size: 13px; font-weight: 700; color: #0284c7; margin: 0 0 4px 0; }}
-        .branch-title {{ margin: 6px 0; font-size: 20px; color: #0f172a; }}
-        .address-line {{ margin: 4px 0 0 0; font-size: 12px; color: #64748b; }}
-        .qr-box {{ width: 62mm; height: 62mm; display: flex; align-items: center; justify-content: center; margin: 4mm auto; }}
-        .qr-box img {{ width: 100%; height: 100%; object-fit: contain; }}
-        .a6-footer {{ width: 100%; text-align: center; font-size: 11px; font-weight: 600; color: #475569; padding-top: 4px; border-top: 1px dashed #cbd5e1; }}
+        @page {{
+            size: A6 portrait;
+            margin: 0;
+        }}
+        * {{
+            box-sizing: border-box;
+        }}
+        html, body {{
+            margin: 0;
+            padding: 0;
+            font-family: sans-serif;
+            direction: rtl;
+            background: #fff;
+        }}
+        .no-print {{
+            text-align: center;
+            padding: 12px;
+            background: #f8fafc;
+            border-bottom: 1px solid #e2e8f0;
+        }}
+        .no-print button {{
+            padding: 8px 20px;
+            font-size: 14px;
+            font-weight: 700;
+            cursor: pointer;
+            background: #0f172a;
+            color: #fff;
+            border: none;
+            border-radius: 6px;
+        }}
+        .a6-sticker {{
+            width: 105mm;
+            height: 148mm;
+            padding: 5mm;
+            margin: 0 auto;
+            page-break-after: always;
+            display: flex;
+        }}
+        .a6-sticker:last-child {{
+            page-break-after: auto;
+        }}
+        .a6-card {{
+            width: 100%;
+            height: 100%;
+            border: 4px solid #F28C28;
+            border-radius: 14px;
+            padding: 7mm 5mm;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
+            justify-content: space-between;
+            overflow: hidden;
+        }}
+        .company-name {{
+            font-size: 20px;
+            font-weight: 900;
+            color: #111827;
+            margin-bottom: 12px;
+        }}
+        .customer-name {{
+            font-size: 23px;
+            font-weight: 800;
+            color: #111827;
+            margin: 10px 0;
+        }}
+        .address-line {{
+            font-size: 15px;
+            font-weight: 600;
+            color: #475569;
+            margin-top: 12px;
+            line-height: 1.7;
+        }}
+        .qr-box {{
+            width: 82mm;
+            height: 82mm;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: auto;
+        }}
+        .qr-box img {{
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }}
+        .a6-footer {{
+            width: 100%;
+            text-align: center;
+            font-size: 9px;
+            font-weight: 600;
+            color: #999999;
+            padding-top: 5px;
+        }}
         @media print {{
             .no-print {{ display: none !important; }}
-            body {{ width: 105mm; }}
+            html, body {{
+                width: 105mm;
+                height: 148mm;
+            }}
         }}
     </style>
 </head>
