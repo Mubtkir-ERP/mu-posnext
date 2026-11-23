@@ -121,12 +121,6 @@ function open_single_customer_qr_modal(customer, address_name) {
 					<div style="font-size: 22px; color: #065f46; font-weight: 900;">${data.voucher_balance || 0}</div>
 				</div>
 			` : "";
-			const cardHref = data.card_path || data.card_url;
-			const digitalLinkHtml = showVoucher && cardHref ? `
-				<a href="${cardHref}" target="_blank" class="btn btn-default btn-block" style="font-weight: 600;">
-					🔗 ${__("Open Digital Balance Page")}
-				</a>
-			` : "";
 
 			let d = new frappe.ui.Dialog({
 				title: __("Customer QR Card") + " - " + (data.branch_title || data.customer_name || data.customer),
@@ -150,7 +144,6 @@ function open_single_customer_qr_modal(customer, address_name) {
 									<button type="button" class="btn btn-success btn-block btn-send-wa" style="font-weight: 700;">
 										💬 ${__("Send via WhatsApp")} ${data.mobile_no ? `(${data.mobile_no})` : ""}
 									</button>
-									${digitalLinkHtml}
 								</div>
 
 								<div style="font-size: 11px; color: #64748b; text-align: center; margin-top: 10px; font-weight: 600;">Powered By Mubtkir ERP</div>
@@ -191,44 +184,48 @@ function send_qr_whatsapp(customer, address_name) {
 }
 
 function print_a6_customer_qr_sticker(data) {
-	const titleHtml = data.branch_title
-		? `<h2 style="margin: 6px 0; font-size: 20px; color: #0f172a;">🏢 ${data.branch_title}</h2>`
-		: `<h2 style="margin: 6px 0; font-size: 22px; color: #0f172a;">${data.customer_name || data.customer}</h2>`;
+	const esc = (v) => (frappe?.utils?.escape_html ? frappe.utils.escape_html(String(v || "")) : String(v || ""));
+	const companyName = esc(data.company_name);
+	const customerName = esc(data.customer_name || data.customer || data.branch_title);
+	const branchTitle = esc(data.branch_title);
+	const branchHtml = branchTitle && branchTitle !== customerName
+		? `<div class="branch-name">🏢 ${branchTitle}</div>`
+		: "";
 
-	const printHtml = `
-		<html>
+	const printHtml = `<!DOCTYPE html>
+		<html dir="rtl" lang="ar">
 			<head>
+				<meta charset="utf-8">
 				<title>QR Card</title>
 				<style>
 					@page { size: A6 portrait; margin: 0; }
 					* { box-sizing: border-box; }
-					body { margin: 0; padding: 0; font-family: sans-serif; direction: rtl; width: 105mm; height: 148mm; }
-					.a6-sticker { width: 105mm; height: 148mm; padding: 6mm; display: flex; align-items: stretch; justify-content: center; }
-					.a6-card { width: 100%; border: 2px solid #0f172a; border-radius: 10px; padding: 6mm; display: flex; flex-direction: column; justify-content: space-between; align-items: center; text-align: center; }
-					.company-name { font-size: 16px; font-weight: 800; color: #0f172a; margin-bottom: 4px; }
-					.subtitle { font-size: 13px; font-weight: 700; color: #0284c7; margin: 0 0 4px 0; }
-					.address-line { margin: 4px 0 0 0; font-size: 12px; color: #64748b; }
-					.qr-box { width: 62mm; height: 62mm; display: flex; align-items: center; justify-content: center; margin: 4mm auto; }
+					html, body { margin: 0; padding: 0; width: 105mm; height: 148mm; font-family: sans-serif; direction: rtl; background: #fff; }
+					.a6-sticker { width: 105mm; height: 148mm; padding: 5mm; page-break-after: always; display: flex; }
+					.a6-sticker:last-child { page-break-after: auto; }
+					.a6-card { width: 100%; height: 100%; border: 4px solid #F28C28; border-radius: 14px; padding: 7mm 5mm; display: flex; flex-direction: column; align-items: center; text-align: center; justify-content: space-between; overflow: hidden; }
+					.company-name { font-size: 20px; font-weight: 900; color: #111827; margin-bottom: 10px; }
+					.customer-name { font-size: 23px; font-weight: 800; color: #111827; margin: 6px 0; }
+					.branch-name { font-size: 16px; font-weight: 700; color: #334155; margin: 4px 0; }
+					.qr-box { width: 82mm; height: 82mm; display: flex; align-items: center; justify-content: center; margin: auto; }
 					.qr-box img { width: 100%; height: 100%; object-fit: contain; }
-					.a6-footer { width: 100%; text-align: center; font-size: 11px; font-weight: 600; color: #475569; padding-top: 4px; border-top: 1px dashed #cbd5e1; }
+					.a6-footer { width: 100%; text-align: center; font-size: 9px; font-weight: 600; color: #999999; padding-top: 5px; }
 				</style>
 			</head>
 			<body>
 				<div class="a6-sticker">
 					<div class="a6-card">
-						<div>
-							${data.company_name ? `<div class="company-name">${data.company_name}</div>` : ""}
-							<div class="subtitle">${__("Customer QR Card")}</div>
-							${titleHtml}
-							${(data.address_line1 || data.city) ? `<p class="address-line">📍 ${data.address_line1 || ""} ${data.city || ""}</p>` : ""}
+						<div style="width:100%;">
+							${companyName ? `<div class="company-name">${companyName}</div>` : ""}
+							<div class="customer-name">${customerName}</div>
+							${branchHtml}
 						</div>
-						<div class="qr-box"><img src="${data.qr_image}" alt="QR" /></div>
-						<div class="a6-footer">Powered By Mubtkir ERP</div>
+						<div class="qr-box"><img src="${data.qr_image}" alt="Customer QR Code" /></div>
+						<div class="a6-footer">Powered By MUBTKIR ERP</div>
 					</div>
 				</div>
 			</body>
-		</html>
-	`;
+		</html>`;
 	const w = window.open("", "_blank", "width=450,height=650");
 	w.document.open();
 	w.document.write(printHtml);

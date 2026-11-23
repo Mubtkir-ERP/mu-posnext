@@ -276,23 +276,25 @@ def get_all_branches_qr_cards_html(customer):
     )
     cust_name = frappe.db.get_value("Customer", customer, "customer_name") or customer
     cards_html = []
+    cust_name_esc = frappe.utils.escape_html(cust_name or "")
     for b in branches:
         qr_img = b.get("qr_image") or ""
         branch_title = frappe.utils.escape_html(b.get("branch_title") or b.get("address_name") or "")
-        city = frappe.utils.escape_html(b.get("city") or "")
-        addr_line = frappe.utils.escape_html(b.get("address_line1") or "")
-        addr_text = " ".join(part for part in (addr_line, city) if part)
-        addr_html = f'<div class="address-line">📍 {addr_text}</div>' if addr_text else ""
         company_esc = frappe.utils.escape_html(company_name or "")
         company_html = f'<div class="company-name">{company_esc}</div>' if company_esc else ""
+        branch_html = (
+            f'<div class="branch-name">🏢 {branch_title}</div>'
+            if branch_title and branch_title != cust_name_esc
+            else ""
+        )
 
         cards_html.append(f"""
         <div class="a6-sticker">
             <div class="a6-card">
                 <div style="width:100%;">
                     {company_html}
-                    <div class="customer-name">{branch_title}</div>
-                    {addr_html}
+                    <div class="customer-name">{cust_name_esc or branch_title}</div>
+                    {branch_html}
                 </div>
                 <div class="qr-box">
                     <img src="{qr_img}" alt="Customer QR Code" />
@@ -303,7 +305,6 @@ def get_all_branches_qr_cards_html(customer):
         """)
 
     all_cards_str = "\n".join(cards_html)
-    cust_name_esc = frappe.utils.escape_html(cust_name or "")
     return f"""<!DOCTYPE html>
 <html dir="rtl" lang="ar">
 <head>
@@ -374,7 +375,13 @@ def get_all_branches_qr_cards_html(customer):
             font-size: 23px;
             font-weight: 800;
             color: #111827;
-            margin: 10px 0;
+            margin: 6px 0;
+        }}
+        .branch-name {{
+            font-size: 16px;
+            font-weight: 700;
+            color: #334155;
+            margin: 4px 0;
         }}
         .address-line {{
             font-size: 15px;
