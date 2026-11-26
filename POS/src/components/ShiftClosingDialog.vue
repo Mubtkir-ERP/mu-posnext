@@ -159,7 +159,7 @@
                   </div>
                   <div class="flex justify-between items-center text-xs text-gray-600">
                     <span>{{ invoice.customer }}</span>
-                    <span class="text-gray-500">{{ formatTime(invoice.posting_date) }}</span>
+                    <span class="text-gray-500">{{ formatTime(invoice.posting_time || invoice.creation || invoice.posting_date) }}</span>
                   </div>
                 </div>
                 <div class="bg-gray-50 p-3">
@@ -204,7 +204,7 @@
                         {{ invoice.customer }}
                       </td>
                       <td class="text-start px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {{ formatTime(invoice.posting_date) }}
+                        {{ formatTime(invoice.posting_time || invoice.creation || invoice.posting_date) }}
                       </td>
                       <td class="text-start px-6 py-4 whitespace-nowrap">
                         <span :class="['text-sm font-semibold', invoice.is_return ? 'text-red-700' : 'text-gray-900']">

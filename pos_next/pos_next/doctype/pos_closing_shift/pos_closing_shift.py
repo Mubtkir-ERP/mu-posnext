@@ -491,6 +491,7 @@ def _process_invoice(invoice, invoice_field, company_currency, cash_mode, paymen
         return frappe._dict({
             invoice_field: invoice.name,
             "posting_date": invoice.posting_date,
+            "posting_time": str(invoice.get("posting_time") or "") if invoice.get("posting_time") is not None else "",
             "grand_total": 0,
             "transaction_currency": invoice.get("currency") or company_currency,
             "transaction_amount": flt(invoice.get("grand_total")),
@@ -503,6 +504,7 @@ def _process_invoice(invoice, invoice_field, company_currency, cash_mode, paymen
     transaction = frappe._dict({
         invoice_field: invoice.name,
         "posting_date": invoice.posting_date,
+        "posting_time": str(invoice.get("posting_time") or "") if invoice.get("posting_time") is not None else "",
         "grand_total": base_grand_total,
         "transaction_currency": invoice.get("currency") or company_currency,
         "transaction_amount": flt(invoice.get("grand_total")),
