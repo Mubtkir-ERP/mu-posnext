@@ -2749,8 +2749,8 @@ async function handlePaymentCompleted(paymentData) {
 					draftsStore.deleteDraft(draftIdToDelete);
 				}
 
-				// Refresh stock in parallel so printing starts immediately without waiting
-				const stockRefreshPromise = stockStore
+				// Refresh stock in background without blocking the cashier
+				stockStore
 					.refresh(soldItemCodes, shiftStore.profileWarehouse)
 					.catch((err) => log.debug("Background stock refresh warning:", err));
 
@@ -2772,19 +2772,15 @@ async function handlePaymentCompleted(paymentData) {
 
 
 				if (shiftStore.autoPrintEnabled || posSettingsStore.printReceiptOnOrderComplete || posSettingsStore.silentPrint) {
-					try {
-						await handlePrintInvoice({ name: invoiceName, pos_profile: shiftStore.profileName });
-						showSuccess(__("Invoice {0} created and sent to printer", [invoiceName]));
-					} catch (error) {
+					showSuccess(__("Invoice {0} created and sent to printer", [invoiceName]));
+					handlePrintInvoice({ name: invoiceName, pos_profile: shiftStore.profileName }).catch((error) => {
 						log.error("Auto-print error:", error);
 						showWarning(__("Invoice {0} created but print failed", [invoiceName]));
-					}
+					});
 				} else {
 					uiStore.showSuccess(invoiceName, invoiceTotal, paidAmount);
 					showSuccess(__("Invoice {0} created successfully", [invoiceName]));
 				}
-
-				await stockRefreshPromise;
 			}
 		}
 	} catch (error) {

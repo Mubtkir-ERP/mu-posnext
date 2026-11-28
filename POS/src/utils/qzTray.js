@@ -247,22 +247,22 @@ async function renderHtmlToPngBase64(html, widthMm = 80) {
 		doc.write(html)
 		doc.close()
 
-		// Wait briefly for embedded images/QR and fonts without stalling print
-		const images = Array.from(doc.images || [])
-		await Promise.race([
-			Promise.all([
-				...images.map((img) =>
-					img.complete
-						? Promise.resolve()
-						: new Promise((resolve) => {
+		// Wait only for any incomplete external images (inline data: URIs are ready immediately)
+		const pendingImages = Array.from(doc.images || []).filter((img) => !img.complete)
+		if (pendingImages.length) {
+			await Promise.race([
+				Promise.all(
+					pendingImages.map(
+						(img) =>
+							new Promise((resolve) => {
 								img.onload = resolve
 								img.onerror = resolve
-						  })
+							})
+					)
 				),
-				doc.fonts?.ready || Promise.resolve(),
-			]),
-			new Promise((resolve) => setTimeout(resolve, 500)),
-		])
+				new Promise((resolve) => setTimeout(resolve, 250)),
+			])
+		}
 
 		const width = Math.ceil(doc.body.scrollWidth || iframe.clientWidth || 302)
 		const height = Math.ceil(doc.body.scrollHeight || doc.documentElement?.scrollHeight || 400)
@@ -270,11 +270,12 @@ async function renderHtmlToPngBase64(html, widthMm = 80) {
 
 		const dataUrl = await toPng(doc.body, {
 			backgroundColor: "#ffffff",
-			pixelRatio: 2,
+			pixelRatio: 1.75,
 			width,
 			height,
 			cacheBust: false,
 			skipAutoScale: true,
+			skipFonts: true,
 		})
 
 		const commaIdx = dataUrl.indexOf(",")

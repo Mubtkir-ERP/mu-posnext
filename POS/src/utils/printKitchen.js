@@ -71,32 +71,35 @@ export async function printKitchenTickets(
 		})
 		if (!Array.isArray(tickets) || !tickets.length) return { printed: 0, total: 0 }
 
-		let printed = 0
-		for (const t of tickets) {
-			try {
-				const method = t.print_method || "QZ Tray"
-				if (method === "Network IP (ESC/POS)") {
-					await call("pos_next.api.kitchen.print_network_ticket", {
-						printer_ip: t.printer_ip,
-						printer_port: t.printer_port || 9100,
-						station_title: t.station_title,
-						invoice_name: invoiceName,
-						lines: JSON.stringify(t.lines || []),
-						customer_name: customerName,
-						order_note: orderNote,
-						order_number: orderNumber,
-						order_type: orderType,
-					})
-				} else if (method === "Browser Print") {
-					printViaBrowser(t.html)
-				} else {
-					await printHTML(t.html, t.printer_name)
+		const results = await Promise.all(
+			tickets.map(async (t) => {
+				try {
+					const method = t.print_method || "QZ Tray"
+					if (method === "Network IP (ESC/POS)") {
+						await call("pos_next.api.kitchen.print_network_ticket", {
+							printer_ip: t.printer_ip,
+							printer_port: t.printer_port || 9100,
+							station_title: t.station_title,
+							invoice_name: invoiceName,
+							lines: JSON.stringify(t.lines || []),
+							customer_name: customerName,
+							order_note: orderNote,
+							order_number: orderNumber,
+							order_type: orderType,
+						})
+					} else if (method === "Browser Print") {
+						printViaBrowser(t.html)
+					} else {
+						await printHTML(t.html, t.printer_name)
+					}
+					return 1
+				} catch (e) {
+					console.error("Kitchen print failed for station", t.station, e)
+					return 0
 				}
-				printed++
-			} catch (e) {
-				console.error("Kitchen print failed for station", t.station, e)
-			}
-		}
+			})
+		)
+		const printed = results.reduce((sum, v) => sum + v, 0)
 		return { printed, total: tickets.length }
 	} catch (e) {
 		console.error("Kitchen tickets error", e)
